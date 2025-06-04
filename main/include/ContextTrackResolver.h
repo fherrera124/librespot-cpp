@@ -10,7 +10,7 @@ namespace cspot {
 class ContextTrackResolver {
  public:
   ContextTrackResolver(std::shared_ptr<SpClient> spClient,
-                       uint32_t maxWindowSize = 32,
+                       uint32_t maxWindowSize = 33,
                        uint32_t trackUpdateThreshold = 8);
 
   /**
@@ -81,7 +81,7 @@ class ContextTrackResolver {
     std::optional<TrackId> firstId = std::nullopt;
     std::optional<std::string> nextPageUrl = std::nullopt;
 
-    std::vector<uint32_t> trackIndexes = {};
+    std::vector<uint32_t> trackIndexes{};
     uint32_t fetchWindowStart = 0;
     uint32_t fetchWindowEnd = 0;
 
@@ -97,18 +97,13 @@ class ContextTrackResolver {
   enum class FetchMode { Replace, AddPrevious, AddNext, Ignore };
 
   // Struct to hold the state of the context track parsing
-  struct ContextTrackParseState {
-    // Target track ID
-    TrackId targetTrackId;
-
-    // Resolved context pages
-    std::vector<cspot_proto::ContextTrack> tracks;
-    std::optional<uint32_t> foundTrackIndex = std::nullopt;
-
-    // Window size config
-    uint32_t maxWindowSize = 0;
-
+  struct FetchParameters {
     FetchMode fetchMode = FetchMode::Replace;
+    bool slidingWindow = false;
+    uint32_t maxWindowSize = 0;
+    std::optional<TrackId> targetTrackId = std::nullopt;
+    std::vector<cspot_proto::ContextTrack>* trackCache = nullptr;
+    std::optional<uint32_t> targetPageIndex = std::nullopt;
   };
 
  private:
@@ -126,20 +121,28 @@ class ContextTrackResolver {
   uint32_t trackUpdateThreshold;
 
   // Contains state for the context track parser
-  ContextTrackParseState contextParseState;
   std::vector<ResolvedContextPage> resolvedContextPages;
 
   std::vector<cspot_proto::ContextTrack> trackCache;
+  std::vector<cspot_proto::ContextTrack> unprocessedTracksCache;
+  std::optional<cspot_proto::ContextTrack> currentTrack;
+
   std::optional<uint32_t> currentTrackInCacheIndex;
 
-bool prepareParseState();
+  void prepareFetchParams(FetchParameters& fetchParameters,
+                          uint32_t fetchThreshold);
 
-  void updateTracksFromParseState();
+  void updateTracks(
+      FetchMode fetchMode, std::vector<cspot_proto::ContextTrack>& parsedTracks,
+      const std::optional<cspot_proto::ContextTrack>& targetTrackResult);
+
+  bool isAtStartOfContext() const;
+  bool isAtEndOfContext() const;
 
   bell::Result<> ensureContextTracks();
 
-  bell::Result<> resolveRootContext();
+  bell::Result<> resolveRootContext(FetchParameters& fetchParameters);
 
-  bell::Result<> resolveContextPage(ResolvedContextPage& page);
+  bell::Result<> resolveContextPage(FetchParameters& fetchParameters);
 };
 }  // namespace cspot

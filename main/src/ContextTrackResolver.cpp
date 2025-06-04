@@ -2,6 +2,7 @@
 
 #include <span>
 #include <system_error>
+#include <utility>
 
 #include "bell/Logger.h"
 #include "bell/http/Common.h"
@@ -48,10 +49,17 @@ class ContextTrackParseContext : public picojson::null_parse_context {
 class ContextPageParseContext : public picojson::null_parse_context {
  public:
   ContextPageParseContext(
-      ContextTrackResolver::ContextTrackParseState* parseState,
+      ContextTrackResolver::FetchParameters* fetchParameters,
       ContextTrackResolver::ResolvedContextPage* contextPage,
       bool isRoot = false)
-      : parseState(parseState), contextPage(contextPage), isRoot(isRoot) {}
+      : fetchParameters(fetchParameters),
+        contextPage(contextPage),
+        isRoot(isRoot) {
+    // Ensure no fetched tracks are present at the start
+    if (fetchParameters->trackCache) {
+      fetchParameters->trackCache->clear();
+    }
+  }
 
   template <typename Iter>
   bool parse_array_item(picojson::input<Iter>& in, size_t idx) {
@@ -65,7 +73,7 @@ class ContextPageParseContext : public picojson::null_parse_context {
         contextPage->trackIndexes.push_back(idx);
 
         if ((contextPage->fetchWindowEnd - contextPage->fetchWindowStart) <
-            (parseState->maxWindowSize)) {
+            fetchParameters->maxWindowSize) {
           contextPage->fetchWindowEnd++;  // Expand the fetch window
         }
       }
@@ -79,35 +87,53 @@ class ContextPageParseContext : public picojson::null_parse_context {
       // Check if running from the root context
       contextPage->isInRoot = isRoot;
 
+      if (!fetchParameters->trackCache ||
+          (fetchParameters->targetPageIndex.has_value() &&
+           (fetchParameters->targetPageIndex != contextPage->pageIndex))) {
+        BELL_LOG(
+            debug, "parsero",
+            "Skipping track {}-{} in page {}, not in target page ({} != {})",
+            contextPage->pageIndex, idx, contextPage->pageUrl.value_or("N/A"),
+            fetchParameters->targetPageIndex.value_or(555),
+            contextPage->pageIndex);
+        // Ignore if not needed
+        return true;
+      }
+
       // Store the current track in the context state
       currentTrack.index.track = static_cast<int32_t>(idx);
       currentTrack.index.page = contextPage->pageIndex;
 
-      if (!parseState->foundTrackIndex &&
+      if (fetchParameters->slidingWindow &&
           (contextPage->fetchWindowEnd - contextPage->fetchWindowStart) >
-              parseState->maxWindowSize) {
+              fetchParameters->maxWindowSize) {
         // Move the window forward
         contextPage->fetchWindowStart++;
         contextPage->fetchWindowEnd++;
 
         // Remove the oldest track from the cache
-        parseState->tracks.erase(parseState->tracks.begin());
+        fetchParameters->trackCache->erase(
+            fetchParameters->trackCache->begin());
       }
 
-      if ((trackId == parseState->targetTrackId) &&
-          !parseState->foundTrackIndex) {
+      if (fetchParameters->slidingWindow &&
+          fetchParameters->targetTrackId.has_value() &&
+          (trackId == fetchParameters->targetTrackId)) {
+
+        targetTrack = currentTrack;
+
         uint32_t previousTracksInWindow = (idx - contextPage->fetchWindowStart);
-        uint32_t maxPreviousTracks = (parseState->maxWindowSize - 1) / 2;
+        uint32_t maxPreviousTracks = (fetchParameters->maxWindowSize - 1) / 2;
         if (previousTracksInWindow > maxPreviousTracks) {
           uint32_t tracksToRemove = previousTracksInWindow - maxPreviousTracks;
           contextPage->fetchWindowStart += tracksToRemove;
-          parseState->tracks.erase(parseState->tracks.begin(),
-                                   parseState->tracks.begin() + tracksToRemove);
+          fetchParameters->trackCache->erase(
+              fetchParameters->trackCache->begin(),
+              fetchParameters->trackCache->begin() + tracksToRemove);
         }
 
-        // If this is the current track, update the index in the cache
-        parseState->foundTrackIndex.emplace(
-            static_cast<uint32_t>(parseState->tracks.size()));
+        // Found the target track, no longer using sliding window
+        fetchParameters->slidingWindow = false;
       }
 
       // Construct the fetch window
@@ -117,15 +143,21 @@ class ContextPageParseContext : public picojson::null_parse_context {
 
       auto* idxInWindow =
           std::find(fetchWindowIds.begin(), fetchWindowIds.end(), idx);
+
       if (idxInWindow != fetchWindowIds.end()) {
         uint32_t indexToInsert =
             std::distance(fetchWindowIds.begin(), idxInWindow);
-        if (parseState->tracks.size() < indexToInsert + 1) {
-          parseState->tracks.resize(indexToInsert + 1);
+        if (fetchParameters->trackCache->size() < indexToInsert + 1) {
+          fetchParameters->trackCache->resize(indexToInsert + 1);
         }
 
         // Insert the current track at the correct index
-        parseState->tracks[indexToInsert] = currentTrack;
+        fetchParameters->trackCache->at(indexToInsert) = currentTrack;
+      } else {
+        BELL_LOG(error, "parsero",
+                 "Track {}-{} not found in fetch window [{}-{}]",
+                 contextPage->pageIndex, idx, contextPage->fetchWindowStart,
+                 contextPage->fetchWindowEnd);
       }
 
       return true;
@@ -156,14 +188,18 @@ class ContextPageParseContext : public picojson::null_parse_context {
     return _parse(*this, in);
   }
 
+  std::optional<cspot_proto::ContextTrack> getTargetTrack() const {
+    return targetTrack;
+  }
+
  private:
   std::string currentObjectKey;
 
-  ContextTrackResolver::ContextTrackParseState* parseState;
-
+  ContextTrackResolver::FetchParameters* fetchParameters;
   ContextTrackResolver::ResolvedContextPage* contextPage;
   bool isRoot = false;
 
+  std::optional<cspot_proto::ContextTrack> targetTrack = std::nullopt;
   cspot_proto::ContextTrack currentTrack;
   ContextTrackParseContext contextTrackParser{&currentTrack};
 };
@@ -172,9 +208,14 @@ class ContextPageParseContext : public picojson::null_parse_context {
 class ContextRootParseContext : public picojson::null_parse_context {
  public:
   ContextRootParseContext(
-      ContextTrackResolver::ContextTrackParseState* parseState,
-      std::vector<ContextTrackResolver::ResolvedContextPage>* contextPages)
-      : parseState(parseState), contextPages(contextPages) {}
+      ContextTrackResolver::FetchParameters initialFetchParameters,
+      std::vector<ContextTrackResolver::ResolvedContextPage>* contextPages,
+      std::function<void(const std::optional<cspot_proto::ContextTrack>&,
+                         ContextTrackResolver::FetchParameters&)>
+          pageParsedCallback)
+      : fetchParameters(std::move(initialFetchParameters)),
+        contextPages(contextPages),
+        pageParsedCallback(std::move(pageParsedCallback)) {}
 
   template <typename Iter>
   bool parse_array_item(picojson::input<Iter>& in, size_t idx) {
@@ -184,15 +225,28 @@ class ContextRootParseContext : public picojson::null_parse_context {
         contextPages->resize(idx + 1);
       }
 
-      // Assign page index to the context page
-      std::cout << "Assigning page index " << idx << " to context page " << std::endl;
       contextPages->at(idx).pageIndex = static_cast<int>(idx);
 
-      auto pageCtx =
-          ContextPageParseContext(parseState, &(*contextPages)[idx], true);
+      bool callCallback = !fetchParameters.targetPageIndex.has_value() ||
+                          (fetchParameters.targetPageIndex.value() == idx);
+
+      auto pageCtx = ContextPageParseContext(&fetchParameters,
+                                             &(*contextPages)[idx], true);
 
       // Parse the context page
       _parse(pageCtx, in);
+
+      auto& currentPage = contextPages->at(idx);
+      if (idx == contextPages->size() - 1 &&
+          (currentPage.nextPageUrl.has_value() || currentPage.isInRoot)) {
+        // Push dummy page for the next page
+        contextPages->push_back(ContextTrackResolver::ResolvedContextPage{});
+      }
+
+      // This can modify the fetch parameters, so we need to pass them back
+      if (callCallback) {
+        pageParsedCallback(pageCtx.getTargetTrack(), this->fetchParameters);
+      }
 
       return true;
     }
@@ -212,8 +266,11 @@ class ContextRootParseContext : public picojson::null_parse_context {
  private:
   std::string currentObjectKey;
 
-  ContextTrackResolver::ContextTrackParseState* parseState;
+  ContextTrackResolver::FetchParameters fetchParameters;
   std::vector<ContextTrackResolver::ResolvedContextPage>* contextPages;
+  std::function<void(const std::optional<cspot_proto::ContextTrack>&,
+                     ContextTrackResolver::FetchParameters&)>
+      pageParsedCallback;
 };
 }  // namespace
 
@@ -305,152 +362,153 @@ bell::Result<cspot_proto::ContextTrack> ContextTrackResolver::previous() {
 }
 
 bell::Result<> ContextTrackResolver::ensureContextTracks() {
-  if (!currentTrackInCacheIndex.has_value()) {
-    // No track index yet, resolve root context
-    auto res = resolveRootContext();
-    if (!res) {
-      BELL_LOG(error, LOG_TAG, "Failed to resolve root context: {}",
-               res.errorMessage());
-      return res.getError();
-    }
+  FetchParameters fetchParameters;
+  prepareFetchParams(fetchParameters, trackUpdateThreshold);
+
+  if (fetchParameters.fetchMode == FetchMode::Ignore) {
+    // No need to fetch more tracks, return early
+    return {};
   }
 
-  if (((trackCache.size() - currentTrackInCacheIndex.value()) <
-       trackUpdateThreshold)) {
-    auto& lastTrackIndex = trackCache.back().index;
-    uint32_t pageIndex = lastTrackIndex.page;
-    if (resolvedContextPages[pageIndex].fetchWindowEnd ==
-        resolvedContextPages[pageIndex].trackIndexes.size()) {
-      // Skip page, as we are on the last track
-      pageIndex++;
+  if (fetchParameters.targetPageIndex.has_value()) {
+    auto& page = resolvedContextPages[fetchParameters.targetPageIndex.value()];
+    if (page.isInRoot) {
+      return resolveRootContext(fetchParameters);
     }
-    if (pageIndex >= resolvedContextPages.size()) {
-      return {};  // No more pages to resolve
-    }
-
-    BELL_LOG(debug, LOG_TAG,
-             "Not enough tracks after current track, resolving more tracks");
-
-    auto res = resolvedContextPages[pageIndex].isInRoot
-                   ? resolveRootContext()
-                   : resolveContextPage(resolvedContextPages[pageIndex]);
-    if (!res) {
-      BELL_LOG(error, LOG_TAG, "Failed to resolve context page: {}",
-               res.errorMessage());
-      return res.getError();
-    }
-
-  } else if (currentTrackInCacheIndex.value() < trackUpdateThreshold &&
-             !(trackCache.front().index.page == 0 &&
-               resolvedContextPages[0].fetchWindowStart == 0)) {
-    BELL_LOG(
-        debug, LOG_TAG,
-        "Not enough tracks before current track, resolving more tracks, {} - {}",
-        resolvedContextPages[0].fetchWindowStart,
-        trackCache.front().index.page);
-
-    auto& firstTrackIndex = trackCache.front().index;
-
-    uint32_t pageIndex = firstTrackIndex.page;
-
-    if (resolvedContextPages[firstTrackIndex.page].firstId ==
-        trackCache.front()) {
-      // Skip page, as we are on the first track
-      if (firstTrackIndex.page == 0) {
-        return {};  // No previous page to resolve
-      }
-      pageIndex = firstTrackIndex.page - 1;
-    }
-
-    auto res = resolvedContextPages[pageIndex].isInRoot
-                   ? resolveRootContext()
-                   : resolveContextPage(resolvedContextPages[pageIndex]);
-    if (!res) {
-      BELL_LOG(error, LOG_TAG, "Failed to resolve context page: {}",
-               res.errorMessage());
-      return res.getError();
-    }
+    return resolveContextPage(fetchParameters);
   }
 
-  return {};
+  return resolveRootContext(fetchParameters);
 }
 
-bool ContextTrackResolver::prepareParseState() {
+void ContextTrackResolver::prepareFetchParams(FetchParameters& fetchParameters,
+                                              uint32_t fetchThreshold) {
   if (!currentTrackInCacheIndex.has_value()) {
-    contextParseState = {.foundTrackIndex = std::nullopt,
-                         .maxWindowSize = maxWindowSize,
-                         .targetTrackId = currentTrackId,
-                         .tracks = {},
-                         .fetchMode = FetchMode::AddNext};
-  } else if ((trackCache.size() - currentTrackInCacheIndex.value()) <
-             trackUpdateThreshold) {
-    uint32_t pageIdx = trackCache.front().index.page;
-    auto& page = resolvedContextPages[trackCache.front().index.page];
+    fetchParameters = {
+        .fetchMode = FetchMode::AddNext,
+        .slidingWindow = true,
+        .maxWindowSize = maxWindowSize,
+        .targetTrackId = currentTrackId,
+        .trackCache = &unprocessedTracksCache,
+        .targetPageIndex = std::nullopt,
+    };
+
+    return;
+  }
+
+  if ((trackCache.size() - currentTrackInCacheIndex.value()) < fetchThreshold &&
+      !isAtEndOfContext()) {
+    uint32_t pageIdx = trackCache.back().index.page;
+    auto& page = resolvedContextPages[pageIdx];
+
+    uint32_t windowSize = maxWindowSize;
 
     if (page.fetchWindowEnd == page.trackIndexes.size()) {
-      // Already at end of the window, go up one page
-      if (resolvedContextPages.size() < pageIdx + 2) {
-        BELL_LOG(error, LOG_TAG, "Already at end of context");
-        return false;
-      }
+      pageIdx++;
+      page = resolvedContextPages[pageIdx];
+      windowSize = std::min(maxWindowSize,
+                            static_cast<uint32_t>(page.trackIndexes.size()));
 
-      page = resolvedContextPages[pageIdx + 1];
-      page.fetchWindowStart = page.fetchWindowEnd - maxWindowSize;
+      page.fetchWindowStart = 0;
+      page.fetchWindowEnd = windowSize;  // Reset to start of next page
     } else {
-      uint32_t windowSize = std::min(
-          maxWindowSize, static_cast<uint32_t>(page.trackIndexes.size()) -
-                             page.fetchWindowEnd);
-      page.fetchWindowStart += windowSize;
-      page.fetchWindowEnd += windowSize;
+      windowSize = std::min(maxWindowSize,
+                            static_cast<uint32_t>(page.trackIndexes.size()) -
+                                page.fetchWindowEnd);
+      page.fetchWindowStart = page.fetchWindowEnd;
+      page.fetchWindowEnd = page.fetchWindowEnd + windowSize;
     }
 
-    // If we are close to the end of the cache, we need to fetch more tracks
-    contextParseState = {
-        .foundTrackIndex = currentTrackInCacheIndex,
-        .maxWindowSize = page.fetchWindowEnd - page.fetchWindowStart,
-        .tracks = {},
-        .fetchMode = FetchMode::AddNext};
-  } else if (currentTrackInCacheIndex.value() < trackUpdateThreshold) {
-    uint32_t pageIdx = trackCache.back().index.page;
-    auto& page = resolvedContextPages[trackCache.back().index.page];
+    fetchParameters = {
+        .fetchMode = FetchMode::AddNext,
+        .slidingWindow = false,
+        .maxWindowSize = windowSize,
+        .targetTrackId = std::nullopt,
+        .trackCache = &unprocessedTracksCache,
+        .targetPageIndex = pageIdx,
+    };
+  } else if ((currentTrackInCacheIndex.value() <= fetchThreshold) &&
+             !isAtStartOfContext()) {
+    uint32_t pageIdx = trackCache.front().index.page;
+    auto& page = resolvedContextPages[pageIdx];
+
+    uint32_t windowSize = maxWindowSize;
 
     if (page.fetchWindowStart == 0) {
-      // Already at beginning of the window, go back one page
-      if (trackCache.back().index.page == 0) {
-        BELL_LOG(error, LOG_TAG, "Already at beginning of cache");
-        return false;
-      }
+      assert(pageIdx > 0);
 
-      page = resolvedContextPages[pageIdx - 1];
-      page.fetchWindowStart = page.fetchWindowEnd - maxWindowSize;
+      pageIdx--;
+      page = resolvedContextPages[pageIdx];
+
+      windowSize = std::min(maxWindowSize,
+                            static_cast<uint32_t>(page.trackIndexes.size()));
+      page.fetchWindowEnd = page.trackIndexes.size();
+      page.fetchWindowStart = page.fetchWindowEnd - windowSize;
     } else {
-      uint32_t windowSize = std::min(maxWindowSize, page.fetchWindowStart);
-      page.fetchWindowStart -= windowSize;
-      page.fetchWindowEnd -= windowSize;
+      windowSize = std::min(maxWindowSize, page.fetchWindowStart);
+
+      page.fetchWindowEnd = page.fetchWindowStart;
+      page.fetchWindowStart = page.fetchWindowStart - windowSize;
     }
 
-    // If we are close to the end of the cache, we need to fetch more tracks
-    contextParseState = {
-        .foundTrackIndex = currentTrackInCacheIndex,
-        .maxWindowSize = page.fetchWindowEnd - page.fetchWindowStart,
-        .tracks = {},
-        .fetchMode = FetchMode::AddPrevious};
+    fetchParameters = {
+        .fetchMode = FetchMode::AddPrevious,
+        .slidingWindow = false,
+        .maxWindowSize = windowSize,
+        .targetTrackId = std::nullopt,
+        .trackCache = &unprocessedTracksCache,
+        .targetPageIndex = pageIdx,
+    };
   } else {
-    BELL_LOG(error, LOG_TAG, "Reset context called without tracks to fill");
+    BELL_LOG(
+        debug, LOG_TAG,
+        "No need to fetch more tracks, current index: {}, cache size: {} - {}",
+        fetchThreshold, currentTrackInCacheIndex.value(), trackCache.size());
+    // No need to fetch more tracks, reset parameters
+    fetchParameters.trackCache = nullptr;
+    fetchParameters.fetchMode = FetchMode::Ignore;
   }
 
-  return true;
+  // If max window size is not set, use the default
+  if (fetchParameters.maxWindowSize == 0) {
+    fetchParameters.maxWindowSize = maxWindowSize;
+  }
+
+  if (fetchParameters.fetchMode != FetchMode::Ignore) {
+    BELL_LOG(debug, LOG_TAG,
+             "Prepared fetch parameters: mode={}, slidingWindow={}, "
+             "maxWindowSize={},  targetPageIndex={}",
+             static_cast<int>(fetchParameters.fetchMode),
+             fetchParameters.slidingWindow, fetchParameters.maxWindowSize,
+             fetchParameters.targetPageIndex.has_value()
+                 ? std::to_string(fetchParameters.targetPageIndex.value())
+                 : "N/A");
+
+    if (fetchParameters.targetPageIndex.has_value()) {
+      auto& page =
+          resolvedContextPages[fetchParameters.targetPageIndex.value()];
+      BELL_LOG(debug, LOG_TAG,
+               "Target page index: {}, window start: {}, end: {}, ",
+               fetchParameters.targetPageIndex.value(), page.fetchWindowStart,
+               page.fetchWindowEnd);
+    }
+  }
 }
 
-void ContextTrackResolver::updateTracksFromParseState() {
+void ContextTrackResolver::updateTracks(
+    FetchMode fetchMode, std::vector<cspot_proto::ContextTrack>& parsedTracks,
+    const std::optional<cspot_proto::ContextTrack>& targetTrackResult) {
   BELL_LOG(debug, LOG_TAG, "Updating tracks from parse state, found index: {}",
-           contextParseState.foundTrackIndex.has_value()
-               ? std::to_string(contextParseState.foundTrackIndex.value())
+           currentTrackInCacheIndex.has_value()
+               ? std::to_string(currentTrackInCacheIndex.value())
                : "N/A");
-  if (contextParseState.fetchMode == FetchMode::AddNext) {
-    if (!currentTrackInCacheIndex.has_value() && (trackCache.size() + contextParseState.tracks.size() > maxWindowSize)) {
+  if (fetchMode == FetchMode::AddNext) {
+    BELL_LOG(debug, LOG_TAG, "Adding {} tracks to the cache in AddNext mode",
+             parsedTracks.size());
+    if (!currentTrackInCacheIndex.has_value() &&
+        (trackCache.size() + parsedTracks.size() > maxWindowSize)) {
       uint32_t tracksToRemove =
-          trackCache.size() + contextParseState.tracks.size() - maxWindowSize;
+          trackCache.size() + parsedTracks.size() - maxWindowSize;
       trackCache.erase(trackCache.begin(), trackCache.begin() + tracksToRemove);
       if (currentTrackInCacheIndex.has_value()) {
         currentTrackInCacheIndex.value() -= tracksToRemove;
@@ -458,19 +516,33 @@ void ContextTrackResolver::updateTracksFromParseState() {
     }
 
     // If we are in add next, we only add tracks after the found index
-    trackCache.insert(trackCache.end(), contextParseState.tracks.begin(),
-                      contextParseState.tracks.end());
+    trackCache.insert(trackCache.end(), parsedTracks.begin(),
+                      parsedTracks.end());
 
-    currentTrackInCacheIndex = contextParseState.foundTrackIndex;
-  } else if (contextParseState.fetchMode == FetchMode::AddPrevious) {
+  } else if (fetchMode == FetchMode::AddPrevious) {
     // If we are in add prev mode, we only add tracks before the found index
-    trackCache.insert(trackCache.begin(), contextParseState.tracks.begin(),
-                      contextParseState.tracks.end());
-    currentTrackInCacheIndex.value() += contextParseState.tracks.size();
+    trackCache.insert(trackCache.begin(), parsedTracks.begin(),
+                      parsedTracks.end());
+    currentTrackInCacheIndex.value() += parsedTracks.size();
+  }
+
+  if (targetTrackResult.has_value()) {
+    // If we found the target track, we need to update the current track index
+    auto it = std::find(trackCache.begin(), trackCache.end(),
+                        targetTrackResult.value());
+    if (it != trackCache.end()) {
+      currentTrackInCacheIndex = std::distance(trackCache.begin(), it);
+      BELL_LOG(debug, LOG_TAG, "Found target track at index: {}",
+               currentTrackInCacheIndex.value());
+    } else {
+      BELL_LOG(error, LOG_TAG, "Target track not found in the updated cache");
+      currentTrackInCacheIndex = std::nullopt;
+    }
   }
 }
 
-bell::Result<> ContextTrackResolver::resolveRootContext() {
+bell::Result<> ContextTrackResolver::resolveRootContext(
+    FetchParameters& fetchParameters) {
   BELL_LOG(info, LOG_TAG, "Resolving root context: {}", rootContextUrl);
 
   auto reader = spClient->contextResolve(rootContextUrl);
@@ -482,13 +554,16 @@ bell::Result<> ContextTrackResolver::resolveRootContext() {
 
   auto* rawDataStream = reader.getValue().getStream();
 
-  if (!prepareParseState()) {
-    BELL_LOG(error, LOG_TAG, "Failed to prepare parse state");
-    return {};
-  }
+  auto parseCtx = ContextRootParseContext(
+      fetchParameters, &resolvedContextPages,
+      [this](auto& resolvedTrackIndex, auto& fetchParams) {
+        // Update the tracks
+        updateTracks(fetchParams.fetchMode, unprocessedTracksCache,
+                     resolvedTrackIndex);
 
-  auto parseCtx =
-      ContextRootParseContext(&contextParseState, &resolvedContextPages);
+        // Prepare next fetch parameters
+        prepareFetchParams(fetchParams, (maxWindowSize - 1) / 2);
+      });
   std::string parseError;
   picojson::_parse(parseCtx,
                    std::istreambuf_iterator<char>(rawDataStream->rdbuf()),
@@ -499,19 +574,16 @@ bell::Result<> ContextTrackResolver::resolveRootContext() {
     return std::errc::invalid_argument;
   }
 
-  if (resolvedContextPages.end()->nextPageUrl.has_value()) {
+  if (resolvedContextPages.back().nextPageUrl.has_value()) {
     // If the last page has a next page URL, we need to add it to the resolved pages
-    resolvedContextPages.push_back({
-        .pageUrl = resolvedContextPages.end()->nextPageUrl.value(),
-    });
+    resolvedContextPages.push_back(
+        {.pageUrl = resolvedContextPages.back().nextPageUrl});
   }
 
-  updateTracksFromParseState();
-
   BELL_LOG(info, LOG_TAG, "Root context resolved successfully");
-  uint32_t nextPageIndex = contextParseState.tracks.back().index.page;
+  uint32_t nextPageIndex = trackCache.back().index.page;
 
-  while (!contextParseState.foundTrackIndex.has_value()) {
+  while (!currentTrackInCacheIndex.has_value()) {
     nextPageIndex++;
     BELL_LOG(info, LOG_TAG,
              "Current track index not found, resolving next page");
@@ -522,40 +594,39 @@ bell::Result<> ContextTrackResolver::resolveRootContext() {
       return std::errc::invalid_argument;
     }
 
-    auto res = resolveContextPage(resolvedContextPages[nextPageIndex]);
+    prepareFetchParams(fetchParameters, (maxWindowSize - 1) / 2);
+    fetchParameters.targetPageIndex = nextPageIndex;
+
+    auto res = resolveContextPage(fetchParameters);
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Failed to resolve context page: {}",
                res.errorMessage());
       return res.getError();
     }
 
-    if (resolvedContextPages.end()->nextPageUrl.has_value()) {
+    if (resolvedContextPages.back().nextPageUrl.has_value()) {
       // If the last page has a next page URL, we need to add it to the resolved pages
-      resolvedContextPages.push_back({
-          .pageUrl = resolvedContextPages.end()->nextPageUrl.value(),
-      });
+      resolvedContextPages.push_back(
+          {.pageUrl = resolvedContextPages.back().nextPageUrl});
     }
   }
 
   BELL_LOG(info, LOG_TAG, "Current track index found: {}",
-           contextParseState.foundTrackIndex.has_value()
-               ? std::to_string(contextParseState.foundTrackIndex.value())
+           currentTrackInCacheIndex.has_value()
+               ? std::to_string(currentTrackInCacheIndex.value())
                : "N/A");
 
   return {};
 }
 
 bell::Result<> ContextTrackResolver::resolveContextPage(
-    ResolvedContextPage& page) {
+    FetchParameters& fetchParameters) {
+  auto& page = resolvedContextPages[fetchParameters.targetPageIndex.value()];
+
   if (!page.pageUrl.has_value()) {
     BELL_LOG(error, LOG_TAG, "Context page URL is not set");
   }
   BELL_LOG(info, LOG_TAG, "Resolving context page: {}", page.pageUrl.value());
-
-  if (!prepareParseState()) {
-    BELL_LOG(error, LOG_TAG, "Failed to prepare parse state");
-    return std::errc::invalid_argument;
-  }
 
   auto reader = spClient->doRequest(bell::http::Method::GET,
                                     page.pageUrl.value().substr(5));
@@ -567,7 +638,7 @@ bell::Result<> ContextTrackResolver::resolveContextPage(
 
   auto* rawDataStream = reader.getValue().getStream();
 
-  auto parseCtx = ContextPageParseContext(&contextParseState, &page);
+  auto parseCtx = ContextPageParseContext(&fetchParameters, &page);
   std::string parseError;
   picojson::_parse(parseCtx,
                    std::istreambuf_iterator<char>(rawDataStream->rdbuf()),
@@ -579,7 +650,42 @@ bell::Result<> ContextTrackResolver::resolveContextPage(
     return std::errc::invalid_argument;
   }
 
-  updateTracksFromParseState();
+  updateTracks(fetchParameters.fetchMode, unprocessedTracksCache,
+               parseCtx.getTargetTrack());
+
   BELL_LOG(info, LOG_TAG, "Context page resolved successfully");
   return {};
+}
+
+bool ContextTrackResolver::isAtStartOfContext() const {
+  if (trackCache.empty()) {
+    return false;
+  }
+
+  if (trackCache.front().index.page != 0) {
+    return false;
+  }
+
+  if (resolvedContextPages[0].fetchWindowStart > 0) {
+    return false;
+  }
+
+  return true;
+}
+
+bool ContextTrackResolver::isAtEndOfContext() const {
+  if (trackCache.empty()) {
+    return false;
+  }
+
+  const auto& lastTrack = trackCache.back();
+  if ((lastTrack.index.page + 1) < resolvedContextPages.size()) {
+    return false;  // More pages available
+  }
+
+  if (resolvedContextPages.back().fetchWindowEnd <
+      resolvedContextPages.back().trackIndexes.size()) {
+    return false;  // More tracks available in the last page
+  }
+  return true;
 }

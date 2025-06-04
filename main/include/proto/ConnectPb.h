@@ -98,6 +98,17 @@ struct ContextTrack {
     nanopb_helper::bindField(rawProto.gid, self->gid, isDecode);
     return rawProto;
   }
+
+  // Implement comparison operator
+  bool operator==(const ContextTrack& other) const {
+    if (!other.uid.empty() && !uid.empty()) {
+      return uid == other.uid;
+    }
+    if (!other.uri.empty() && !uri.empty()) {
+      return uri == other.uri;
+    }
+    return false;
+  }
 };
 }  // namespace cspot_proto
 
