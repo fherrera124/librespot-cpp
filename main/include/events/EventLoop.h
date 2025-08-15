@@ -21,13 +21,16 @@ class EventLoop : public bell::Task {
   enum class EventType {
     DEALER_REQUEST,
     DEALER_MESSAGE,
-    TRACKPROVIDER_UPDATED,
-    CURRENT_TRACK_METADATA
+    FILE_PROVIDED,
+    CURRENT_TRACK_METADATA,
+    AUDIO_KEY,
+    QUEUE_UPDATED,
   };
 
   // Define all possible event payload types
   using EventPayload =
-      std::variant<tao::json::value, std::monostate, CurrentTrackMetadata>;
+      std::variant<tao::json::value, std::monostate, CurrentTrackMetadata,
+                   AudioKeyResponse, TrackQueueUpdate, ProvidedFile>;
 
   struct Event {
     EventType type;

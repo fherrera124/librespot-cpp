@@ -1,8 +1,8 @@
 #pragma once
 
 // Protobufs
-#include <random>
-#include "TrackProvider.h"
+#include "TrackQueue.h"
+#include "api/ApClient.h"
 #include "bell/Result.h"
 #include "connect.pb.h"
 
@@ -14,7 +14,8 @@ namespace cspot {
 class ConnectStateHandler {
  public:
   ConnectStateHandler(std::shared_ptr<SessionContext> sessionContext,
-                      std::shared_ptr<SpClient> spClient);
+                      std::shared_ptr<SpClient> spClient,
+                      std::shared_ptr<ApClient> apClient);
 
   bell::Result<> handlePlayerCommand(tao::json::value& messageJson);
 
@@ -26,8 +27,8 @@ class ConnectStateHandler {
 
   std::shared_ptr<SessionContext> sessionContext;
   std::shared_ptr<SpClient> spClient;
-  std::shared_ptr<TrackProvider> trackProvider;
-
+  std::shared_ptr<ApClient> apClient;
+  std::shared_ptr<TrackQueue> trackQueue;
 
   // Holds the protobuf state
   cspot_proto::PutStateRequest putStateRequestProto;
@@ -40,6 +41,5 @@ class ConnectStateHandler {
   bell::Result<> handleSkipNextCommand();
 
   bell::Result<> handleSkipPrevCommand();
-
 };
 }  // namespace cspot

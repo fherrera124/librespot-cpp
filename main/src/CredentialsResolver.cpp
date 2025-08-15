@@ -12,16 +12,19 @@
 #include "NanoPBExtensions.h"
 
 // Protobufs
+#include "bell/Result.h"
 #include "bell/http/Common.h"
 #include "clienttoken.pb.h"
 #include "login5.pb.h"
+#include "tl/expected.hpp"
 
 using namespace cspot;
 
 namespace {
 // Endpoints
 const std::string apResolveUrl =
-    "https://apresolve.spotify.com/?type=spclient&type=dealer-g2&type=accesspoint";
+    "https://apresolve.spotify.com/"
+    "?type=spclient&type=dealer-g2&type=accesspoint";
 const std::string clientTokenUrl =
     "https://clienttoken.spotify.com/v1/clienttoken";
 
@@ -59,7 +62,7 @@ bell::Result<std::string> CredentialsResolver::getApAddress(AddressType type) {
   if (currentTime > addressesExpiresAt) {
     auto res = updateAddresses();
     if (!res) {
-      return res.getError();
+      return tl::make_unexpected(res.error());
     }
   }
 
@@ -71,6 +74,8 @@ bell::Result<std::string> CredentialsResolver::getApAddress(AddressType type) {
     case AddressType::SpClient:
       return this->spClientAddresses[0];
   }
+
+  return bell::make_unexpected_errc<std::string>(std::errc::bad_message);
 }
 
 bell::Result<std::string> CredentialsResolver::getClientToken() {
@@ -83,7 +88,7 @@ bell::Result<std::string> CredentialsResolver::getClientToken() {
     auto res = updateClientToken();
 
     if (!res) {
-      return res.getError();
+      return tl::make_unexpected(res.error());
     }
   }
 
@@ -99,7 +104,7 @@ bell::Result<std::string> CredentialsResolver::getAccessKey() {
   if (currentTime > accessKeyExpiresAt) {
     auto res = updateAccessKey();
     if (!res) {
-      return res.getError();
+      return tl::make_unexpected(res.error());
     }
   }
 
@@ -110,14 +115,13 @@ bell::Result<> CredentialsResolver::updateAddresses() {
   std::scoped_lock lock(this->accessMutex);
 
   // Fetch new addresses
-  auto request = bell::http::request(bell::HTTPMethod::GET, apResolveUrl);
-  if (!request) {
-    return request.getError();
+  auto response = bell::http::request(bell::HTTPMethod::GET, apResolveUrl);
+  if (!response) {
+    return tl::make_unexpected(response.error());
   }
-  auto response = request.takeValue();
 
-  if (response.getStatusCode().unwrap() == 200) {
-    auto responseStr = response.getBodyStringView().unwrap();
+  if (response->getStatusCode() == 200) {
+    auto responseStr = *response->getBodyStringView();
 
     // parse json
     const auto& json = tao::json::from_string(responseStr);
@@ -130,10 +134,11 @@ bell::Result<> CredentialsResolver::updateAddresses() {
       json.at(dealerKey).to(this->dealerAddresses);
       json.at(spClientKey).to(this->spClientAddresses);
     } else {
-      return std::errc::bad_message;
+      return bell::make_unexpected_errc(std::errc::bad_message);
     }
   } else {
-    return std::errc::resource_unavailable_try_again;
+    return bell::make_unexpected_errc(
+        std::errc::resource_unavailable_try_again);
   }
 
   // Set expiration time to 1 hour from now
@@ -149,13 +154,14 @@ bell::Result<> CredentialsResolver::updateAccessKey() {
   if (!loginBlob->isAuthenticated()) {
     BELL_LOG(error, LOG_TAG,
              "Cannot fetch access key, user is not authenticated");
-    return std::errc::operation_not_permitted;
+
+    return bell::make_unexpected_errc(std::errc::operation_not_permitted);
   }
 
   auto tokenRes = getClientToken();
 
   if (!tokenRes) {
-    return tokenRes.getError();
+    return tl::make_unexpected(tokenRes.error());
   }
 
   // Prepare a protobuf login request
@@ -187,19 +193,17 @@ bell::Result<> CredentialsResolver::updateAccessKey() {
   auto encodedSizeRes =
       pbCalculateEncodedSize(LoginRequest_fields, &loginRequest);
   if (!encodedSizeRes) {
-    return encodedSizeRes.getError();
+    return tl::make_unexpected(encodedSizeRes.error());
   }
 
-  std::vector<std::byte> encodedBuffer(encodedSizeRes.getValue());
+  std::vector<std::byte> encodedBuffer(*encodedSizeRes);
   auto res =
       pbEncodeMessage(reinterpret_cast<uint8_t*>(encodedBuffer.data()),
                       encodedBuffer.size(), LoginRequest_fields, &loginRequest);
   if (!res) {
     // Could not encode the message
-    return res.getError();
+    return tl::make_unexpected(res.error());
   }
-
-  std::string clientToken = tokenRes.getValue();
 
   auto httpConnectionResponse = bell::http::requestWithBody(
       bell::HTTPMethod::POST, "https://login5.spotify.com/v3/login",
@@ -208,31 +212,32 @@ bell::Result<> CredentialsResolver::updateAccessKey() {
            "Content-Type",
            "application/x-protobuf",
        },
-       {"Client-Token", clientToken}},
+       {"Client-Token", *tokenRes}},
       encodedBuffer);
   if (!httpConnectionResponse) {
-    return httpConnectionResponse.getError();
+    return tl::make_unexpected(httpConnectionResponse.error());
   }
-  auto response = httpConnectionResponse.takeValue();
 
-  if (response.getStatusCode().unwrap() == 200) {
+  if (httpConnectionResponse->getStatusCode() == 200) {
     loginResponse.ok.access_token.funcs.decode = &cspot::pbDecodeString;
     loginResponse.ok.access_token.arg = &this->accessKey;
 
-    auto decodeRes = pbDecodeMessage(
-        reinterpret_cast<const uint8_t*>(response.getBodyBytesPtr().unwrap()),
-        response.getBodyBytesLength().unwrap(), LoginResponse_fields,
-        &loginResponse);
+    auto decodeRes =
+        pbDecodeMessage(reinterpret_cast<const uint8_t*>(
+                            *httpConnectionResponse->getBodyBytesPtr()),
+                        *httpConnectionResponse->getBodyBytesLength(),
+                        LoginResponse_fields, &loginResponse);
 
     if (!decodeRes) {
-      return decodeRes.getError();
+      return decodeRes;
     }
 
     if (loginResponse.has_error) {
       BELL_LOG(error, LOG_TAG,
                "Error while fetching access key (LoginError enum): {}",
                static_cast<int>(loginResponse.error));
-      return std::errc::resource_unavailable_try_again;
+      return bell::make_unexpected_errc(
+          std::errc::resource_unavailable_try_again);
     }
 
     this->accessKeyExpiresAt =
@@ -244,8 +249,9 @@ bell::Result<> CredentialsResolver::updateAccessKey() {
   } else {
     BELL_LOG(error, LOG_TAG,
              "Error while fetching access key (HTTP status code): {}",
-             response.getStatusCode().unwrap());
-    return std::errc::resource_unavailable_try_again;
+             *httpConnectionResponse->getStatusCode());
+    return bell::make_unexpected_errc(
+        std::errc::resource_unavailable_try_again);
   }
 
   return {};
@@ -285,16 +291,16 @@ bell::Result<> CredentialsResolver::updateClientToken() {
       pbCalculateEncodedSize(ClientTokenRequest_fields, &request);
 
   if (!encodedSizeRes) {
-    return encodedSizeRes.getError();
+    return tl::make_unexpected(encodedSizeRes.error());
   }
 
-  std::vector<std::byte> encodedBuffer(encodedSizeRes.getValue());
+  std::vector<std::byte> encodedBuffer(*encodedSizeRes);
   auto res = pbEncodeMessage(reinterpret_cast<uint8_t*>(encodedBuffer.data()),
                              encodedBuffer.size(), ClientTokenRequest_fields,
                              &request);
   if (!res) {
     // Could not encode the message
-    return res.getError();
+    return tl::make_unexpected(res.error());
   }
 
   auto httpConnectionResponse = bell::http::requestWithBody(
@@ -306,25 +312,23 @@ bell::Result<> CredentialsResolver::updateClientToken() {
        }},
       encodedBuffer);
   if (!httpConnectionResponse) {
-    return httpConnectionResponse.getError();
+    return tl::make_unexpected(httpConnectionResponse.error());
   }
 
-  auto response = httpConnectionResponse.takeValue();
-
-  if (response.getContentLength() > 0) {
+  if (httpConnectionResponse->getContentLength() > 0) {
     ClientTokenResponse tokenResponse = ClientTokenResponse_init_zero;
     std::string clientTokenString;
 
     tokenResponse.granted_token.token.funcs.decode = &pbDecodeString;
     tokenResponse.granted_token.token.arg = &clientTokenString;
 
-    auto res = pbDecodeMessage(
-        reinterpret_cast<const uint8_t*>(response.getBodyBytesPtr().unwrap()),
-        response.getBodyBytesLength().unwrap(), ClientTokenResponse_fields,
-        &tokenResponse);
+    auto res = pbDecodeMessage(reinterpret_cast<const uint8_t*>(
+                                   *httpConnectionResponse->getBodyBytesPtr()),
+                               *httpConnectionResponse->getBodyBytesLength(),
+                               ClientTokenResponse_fields, &tokenResponse);
 
     if (!res) {
-      return res.getError();
+      return res;
     }
 
     // Save the token

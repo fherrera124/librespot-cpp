@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <mbedtls/bignum.h>
+#include "mbedtls/bignum.h"
 
 namespace cspot {
 // Diffie-Hellman key exchange, used for authenticating with Spotify.

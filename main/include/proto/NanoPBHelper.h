@@ -1,6 +1,9 @@
 #pragma once
 
 // System includes
+#include <array>
+#include <cassert>
+#include <iostream>
 #include <optional>
 #include <string>
 #include <vector>
@@ -47,6 +50,20 @@ bool pbDecodeVarint(pb_istream_t* stream, const pb_field_t* field, void** arg) {
 
 // Integer handling
 template <typename IntegerT>
+bool pbDecodeVarintList(pb_istream_t* stream, const pb_field_t* field,
+                        void** arg) {
+  auto& vec = *static_cast<std::vector<IntegerT>*>(*arg);
+  IntegerT integer;
+  void* ptrToValue = &integer;
+  bool result = pbDecodeVarint<IntegerT>(stream, field, &ptrToValue);
+  if (result) {
+    vec.push_back(result);
+  }
+  return result;
+}
+
+// Integer handling
+template <typename IntegerT>
 bool pbDecodeSvarint(pb_istream_t* stream, const pb_field_t* field,
                      void** arg) {
   auto* target = static_cast<IntegerT*>(*arg);
@@ -56,6 +73,14 @@ bool pbDecodeSvarint(pb_istream_t* stream, const pb_field_t* field,
   }
   *target = static_cast<IntegerT>(value);
   return true;
+}
+
+template <std::size_t N>
+bool pbDecodeUint8Array(pb_istream_t* stream, const pb_field_t* field,
+                        void** arg) {
+  auto& arr = *static_cast<std::array<uint8_t, N>*>(*arg);
+  assert(N == stream->bytes_left);
+  return pb_read(stream, arr.data(), std::min(stream->bytes_left, N));
 }
 
 template <typename IntegerT>
@@ -69,6 +94,39 @@ bool pbEncodeVarint(pb_ostream_t* stream, const pb_field_t* field,
 }
 
 template <typename IntegerT>
+bool pbEncodeVarintList(pb_ostream_t* stream, const pb_field_t* field,
+                        void* const* arg) {
+  auto& vec = *static_cast<std::vector<IntegerT>*>(*arg);
+
+  if (vec.empty()) {
+    return true;  // Nothing to encode
+  }
+
+  pb_ostream_t sizingStream = PB_OSTREAM_SIZING;
+  for (const auto& value : vec) {
+    if (!pb_encode_varint(&sizingStream, static_cast<uint64_t>(value))) {
+      return false;
+    }
+  }
+
+  if (!pb_encode_tag(stream, PB_WT_STRING, field->tag)) {
+    return false;
+  }
+
+  if (!pb_encode_varint(stream, sizingStream.bytes_written)) {
+    return false;
+  }
+
+  for (const auto& value : vec) {
+    if (!pb_encode_varint(stream, static_cast<uint64_t>(value))) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+template <typename IntegerT>
 bool pbEncodeSvarint(pb_ostream_t* stream, const pb_field_t* field,
                      void* const* arg) {
   const auto value = static_cast<int64_t>(*static_cast<const IntegerT*>(*arg));
@@ -76,6 +134,23 @@ bool pbEncodeSvarint(pb_ostream_t* stream, const pb_field_t* field,
     return false;
   }
   return pb_encode_svarint(stream, value);
+}
+
+template <std::size_t N>
+bool pbEncodeUint8Array(pb_ostream_t* stream, const pb_field_t* field,
+                        void* const* arg) {
+  auto& arr = *static_cast<std::array<uint8_t, N>*>(*arg);
+  if (!arr.empty()) {
+    if (!pb_encode_tag_for_field(stream, field)) {
+      return false;
+    }
+
+    if (!pb_encode_string(stream, arr.data(), arr.size())) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // Binding helpers
@@ -118,6 +193,19 @@ inline void bindField(pb_callback_t& pbField, std::vector<std::string>& field,
   pbField.arg = &field;
 }
 
+// Varint vector types
+template <typename IntegerT>
+inline void bindVarintListField(pb_callback_t& pbField,
+                                std::vector<IntegerT>& field, bool isDecode) {
+  if (isDecode) {
+    pbField.funcs.decode = &pbDecodeVarintList<IntegerT>;
+  } else {
+    pbField.funcs.encode = &pbEncodeVarintList<IntegerT>;
+  }
+
+  pbField.arg = &field;
+}
+
 // Bytes vector types
 inline void bindField(pb_callback_t& pbField, std::vector<uint8_t>& field,
                       bool isDecode) {
@@ -125,6 +213,19 @@ inline void bindField(pb_callback_t& pbField, std::vector<uint8_t>& field,
     pbField.funcs.decode = &pbDecodeUint8Vector;
   } else {
     pbField.funcs.encode = &pbEncodeUint8Vector;
+  }
+
+  pbField.arg = &field;
+}
+
+// Bytes array type
+template <std::size_t N>
+inline void bindField(pb_callback_t& pbField, std::array<uint8_t, N>& field,
+                      bool isDecode) {
+  if (isDecode) {
+    pbField.funcs.decode = &pbDecodeUint8Array<N>;
+  } else {
+    pbField.funcs.encode = &pbEncodeUint8Array<N>;
   }
 
   pbField.arg = &field;
@@ -246,7 +347,7 @@ struct StructCodec {
   namespace nanopb_helper {                                                    \
   template <>                                                                  \
   struct StructCodec<StructName> {                                             \
-    static bool decode(pb_istream_t* s, const pb_field_t* /*f*/, void** a) {       \
+    static bool decode(pb_istream_t* s, const pb_field_t* /*f*/, void** a) {   \
       auto proto = StructName::bindFields(static_cast<StructName*>(*a), true); \
       return pb_decode(s, NanopbFields, &proto);                               \
     }                                                                          \
@@ -259,7 +360,8 @@ struct StructCodec {
           StructName::bindFields(static_cast<StructName*>(*a), false);         \
       return pb_encode_submessage(s, NanopbFields, &proto);                    \
     }                                                                          \
-    static bool encode(pb_ostream_t* s, const pb_field_t* /*f*/, void* const* a) { \
+    static bool encode(pb_ostream_t* s, const pb_field_t* /*f*/,               \
+                       void* const* a) {                                       \
       auto proto =                                                             \
           StructName::bindFields(static_cast<StructName*>(*a), false);         \
       return pb_encode(s, NanopbFields, &proto);                               \
@@ -332,7 +434,7 @@ bool encodeToVector(MessageT& message, std::vector<uint8_t>& output) {
   stream.state = &output;
   stream.max_size = SIZE_MAX;
   stream.bytes_written = 0;
-
+  output.clear();
   void* messagePtr = &message;
   return nanopb_helper::StructCodec<MessageT>::encode(&stream, nullptr,
                                                       &messagePtr);

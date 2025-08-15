@@ -4,6 +4,8 @@
 #include <tao/json.hpp>
 
 #include "SessionContext.h"
+#include "bell/Result.h"
+#include "tl/expected.hpp"
 
 using namespace cspot;
 
@@ -30,28 +32,27 @@ bell::Result<> DealerClient::connect() {
 
   auto accessKey = sessionContext->credentialsResolver->getAccessKey();
   if (!accessKey) {
-    BELL_LOG(error, LOG_TAG, "Could not get access key: {}",
-             accessKey.errorMessage());
-    return accessKey.getError();
+    BELL_LOG(error, LOG_TAG, "Could not get access key: {}", accessKey.error());
+    return tl::make_unexpected(accessKey.error());
   }
   auto dealerAddress = sessionContext->credentialsResolver->getApAddress(
       CredentialsResolver::AddressType::Dealer);
   if (!dealerAddress) {
     BELL_LOG(error, LOG_TAG, "Could not get dealer address: {}",
-             dealerAddress.errorMessage());
-    return dealerAddress.getError();
+             dealerAddress.error());
+    return tl::make_unexpected(dealerAddress.error());
   }
 
-  std::string dealerAddressStr = dealerAddress.getValue();
+  std::string dealerAddressStr = *dealerAddress;
 
-  std::string connectionUrl = fmt::format(
-      "{}/?access_token={}", dealerAddressStr, accessKey.getValue());
+  std::string connectionUrl =
+      fmt::format("{}/?access_token={}", dealerAddressStr, *accessKey);
 
   // Get everything before ":" in the dealer address
   std::string::size_type pos = dealerAddressStr.find(':');
   if (pos == std::string::npos) {
     BELL_LOG(error, LOG_TAG, "Dealer address does not contain port");
-    return std::errc::invalid_argument;
+    return bell::make_unexpected_errc(std::errc::invalid_argument);
   }
   // Get the host part of the dealer address
   std::string dealerHost = dealerAddressStr.substr(0, pos);
@@ -59,9 +60,8 @@ bell::Result<> DealerClient::connect() {
   socket = std::make_shared<bell::net::TLSSocket>();
   auto connectRes = socket->connect(dealerHost, 443, 3000);
   if (!connectRes) {
-    BELL_LOG(error, LOG_TAG, "Dealer connect error: {}",
-             connectRes.errorMessage());
-    return connectRes.getError();
+    BELL_LOG(error, LOG_TAG, "Dealer connect error: {}", connectRes.error());
+    return tl::make_unexpected(connectRes.error());
   }
 
   // Mark transport as secure
@@ -73,19 +73,16 @@ bell::Result<> DealerClient::connect() {
       socket, bell::PollEvent::Readable, [this](auto& sock) {
         if (wsConnection) {
           auto res = sock.read(inputBuffer.data(), inputBuffer.size());
-          if (!res || res.getValue() == 0) {
+          if (!res || *res == 0) {
             BELL_LOG(error, LOG_TAG, "Socket read error: {}",
-                     res.getError().message());
-            // requestClosePending = true;
+                     res.error().message());
           } else {
             std::scoped_lock lock(accessMutex);
 
             // Read incoming bytes
-            size_t readSize = res.getValue();
-
-            if (readSize > 0 && wsConnection) {
+            if (*res > 0 && wsConnection) {
               this->wsConnection->read_all(
-                  reinterpret_cast<char*>(inputBuffer.data()), readSize);
+                  reinterpret_cast<char*>(inputBuffer.data()), *res);
             }
           }
         }
@@ -144,9 +141,7 @@ std::error_code DealerClient::wsWriteHandler(websocketpp::connection_hdl hdl,
   if (socket->isValid()) {
     auto result = socket->write(reinterpret_cast<const uint8_t*>(data), size);
 
-    if (!result || result.getValue() != size) {
-      // requestClosePending = true;
-
+    if (!result || *result != size) {
       BELL_LOG(error, LOG_TAG, "Could not write to socket");
       return websocketpp::error::make_error_code(
           websocketpp::error::bad_connection);
@@ -207,7 +202,7 @@ bell::Result<> DealerClient::replyToRequest(bool success,
 
   if (err) {
     BELL_LOG(error, LOG_TAG, "Error sending response: {}", err.message());
-    return err;
+    return tl::make_unexpected(err);
   }
 
   return {};

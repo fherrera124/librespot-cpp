@@ -1,4 +1,5 @@
 #include "events/EventLoop.h"
+#include <iostream>
 
 #include "bell/Logger.h"
 
@@ -38,6 +39,8 @@ void EventLoop::processEvents(int timeoutMs) {
     Event event = std::move(processingQueue.front());
     processingQueue.pop();
 
+    std::cout << "Got event of type: " << static_cast<int>(event.type)
+              << std::endl;
     // Call the appropriate handler for the event type
     std::scoped_lock lock(handlersMutex);
     auto it = handlers.find(event.type);
@@ -47,6 +50,9 @@ void EventLoop::processEvents(int timeoutMs) {
       } catch (const std::exception& e) {
         BELL_LOG(error, LOG_TAG, "Error in event handler: {}", e.what());
       }
+    } else {
+      BELL_LOG(warn, LOG_TAG, "No handler registered for event type: {}",
+               static_cast<int>(event.type));
     }
   }
 }

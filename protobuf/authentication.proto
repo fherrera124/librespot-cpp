@@ -1,3 +1,5 @@
+import "nanopb.proto";
+
 enum CpuFamily {
     CPU_UNKNOWN = 0x0;
     CPU_X86 = 0x1;
@@ -51,22 +53,25 @@ enum AuthenticationType {
 }
 
 message SystemInfo {
-    required CpuFamily cpu_family = 0xa; 
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    required CpuFamily cpu_family = 0xa;
     required Os os = 0x3c;
     required string system_information_string = 0x5a;
     required string device_id = 0x64;
 }
 
 message LoginCredentials {
+    option (nanopb_msgopt).type = FT_CALLBACK;
     required string username = 0xa;
-    required AuthenticationType typ = 0x14; 
+    required AuthenticationType typ = 0x14;
     required bytes auth_data = 0x1e;
 }
 
 message ClientResponseEncrypted {
-    required LoginCredentials login_credentials = 0xa; 
-    required SystemInfo system_info = 0x32; 
-    optional string version_string = 0x46; 
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    required LoginCredentials login_credentials = 0xa;
+    required SystemInfo system_info = 0x32;
+    optional string version_string = 0x46;
 }
 
 message APWelcome {
@@ -75,7 +80,7 @@ message APWelcome {
     required AccountType credentials_type_logged_in = 0x19;
     required AuthenticationType reusable_auth_credentials_type = 0x1e;
     required bytes reusable_auth_credentials = 0x28;
-    optional bytes lfs_secret = 0x32; 
+    optional bytes lfs_secret = 0x32;
     optional AccountInfo account_info = 0x3c;
     optional AccountInfoFacebook fb = 0x46;
 }

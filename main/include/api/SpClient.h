@@ -36,6 +36,9 @@ class SpClient {
   bell::Result<cspot_proto::Episode> episodeMetadata(
       const SpotifyId& episodeId);
 
+  bell::Result<std::string> resolveStorageInteractive(
+      const std::vector<uint8_t>& fileId, bool prefetch = false);
+
  private:
   const char* LOG_TAG = "SpClient";
 

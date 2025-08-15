@@ -1,4 +1,4 @@
-#include "TrackProvider.h"
+#include "TrackQueue.h"
 
 #include <fmt/format.h>
 
@@ -15,21 +15,21 @@ namespace {
 const uint32_t maxEncodedTracksWindow = 5;
 }
 
-TrackProvider::TrackProvider(std::shared_ptr<SessionContext> sessionContext,
-                             std::shared_ptr<SpClient> spClient)
+TrackQueue::TrackQueue(std::shared_ptr<SessionContext> sessionContext,
+                       std::shared_ptr<SpClient> spClient)
     : sessionContext(std::move(sessionContext)), spClient(std::move(spClient)) {
   this->contextTrackResolver =
       std::make_unique<ContextTrackResolver>(this->spClient);
 }
 
-void TrackProvider::setQueue(const cspot_proto::Queue& queue) {
+void TrackQueue::setQueue(const cspot_proto::Queue& queue) {
   trackQueue = queue.tracks;
   isPlayingQueue = queue.isPlayingQueue;
 
   if (isPlayingQueue) {}
 }
 
-std::optional<cspot_proto::ProvidedTrack> TrackProvider::currentTrack() {
+std::optional<cspot_proto::ProvidedTrack> TrackQueue::currentTrack() {
   cspot_proto::ProvidedTrack track;
 
   if (isPlayingQueue) {
@@ -50,8 +50,7 @@ std::optional<cspot_proto::ProvidedTrack> TrackProvider::currentTrack() {
   return track;
 }
 
-bell::Result<> TrackProvider::skipToNextTrack(
-    cspot_proto::ContextTrack* track) {
+bell::Result<> TrackQueue::skipToNextTrack(cspot_proto::ContextTrack* track) {
   auto currentTrackRes = contextTrackResolver->getCurrentTrack();
   if (!currentTrackRes) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve current track");
@@ -84,7 +83,7 @@ bell::Result<> TrackProvider::skipToNextTrack(
   return {};
 }
 
-bell::Result<> TrackProvider::skipToPreviousTrack(
+bell::Result<> TrackQueue::skipToPreviousTrack(
     cspot_proto::ContextTrack* track) {
   auto currentTrackRes = contextTrackResolver->getCurrentTrack();
   if (!currentTrackRes) {
@@ -127,7 +126,7 @@ bell::Result<> TrackProvider::skipToPreviousTrack(
   return {};
 }
 
-std::optional<cspot_proto::ContextIndex> TrackProvider::currentContextIndex() {
+std::optional<cspot_proto::ContextIndex> TrackQueue::currentContextIndex() {
   if (isPlayingQueue) {
     // No context index for queue
     return std::nullopt;
@@ -139,12 +138,15 @@ std::optional<cspot_proto::ContextIndex> TrackProvider::currentContextIndex() {
     return std::nullopt;
   }
 
+  BELL_LOG(info, LOG_TAG, "Current context index: page={}, track={}",
+           contextTrackRes.getValue().index.page,
+           contextTrackRes.getValue().index.track);
+
   return contextTrackRes.getValue().index;
 };
 
-bool TrackProvider::encodePbTracks(pb_ostream_t* stream,
-                                   const pb_field_t* field,
-                                   bool isPreviousTracks) {
+bool TrackQueue::encodePbTracks(pb_ostream_t* stream, const pb_field_t* field,
+                                bool isPreviousTracks) {
   for (auto& track : isPreviousTracks ? previousTracks : nextTracks) {
     void* trackPtr = &track;
     if (!nanopb_helper::StructCodec<
@@ -156,7 +158,7 @@ bool TrackProvider::encodePbTracks(pb_ostream_t* stream,
   return true;
 }
 
-bell::Result<> TrackProvider::loadTrackAndContext(
+bell::Result<> TrackQueue::loadTrackAndContext(
     std::optional<std::string> trackUid, std::optional<std::string> trackUri,
     const cspot_proto::Context& context) {
   contextTrackResolver->updateContext(context.url, trackUid, trackUri);
@@ -194,4 +196,16 @@ bell::Result<> TrackProvider::loadTrackAndContext(
   }
 
   return {};
+}
+
+tcb::span<cspot_proto::ProvidedTrack> TrackQueue::peekNextTracks() {
+  return {nextTracks.data(), nextTracks.size()};
+}
+
+void TrackQueue::lockQueueMutex(bool lock) {
+  if (lock) {
+    queueMutex.lock();
+  } else {
+    queueMutex.unlock();
+  }
 }

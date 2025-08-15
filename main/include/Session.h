@@ -26,6 +26,7 @@ class Session {
   std::shared_ptr<SessionContext> sessionContext;
   std::shared_ptr<DealerClient> dealerClient;
   std::shared_ptr<SpClient> spClient;
+  std::shared_ptr<ApClient> apClient;
   std::shared_ptr<ConnectStateHandler> connectStateHandler;
 
   void handleDealerMessage(EventLoop::Event&& event);

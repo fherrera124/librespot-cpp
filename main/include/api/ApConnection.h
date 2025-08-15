@@ -6,6 +6,7 @@
 #include <vector>
 
 // Library includes
+#include "SessionContext.h"
 #include "bell/Result.h"
 #include "bell/net/TCPSocket.h"
 
@@ -14,14 +15,23 @@
 #include "crypto/Shannon.h"
 
 // Protobufs
-#include "authentication.pb.h"
-#include "keyexchange.pb.h"
+#include "proto/AuthenticationPb.h"
+#include "proto/KeyexchangePb.h"
 
 namespace cspot {
 class ApConnection {
  public:
-  ApConnection(const std::string& apAddress);
+  ApConnection(std::shared_ptr<SessionContext> sessionContext);
   ~ApConnection();
+
+  // Type for the packet handler function
+  using ConnectionPacketHandler =
+      std::function<void(uint8_t packetType, const uint8_t* data, size_t len)>;
+
+  /**
+   * @brief Connects to the AP, address fetched from the credential resolver
+   */
+  bell::Result<> connect();
 
   /**
    * @brief Sends a shannon encrypted packet to the AP
@@ -43,23 +53,20 @@ class ApConnection {
   bell::Result<uint8_t*> receivePacket(uint8_t& cmd, uint16_t& packetSize);
 
   /**
-   * @brief Authenticates the connection with the AP
-   *
-   * @param authBlobBuffer Buffer containing the authentication blob
-   * @param authBlobSize Size of the authentication blob
-   * @param authType Authentication type
-   * @param username Username
-   * @param deviceId Device ID
+   * @brief Assigns a handler called when an encrypted packet is received
    */
-  bell::Result<> authenticate(const uint8_t* authBlobBuffer,
-                              size_t authBlobSize, uint32_t authType,
-                              const std::string& username,
-                              const std::string& deviceId);
+  void setPacketHandler(ConnectionPacketHandler handler);
+
+  /**
+   * @brief Returns the underlying socket used for the connection
+   */
+  std::shared_ptr<bell::net::TCPSocket> getSocket() { return apSock; }
 
  private:
   const char* LOG_TAG = "ApConnection";
   const static uint32_t operationTimeout = 3000;
 
+  std::shared_ptr<SessionContext> sessionContext;
   std::shared_ptr<bell::net::TCPSocket> apSock;
   DH dhPair;
 
@@ -70,25 +77,40 @@ class ApConnection {
   Shannon recvCipher{};
   Shannon sendCipher{};
 
-  // Set to true after handshake is completed
-  bool shanonAuthenticated = false;
+  // Connection state machine enumeration
+  enum class State { INITIAL, SENT_HELLO, CONNECTED_SHANNON, ERROR };
+
+  State state = State::INITIAL;
 
   // Protobufs
-  ClientHello pbClientHello{};
-  APResponseMessage pbApResponse{};
-  ClientResponsePlaintext pbClientResponse{};
-  ClientResponseEncrypted pbClientResponseEncrypted{};
+  cspot_proto::ClientHello pbClientHello{};
+  cspot_proto::APResponseMessage pbApResponse{};
+  cspot_proto::ClientResponsePlaintext pbClientResponse{};
+  cspot_proto::ClientResponseEncrypted pbClientResponseEncrypted{};
 
   std::vector<uint8_t> connectionBuffer;
 
-  bell::Result<> performHandshake();
-  bell::Result<> solveHelloChallenge(const uint8_t* helloPacket,
-                                     size_t helloPacketSize);
+  // Holds the initially transferred messages, used for the handshake challenge
+  std::vector<uint8_t> accumulatedExchangeBuffer;
+
+  // Packet handler for incoming packets
+  ConnectionPacketHandler packetHandler = nullptr;
+
+  void handleRead();
+
+  bell::Result<> sendClientHelloPacket();
+  bell::Result<> solveHelloChallenge(const uint8_t* apResponsePacket,
+                                     size_t apResponsePacketSize);
 
   bell::Result<> sendPlainPacket(const uint8_t* data, size_t len,
                                  std::optional<uint16_t> cmd);
 
   bell::Result<size_t> receivePlainPacket();
+
+  /**
+   * @brief Authenticates the connection with the AP, using data from login blob
+   */
+  bell::Result<> authenticate();
 
   static void updateShannonNonce(uint32_t& nonce, Shannon& cipher);
 };

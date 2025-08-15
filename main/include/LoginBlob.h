@@ -7,13 +7,14 @@
 #include <bell/Result.h>
 #include <bell/io/BinaryStream.h>
 #include <bell/utils/DigestCrypto.h>
+#include <tao/json.hpp>
 
 #include "crypto/DiffieHellman.h"
 
 namespace cspot {
 class LoginBlob {
  public:
-  LoginBlob(const std::string& deviceName);
+  LoginBlob();
 
   bell::Result<> authenticateZeroconfQuery(
       const std::unordered_map<std::string, std::string>& queryParams);
@@ -24,9 +25,15 @@ class LoginBlob {
   std::string getUsername();
   std::string getDeviceName();
   std::string getDeviceId();
+  void setDeviceName(const std::string& deviceName);
   bool isAuthenticated();
+  uint32_t getAuthType();
 
   std::vector<uint8_t> getStoredAuthBlob();
+
+  bell::Result<tao::json::value> getJSONForStorage();
+  bell::Result<> restoreFromJSON(
+      const tao::json::value& jsonData);  // Restore from JSON
 
   bell::Result<> decodeEncryptedAuthBlob(const std::string& username,
                                          const std::vector<uint8_t>& authBlob);
@@ -57,6 +64,8 @@ class LoginBlob {
   std::vector<uint8_t> encryptedAuthBlob;
 
   std::vector<uint8_t> authBlob;
+
+  uint32_t authType = 0;  // Authentication type, set after authentication
 
   bell::Result<std::vector<uint8_t>> decodeZeroconfBlob(
       const std::vector<uint8_t>& blob, const std::vector<uint8_t>& clientKey);

@@ -26,5 +26,10 @@ struct SpotifyId {
   std::array<uint8_t, 16> gid{};  // GID is always 16 bytes
   std::string base62Gid;          // Base62 GID representation
   std::string uri;                // Full URI representation
+
+  // Implement compare operators
+  bool operator==(const SpotifyId& other) const {
+    return type == other.type && gid == other.gid;
+  }
 };
 }  // namespace cspot

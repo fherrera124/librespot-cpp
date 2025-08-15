@@ -18,7 +18,7 @@ if(MSVC)
 endif()
 
 # Main library sources
-file(GLOB SOURCES "src/*.cpp" "src/events/*.cpp" "src/*.c" "src/api/*.cpp" "src/crypto/*.cpp" "src/proto/*.cpp")
+file(GLOB SOURCES "src/*.cpp" "src/events/*.cpp" "src/*.c" "src/api/*.cpp" "src/crypto/*.cpp" "src/audio/*.cpp" "src/proto/*.cpp")
 
 # Enable testing
 if(NOT CSPOT_DISABLE_TESTS)

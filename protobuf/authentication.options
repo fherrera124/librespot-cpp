@@ -1,3 +1,0 @@
-APWelcome.canonical_username max_size:30, fixed_length:false
-APWelcome.reusable_auth_credentials max_size:512, fixed_length:false
-APWelcome.lfs_secret max_size:128, fixed_length:false

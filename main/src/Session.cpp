@@ -21,8 +21,9 @@ cspot::Session::Session(std::shared_ptr<LoginBlob> loginBlob)
   // Prepare the dealer client
   dealerClient = std::make_shared<DealerClient>(sessionContext);
   spClient = std::make_shared<SpClient>(sessionContext);
+  apClient = std::make_shared<ApClient>(sessionContext);
   connectStateHandler =
-      std::make_shared<ConnectStateHandler>(sessionContext, spClient);
+      std::make_shared<ConnectStateHandler>(sessionContext, spClient, apClient);
 
   sessionContext->eventLoop->registerHandler(
       EventLoop::EventType::DEALER_MESSAGE,
@@ -63,7 +64,7 @@ void cspot::Session::handleDealerMessage(EventLoop::Event&& event) {
     auto res = connectStateHandler->putState(PutStateReason_NEW_CONNECTION);
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Failed to announce connect state: {}",
-               res.errorMessage());
+               res.error());
       return;
     }
   } else {
@@ -93,7 +94,7 @@ void cspot::Session::handleDealerRequest(EventLoop::Event&& event) {
     auto res = connectStateHandler->handlePlayerCommand(messageJson);
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Failed to handle player command: {}",
-               res.errorMessage());
+               res.error());
       requestSuccess = false;
     } else {
       requestSuccess = true;
@@ -103,16 +104,23 @@ void cspot::Session::handleDealerRequest(EventLoop::Event&& event) {
   auto replyRes = dealerClient->replyToRequest(requestSuccess, *requestKey);
   if (!replyRes) {
     BELL_LOG(error, LOG_TAG, "Failed to reply to dealer request: {}",
-             replyRes.errorMessage());
+             replyRes.error());
   }
 }
 
 bell::Result<> cspot::Session::start() {
+  // Start the ap client
+  auto res = apClient->connectAndAuthenticate();
+  if (!res) {
+    BELL_LOG(error, LOG_TAG, "Failed to connect to AP: {}", res.error());
+    return res;
+  }
+
   // Start the dealer client
-  auto res = dealerClient->connect();
+  res = dealerClient->connect();
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to connect to dealer client: {}",
-             res.errorMessage());
+             res.error());
     return res;
   }
 

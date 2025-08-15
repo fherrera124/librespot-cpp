@@ -12,11 +12,10 @@ namespace cspot {
  * @brief Manages the current track and context, providing methods to load tracks,
  * skip tracks, and retrieve next/previous tracks.
  */
-class TrackProvider {
+class TrackQueue {
  public:
-  TrackProvider(std::shared_ptr<SessionContext> sessionContext,
-                std::shared_ptr<SpClient> spClient);
-
+  TrackQueue(std::shared_ptr<SessionContext> sessionContext,
+             std::shared_ptr<SpClient> spClient);
   /**
    * @brief Sets the queue for the track provider.
    */
@@ -33,28 +32,30 @@ class TrackProvider {
 
   std::optional<cspot_proto::ContextIndex> currentContextIndex();
 
+  void lockQueueMutex(bool lock);
+
   bell::Result<> skipToNextTrack(cspot_proto::ContextTrack* track = nullptr);
 
   bell::Result<> skipToPreviousTrack(
       cspot_proto::ContextTrack* track = nullptr);
 
+  tcb::span<cspot_proto::ProvidedTrack> peekNextTracks();
+
   // Nanopb callback for encoding next tracks in the playback state
   static bool pbEncodeNextTracks(pb_ostream_t* stream, const pb_field_t* field,
                                  void* const* arg) {
-    return static_cast<TrackProvider*>(*arg)->encodePbTracks(stream, field,
-                                                             false);
+    return static_cast<TrackQueue*>(*arg)->encodePbTracks(stream, field, false);
   }
 
   // Nanopb callback for encoding previous tracks in the playback state
   static bool pbEncodePreviousTracks(pb_ostream_t* stream,
                                      const pb_field_t* field,
                                      void* const* arg) {
-    return static_cast<TrackProvider*>(*arg)->encodePbTracks(stream, field,
-                                                             true);
+    return static_cast<TrackQueue*>(*arg)->encodePbTracks(stream, field, true);
   }
 
  private:
-  const char* LOG_TAG = "TrackProvider";
+  const char* LOG_TAG = "TrackQueue";
 
   std::shared_ptr<SessionContext> sessionContext;
   std::shared_ptr<SpClient> spClient;
@@ -68,6 +69,8 @@ class TrackProvider {
 
   std::vector<cspot_proto::ProvidedTrack> previousTracks;
   std::vector<cspot_proto::ProvidedTrack> nextTracks;
+
+  std::mutex queueMutex;
 
   // Index of the current track in the track queue
   uint32_t trackQueueIndex = 0;

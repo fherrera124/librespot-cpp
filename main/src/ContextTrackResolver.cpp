@@ -3,7 +3,9 @@
 #include <random>
 #include <system_error>
 #include <utility>
+#include "bell/Result.h"
 #include "bell/http/Common.h"
+#include "tl/expected.hpp"
 #include "yajl_parse.h"
 
 #include "bell/Logger.h"
@@ -172,14 +174,15 @@ ContextTrackResolver::getCurrentTrack() {
   auto res = ensureContextTracks();
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to ensure context tracks: {}",
-             res.errorMessage());
-    return res.getError();
+             res.error());
+    return tl::make_unexpected(res.error());
   }
 
   auto currentTrackInQueueIndex = getCurrentTrackInQueueIndex();
   if (!currentTrackInQueueIndex.has_value()) {
     BELL_LOG(error, LOG_TAG, "Current track not found in the queue");
-    return std::errc::no_message_available;
+    return bell::make_unexpected_errc<cspot_proto::ContextTrack>(
+        std::errc::no_message_available);
   }
 
   return contextTrackQueue[currentTrackInQueueIndex.value()];
@@ -207,19 +210,21 @@ bell::Result<cspot_proto::ContextTrack> ContextTrackResolver::next() {
   auto res = ensureContextTracks();
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to ensure context tracks: {}",
-             res.errorMessage());
-    return res.getError();
+             res.error());
+    return tl::make_unexpected(res.error());
   }
 
   auto currentTrackInCacheIndex = getCurrentTrackInQueueIndex();
   if (!currentTrackInCacheIndex.has_value()) {
     BELL_LOG(error, LOG_TAG, "Current track not found in the queue");
-    return std::errc::no_message_available;
+    return bell::make_unexpected_errc<cspot_proto::ContextTrack>(
+        std::errc::no_message_available);
   }
 
   if (currentTrackInCacheIndex.value() + 1 >= contextTrackQueue.size()) {
     BELL_LOG(error, LOG_TAG, "No next track available");
-    return std::errc::no_message_available;
+    return bell::make_unexpected_errc<cspot_proto::ContextTrack>(
+        std::errc::no_message_available);
   }
 
   if (currentTrackInCacheIndex.value() >= (maxWindowSize - 1) / 2) {
@@ -256,19 +261,21 @@ bell::Result<cspot_proto::ContextTrack> ContextTrackResolver::previous() {
   auto res = ensureContextTracks();
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to ensure context tracks: {}",
-             res.errorMessage());
-    return res.getError();
+             res.error());
+    return tl::make_unexpected(res.error());
   }
 
   auto currentTrackInCacheIndex = getCurrentTrackInQueueIndex();
   if (!currentTrackInCacheIndex.has_value()) {
     BELL_LOG(error, LOG_TAG, "Current track not found in the queue");
-    return std::errc::no_message_available;
+    return bell::make_unexpected_errc<cspot_proto::ContextTrack>(
+        std::errc::no_message_available);
   }
 
   if (currentTrackInCacheIndex.value() == 0) {
     BELL_LOG(error, LOG_TAG, "No previous track available");
-    return std::errc::no_message_available;
+    return bell::make_unexpected_errc<cspot_proto::ContextTrack>(
+        std::errc::no_message_available);
   }
 
   currentTrack = contextTrackQueue[currentTrackInCacheIndex.value() - 1];
@@ -311,8 +318,8 @@ bell::Result<> ContextTrackResolver::ensureContextTracks() {
     auto res = resolveRootContext();
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Failed to resolve root context: {}",
-               res.errorMessage());
-      return res.getError();
+               res.error());
+      return tl::make_unexpected(res.error());
     }
 
     return ensureContextTracks();
@@ -326,8 +333,8 @@ bell::Result<> ContextTrackResolver::ensureContextTracks() {
       auto res = resolveContextPage(currentPageIndex);
       if (!res) {
         BELL_LOG(error, LOG_TAG, "Failed to resolve context page: {}",
-                 res.errorMessage());
-        return res.getError();
+                 res.error());
+        return tl::make_unexpected(res.error());
       }
 
       return ensureContextTracks();
@@ -338,8 +345,8 @@ bell::Result<> ContextTrackResolver::ensureContextTracks() {
       auto res = resolveRootContext();
       if (!res) {
         BELL_LOG(error, LOG_TAG, "Failed to resolve root context: {}",
-                 res.errorMessage());
-        return res.getError();
+                 res.error());
+        return tl::make_unexpected(res.error());
       }
 
       return ensureContextTracks();
@@ -371,16 +378,16 @@ bell::Result<> ContextTrackResolver::ensureContextTracks() {
       auto res = resolveContextPage(currentPageIndex);
       if (!res) {
         BELL_LOG(error, LOG_TAG, "Failed to resolve context page: {}",
-                 res.errorMessage());
-        return res.getError();
+                 res.error());
+        return tl::make_unexpected(res.error());
       }
     } else {
       // No page URL for the current page, we are most likely at the root page
       auto res = resolveRootContext();
       if (!res) {
         BELL_LOG(error, LOG_TAG, "Failed to resolve root context: {}",
-                 res.errorMessage());
-        return res.getError();
+                 res.error());
+        return tl::make_unexpected(res.error());
       }
     }
   }
@@ -452,12 +459,12 @@ bell::Result<> ContextTrackResolver::setShuffle(bool shuffle) {
 bell::Result<> ContextTrackResolver::shuffleIdsInPage(uint32_t pageIdx) {
   if (pageMetadata.size() <= pageIdx) {
     // No such page
-    return std::errc::invalid_argument;
+    return bell::make_unexpected_errc(std::errc::invalid_argument);
   }
 
   if (pageMetadata[pageIdx].trackCount == 0) {
     // No track count in page
-    return std::errc::invalid_argument;
+    return bell::make_unexpected_errc(std::errc::invalid_argument);
   }
 
   // Prepare shuffle indexes
@@ -565,11 +572,11 @@ bell::Result<> ContextTrackResolver::resolveRootContext() {
   auto reader = spClient->contextResolve(rootContextUrl);
   if (!reader) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve root context: {}",
-             reader.errorMessage());
-    return reader.getError();
+             reader.error());
+    return tl::make_unexpected(reader.error());
   }
 
-  auto dataVector = reader.takeValue().getBodyStringView().unwrap();
+  auto dataVector = *reader->getBodyStringView();
 
   // Prepare for root context parsing
   resetParseState();
@@ -632,11 +639,11 @@ bell::Result<> ContextTrackResolver::resolveContextPage(uint32_t pageIndex) {
   auto reader = spClient->doRequest(bell::http::Method::GET, pageUrl.substr(5));
   if (!reader) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve root context: {}",
-             reader.errorMessage());
-    return reader.getError();
+             reader.error());
+    return tl::make_unexpected(reader.error());
   }
 
-  auto dataVector = reader.takeValue().getBodyStringView().unwrap();
+  auto dataVector = *reader->getBodyStringView();
 
   resetParseState();
   pageParseState.currentPageIndex = pageIndex;
@@ -671,12 +678,11 @@ bell::Result<> ContextTrackResolver::resolveContextPage(uint32_t pageIndex) {
         .nextPageUrl = std::nullopt,
         .trackCount = 0,
     });
-
   }
 
   if (requireRefetch) {
-  // Ensure we have shuffled ids
-  shuffleIdsInPage(pageIndex);
+    // Ensure we have shuffled ids
+    (void)shuffleIdsInPage(pageIndex);
 
     BELL_LOG(info, LOG_TAG,
              "Fetching page for the second time, due to the required shuffle "
@@ -754,14 +760,16 @@ void ContextTrackResolver::onTrackParsed(
     return;
   }
 
-  BELL_LOG(info, LOG_TAG, "Processing track at index {} on page {}", trackIndex, pageIndex);
+  BELL_LOG(info, LOG_TAG, "Processing track at index {} on page {}", trackIndex,
+           pageIndex);
 
   auto& pageWindow = pageWindows[pageIndex];
 
   uint32_t actualIndex = trackIndex;
 
   if (isShuffle && pageWindow.shuffleIndexes.empty()) {
-      BELL_LOG(info, LOG_TAG, "No shuffle indexes prepared in shuffle mode, cant do much");
+    BELL_LOG(info, LOG_TAG,
+             "No shuffle indexes prepared in shuffle mode, cant do much");
     // No shuffle indexes prepared in shuffle mode, cant do much
     return;
   }
@@ -816,8 +824,9 @@ void ContextTrackResolver::onTrackParsed(
       }
     }
   } else {
-      BELL_LOG(info, LOG_TAG, "Track not in window, {} - size {} - actualIndex {}",
-               pageWindow.start, pageWindow.size, actualIndex);
+    BELL_LOG(info, LOG_TAG,
+             "Track not in window, {} - size {} - actualIndex {}",
+             pageWindow.start, pageWindow.size, actualIndex);
   }
 }
 

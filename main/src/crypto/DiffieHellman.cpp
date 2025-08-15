@@ -118,12 +118,6 @@ std::string DH::getPublicKeyBase64() {
 }
 
 void DH::generatePrivateKey() {
-  // For testing, the private key is hardcoded
-  for (size_t i = 0; i < privateKey.size(); i++) {
-    privateKey[i] = i + 2;
-  }
-
-  return;
   // Generate a random private key
   mbedtls_entropy_context entropy;
   mbedtls_ctr_drbg_context ctrDrbg;
