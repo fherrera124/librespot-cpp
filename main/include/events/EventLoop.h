@@ -29,8 +29,8 @@ class EventLoop : public bell::Task {
 
   // Define all possible event payload types
   using EventPayload =
-      std::variant<tao::json::value, std::monostate, CurrentTrackMetadata,
-                   AudioKeyResponse, TrackQueueUpdate, ProvidedFile>;
+      std::variant<std::monostate, CurrentTrackMetadata,
+                   AudioKeyResponse, TrackQueueUpdate, ProvidedFile, tao::json::value>;
 
   struct Event {
     EventType type;

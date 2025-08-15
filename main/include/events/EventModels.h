@@ -24,7 +24,7 @@ struct TrackQueueUpdate {
 };
 
 struct ProvidedFile {
-  SpotifyId itemId;
+  SpotifyId itemId{};
   std::optional<cspot_proto::Track> trackMetadata = std::nullopt;
   std::optional<cspot_proto::Episode> episodeMetadata = std::nullopt;
   std::string cdnUrl{};

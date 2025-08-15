@@ -17,6 +17,9 @@ struct SpotifyId {
   // URI constructor
   SpotifyId(const std::string& uri);
 
+  // Default constructor
+  SpotifyId() = default;
+
   // Guesses the type of the Spotify ID based on the URI context
   static SpotifyIdType getTypeFromContext(const std::string& contextUri);
 
@@ -33,3 +36,13 @@ struct SpotifyId {
   }
 };
 }  // namespace cspot
+
+// Implement a hash function for SpotifyId
+namespace std {
+template <>
+struct hash<cspot::SpotifyId> {
+  std::size_t operator()(const cspot::SpotifyId& id) const {
+    return std::hash<std::string>{}(id.hexGid());
+  }
+};
+}  // namespace std

@@ -6,6 +6,7 @@
 #include <ostream>
 #include <string>
 #include <vector>
+#include "bell/Result.h"
 #include "pb.h"
 #include "pb_decode.h"
 
@@ -192,7 +193,7 @@ bell::Result<size_t> cspot::pbEncodeMessage(uint8_t* buffer, size_t size,
                                             const void* src) {
   pb_ostream_t stream = pb_ostream_from_buffer(buffer, size);
   if (!pb_encode(&stream, messageType, src)) {
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc<size_t>(std::errc::bad_message);
   }
 
   return stream.bytes_written;
@@ -202,7 +203,7 @@ bell::Result<size_t> cspot::pbCalculateEncodedSize(
     const pb_msgdesc_t* messageType, const void* src) {
   size_t size = 0;
   if (!pb_get_encoded_size(&size, messageType, src)) {
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc<size_t>(std::errc::bad_message);
   }
   return size;
 }
@@ -214,7 +215,7 @@ bell::Result<> cspot::pbDecodeMessage(const uint8_t* buffer, size_t size,
   bool res = pb_decode(&stream, messageType, dest);
 
   if (!res) {
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
   return {};

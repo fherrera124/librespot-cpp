@@ -10,6 +10,7 @@
 #include "api/ApClient.h"
 #include "api/ApConnection.h"
 #include "audio/VorbisAudioStream.h"
+#include "bell/http/Client.h"
 #include "bell/http/Reader.h"
 #include "bell/http/Server.h"
 #include "bell/http/Writer.h"
@@ -21,6 +22,14 @@
 #include "tao/json/forward.hpp"
 
 TEST_CASE("MiscSpotifyApi tests", "[MiscSpotifyApi]") {
+    // auto startTime = std::chrono::high_resolution_clock::now();
+  // std::string url = "https://apresolve.spotify.com";
+  // auto res = bell::http::request(bell::HTTPMethod::GET, url);
+  // auto body = res->getBodyStringView();
+  // std::cout << *body << std::endl;
+  // auto elapsed = std::chrono::high_resolution_clock::now() - startTime;
+  // std::cout << "Elapsed time: " << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() << " ms" << std::endl;
+  // return;
   // std::vector<uint8_t> fileId = {0x01, 0x02, 0x03, 0x04, 0x05};
   // std::string cdnUrl = "https://audio-fa-quic.spotifycdn.com/audio/8a167f50899816665fc2fbb858dd2bfa3223f135?1753799812_uSHtFc8tVUWWD4iiM4zEZFeVBjo1MO_KNWwecDQQdxc=";
   // // auto cdnStream = std::make_unique<cspot::CDNAudioStream>(cdnUrl, fileId);
@@ -83,7 +92,8 @@ TEST_CASE("MiscSpotifyApi tests", "[MiscSpotifyApi]") {
             (void)responseWriter->writeResponseWithBody(
                 200, {{"Content-Type", "application/json"}}, zeroConfString);
           } else {
-            (void)responseWriter->writeResponseWithBody(500, {}, "Invalid action");
+            (void)responseWriter->writeResponseWithBody(500, {},
+                                                        "Invalid action");
           }
         });
 

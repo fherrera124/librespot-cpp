@@ -39,8 +39,6 @@ void EventLoop::processEvents(int timeoutMs) {
     Event event = std::move(processingQueue.front());
     processingQueue.pop();
 
-    std::cout << "Got event of type: " << static_cast<int>(event.type)
-              << std::endl;
     // Call the appropriate handler for the event type
     std::scoped_lock lock(handlersMutex);
     auto it = handlers.find(event.type);

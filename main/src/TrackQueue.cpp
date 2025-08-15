@@ -44,8 +44,8 @@ std::optional<cspot_proto::ProvidedTrack> TrackQueue::currentTrack() {
     BELL_LOG(error, LOG_TAG, "Failed to resolve current track");
     return std::nullopt;
   }
-  track.uri = contextTrackRes.getValue().uri;
-  track.uid = contextTrackRes.getValue().uid;
+  track.uri = contextTrackRes->uri;
+  track.uid = contextTrackRes->uid;
   track.provider = "context";
   return track;
 }
@@ -54,18 +54,20 @@ bell::Result<> TrackQueue::skipToNextTrack(cspot_proto::ContextTrack* track) {
   auto currentTrackRes = contextTrackResolver->getCurrentTrack();
   if (!currentTrackRes) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve current track");
-    return currentTrackRes.getError();
+    return tl::make_unexpected(currentTrackRes.error());
   }
 
   auto res = contextTrackResolver->next();
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve next track");
-    return res.getError();
+    return tl::make_unexpected(res.error());
   }
 
-  previousTracks.push_back({.uri = currentTrackRes.getValue().uri,
-                            .uid = currentTrackRes.getValue().uid,
-                            .provider = "context"});
+  previousTracks.push_back({
+      .uri = currentTrackRes->uri,
+      .uid = currentTrackRes->uid,
+      .provider = "context",
+  });
 
   if (previousTracks.size() > maxEncodedTracksWindow) {
     previousTracks.erase(previousTracks.begin());
@@ -88,13 +90,13 @@ bell::Result<> TrackQueue::skipToPreviousTrack(
   auto currentTrackRes = contextTrackResolver->getCurrentTrack();
   if (!currentTrackRes) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve current track");
-    return currentTrackRes.getError();
+    return tl::make_unexpected(currentTrackRes.error());
   }
 
   auto res = contextTrackResolver->previous();
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve next track");
-    return res.getError();
+    return tl::make_unexpected(res.error());
   }
 
   previousTracks.clear();
@@ -139,10 +141,10 @@ std::optional<cspot_proto::ContextIndex> TrackQueue::currentContextIndex() {
   }
 
   BELL_LOG(info, LOG_TAG, "Current context index: page={}, track={}",
-           contextTrackRes.getValue().index.page,
-           contextTrackRes.getValue().index.track);
+           contextTrackRes->index.page,
+           contextTrackRes->index.track);
 
-  return contextTrackRes.getValue().index;
+  return contextTrackRes->index;
 };
 
 bool TrackQueue::encodePbTracks(pb_ostream_t* stream, const pb_field_t* field,
@@ -166,7 +168,7 @@ bell::Result<> TrackQueue::loadTrackAndContext(
   auto currentTrackRes = contextTrackResolver->getCurrentTrack();
   if (!currentTrackRes) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve current track");
-    return currentTrackRes.getError();
+    return tl::make_unexpected(currentTrackRes.error());
   }
 
   // Set shuffle context

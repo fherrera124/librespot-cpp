@@ -61,8 +61,7 @@ file(GLOB PROTOS ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf/*.proto)
 nanopb_generate_cpp(TARGET cspot-proto ${PROTOS})
 list(APPEND EXTRA_LIBS cspot-proto)
 target_compile_definitions(cspot-proto PUBLIC PB_ENABLE_MALLOC)
-target_compile_options(websockets INTERFACE -Wno-null-pointer-subtraction) #no-template-id-cdtor
-# disable no-template-id-cdtor if such warning exists
+target_compile_options(websockets INTERFACE -Wno-null-pointer-subtraction)
 
 # target_compile_definitions(cspot-proto PUBLIC PB_FIELD_32BIT)
 add_library(cspot STATIC ${SOURCES} ${PROTO_SRCS})

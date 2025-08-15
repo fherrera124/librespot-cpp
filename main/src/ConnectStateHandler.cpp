@@ -274,17 +274,9 @@ bell::Result<> ConnectStateHandler::handleTransferCommand(
     playerState.index.hasValue = false;
   }
 
-  (void)putState();
-
-  cspot_proto::AudioFile fileRes;
-  std::cout << "Track ID " << track->uri << std::endl;
-  auto metadataRes = *spClient->trackMetadata(trackId);
-  for (auto& file : metadataRes.audioFiles) {
-    if (file.format == AudioFormat_OGG_VORBIS_160) {
-      logDataBase64(file.fileId.data(), file.fileId.size());
-      fileRes = file;
-      break;
-    }
+  if (!putState()) {
+    BELL_LOG(error, LOG_TAG, "Failed to put state");
+    return {};
   }
 
   return {};
@@ -341,7 +333,10 @@ bell::Result<> ConnectStateHandler::handleSkipPrevCommand() {
           std::chrono::system_clock::now().time_since_epoch())
           .count();
 
-  (void)putState();
+  if (!putState()) {
+    BELL_LOG(error, LOG_TAG, "Failed to put state");
+    return {};
+  }
 
   return {};
 }

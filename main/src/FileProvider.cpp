@@ -66,7 +66,7 @@ void FileProvider::taskLoop() {
 
       // Post failure
       sessionContext->eventLoop->post(EventLoop::EventType::FILE_PROVIDED,
-                                      file);
+                                      *file);
       return;
     }
 
@@ -84,7 +84,7 @@ void FileProvider::taskLoop() {
 
       // Post failure
       sessionContext->eventLoop->post(EventLoop::EventType::FILE_PROVIDED,
-                                      file);
+                                      *file);
       return;
     }
 
@@ -98,7 +98,7 @@ void FileProvider::taskLoop() {
 
       // Post failure
       sessionContext->eventLoop->post(EventLoop::EventType::FILE_PROVIDED,
-                                      file);
+                                      *file);
       return;
     }
 
@@ -116,7 +116,7 @@ void FileProvider::taskLoop() {
       if (!requestRes) {
         // Post failure
         sessionContext->eventLoop->post(EventLoop::EventType::FILE_PROVIDED,
-                                        file);
+                                        *file);
         return;
       }
     }
@@ -124,7 +124,7 @@ void FileProvider::taskLoop() {
 }
 
 void FileProvider::handleAudioKeyResponse(const AudioKeyResponse& response) {
-  std::scoped_lock lock(pendingAudioKeyFiles);
+  std::scoped_lock lock(pendingAudioKeyFilesMutex);
 
   auto fileRes = pendingAudioKeyFiles.find(response.trackId);
   if (fileRes != pendingAudioKeyFiles.end()) {

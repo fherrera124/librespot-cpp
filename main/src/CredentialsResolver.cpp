@@ -302,6 +302,7 @@ bell::Result<> CredentialsResolver::updateClientToken() {
     // Could not encode the message
     return tl::make_unexpected(res.error());
   }
+  auto startTime = std::chrono::system_clock::now();
 
   auto httpConnectionResponse = bell::http::requestWithBody(
       bell::HTTPMethod::POST, "https://clienttoken.spotify.com/v1/clienttoken",
@@ -311,6 +312,8 @@ bell::Result<> CredentialsResolver::updateClientToken() {
            "application/x-protobuf",
        }},
       encodedBuffer);
+  auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now() - startTime).count();
   if (!httpConnectionResponse) {
     return tl::make_unexpected(httpConnectionResponse.error());
   }
@@ -337,8 +340,9 @@ bell::Result<> CredentialsResolver::updateClientToken() {
         std::chrono::system_clock::now() +
         std::chrono::seconds(tokenResponse.granted_token.expires_after_seconds);
 
-    BELL_LOG(debug, LOG_TAG, "Client token received, expires in {}",
-             tokenResponse.granted_token.expires_after_seconds);
+
+    BELL_LOG(debug, LOG_TAG, "Client token received, expires in {}, elapsedMs={}",
+             tokenResponse.granted_token.expires_after_seconds, elapsedMs);
   }
 
   return {};

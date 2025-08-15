@@ -58,6 +58,14 @@ bell::Result<> ApConnection::connect() {
   // Register writeable / connected listener
   sessionContext->socketPoll.registerSocket(
       apSock, bell::PollEvent::Writeable, [this](auto& /*sock*/) {
+        if (apSock->lastError()) {
+          BELL_LOG(error, LOG_TAG, "AP connection error: {}",
+                   apSock->lastError());
+          state = State::ERROR;
+          apSock->close();
+          return;
+        }
+
         BELL_LOG(info, LOG_TAG, "AP connection established");
         if (state == State::INITIAL) {
           auto res = sendClientHelloPacket();

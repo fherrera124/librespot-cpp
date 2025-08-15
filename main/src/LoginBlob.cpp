@@ -12,6 +12,7 @@
 #include "Utils.h"
 #include "bell/Result.h"
 #include "bell/net/URIParser.h"
+#include "tl/expected.hpp"
 
 using namespace cspot;
 
@@ -92,8 +93,8 @@ bell::Result<tao::json::value> LoginBlob::getJSONForStorage() {
   if (!isAuthenticated()) {
     BELL_LOG(error, LOG_TAG,
              "Cannot get JSON for storage, user is not authenticated");
-    return std::errc::operation_not_permitted;
-    return bell::make_unexpected_errc(std::errc::operation_not_permitted);
+    return bell::make_unexpected_errc<tao::json::value>(
+        std::errc::operation_not_permitted);
   }
 
   tao::json::value obj;
@@ -111,43 +112,43 @@ bell::Result<> LoginBlob::restoreFromJSON(const tao::json::value& jsonData) {
 
   if (!jsonData.is_object()) {
     BELL_LOG(error, LOG_TAG, "JSON data is not an object");
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
   if (!jsonData.at("deviceName").is_string()) {
     BELL_LOG(error, LOG_TAG, "Device name not found in JSON data");
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
   deviceName = jsonData.at("deviceName").get_string();
 
   if (!jsonData.at("deviceId").is_string()) {
     BELL_LOG(error, LOG_TAG, "Device ID not found in JSON data");
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
   deviceId = jsonData.at("deviceId").get_string();
 
   if (!jsonData.at("username").is_string()) {
     BELL_LOG(error, LOG_TAG, "Username not found in JSON data");
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
   username = jsonData.at("username").get_string();
 
   if (!jsonData.at("authType").is_number()) {
     BELL_LOG(error, LOG_TAG, "Auth type not found in JSON data");
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
   authType = jsonData.at("authType").get_unsigned();
 
   if (!jsonData.at("authBlob").is_string()) {
     BELL_LOG(error, LOG_TAG, "Auth blob not found in JSON data");
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
   auto authBlobBase64 = jsonData.at("authBlob").get_string();
   auto decodeRes = base64Decode(authBlobBase64, authBlob);
   if (!decodeRes) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode auth blob");
-    return decodeRes.getError();
+    return decodeRes;
   }
 
   return {};
@@ -157,18 +158,18 @@ bell::Result<> LoginBlob::authenticateZeroconfQuery(
     const std::unordered_map<std::string, std::string>& queryParams) {
   if (!queryParams.contains("blob") || queryParams.at("blob").empty()) {
     BELL_LOG(error, LOG_TAG, "Blob not found in query string");
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
   if (!queryParams.contains("deviceId") || queryParams.at("deviceId").empty()) {
     BELL_LOG(error, LOG_TAG, "Device ID not found in query string");
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
   if (!queryParams.contains("clientKey") ||
       queryParams.at("clientKey").empty()) {
     BELL_LOG(error, LOG_TAG, "Client key not found in query string");
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
   // Holds base64 decoded blob and client key
   std::vector<uint8_t> decodedBlob;
@@ -177,23 +178,23 @@ bell::Result<> LoginBlob::authenticateZeroconfQuery(
   auto res = base64Decode(queryParams.at("blob"), decodedBlob);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode blob");
-    return res.getError();
+    return res;
   }
 
   res = base64Decode(queryParams.at("clientKey"), decodedClientKey);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode client key");
-    return res.getError();
+    return res;
   }
 
   username = queryParams.at("userName");
   auto encryptedAuthBlobRes = decodeZeroconfBlob(decodedBlob, decodedClientKey);
   if (!encryptedAuthBlobRes) {
     BELL_LOG(error, LOG_TAG, "Failed to decode zeroconf blob");
-    return encryptedAuthBlobRes.getError();
+    return tl::make_unexpected(encryptedAuthBlobRes.error());
   }
 
-  encryptedAuthBlob = encryptedAuthBlobRes.takeValue();
+  encryptedAuthBlob = *encryptedAuthBlobRes;
 
   // Decode the auth blob
   return decodeEncryptedAuthBlob(username, encryptedAuthBlob);
@@ -214,7 +215,7 @@ bell::Result<> LoginBlob::authenticateZeroconfString(
 
     size_t eqPos = queryString.find('=', pos);
     if (eqPos == std::string::npos || eqPos > nextPos) {
-      return std::errc::invalid_argument;
+      return bell::make_unexpected_errc(std::errc::invalid_argument);
     }
 
     // Perform URL decoding
@@ -277,7 +278,8 @@ bell::Result<std::vector<uint8_t>> LoginBlob::decodeZeroconfBlob(
 
   if (!std::equal(mac.begin(), mac.end(), checksum.begin())) {
     BELL_LOG(error, LOG_TAG, "Encryption and checksum keys do not match");
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc<std::vector<uint8_t>>(
+        std::errc::bad_message);
   }
 
   // Initialize the aes context
@@ -292,7 +294,8 @@ bell::Result<std::vector<uint8_t>> LoginBlob::decodeZeroconfBlob(
   if (mbedtls_aes_setkey_enc(&aesCtx, encryptionKey.data(), 128) != 0) {
     BELL_LOG(error, LOG_TAG, "Failed to set AES key");
     mbedtls_aes_free(&aesCtx);
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc<std::vector<uint8_t>>(
+        std::errc::bad_message);
   }
 
   std::array<uint8_t, 16> nounceCounter;
@@ -309,7 +312,8 @@ bell::Result<std::vector<uint8_t>> LoginBlob::decodeZeroconfBlob(
           authBlob.data()) != 0) {
     BELL_LOG(error, LOG_TAG, "Failed to aes decrypt auth data");
     mbedtls_aes_free(&aesCtx);
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc<std::vector<uint8_t>>(
+        std::errc::bad_message);
   }
 
   mbedtls_aes_free(&aesCtx);
@@ -333,7 +337,7 @@ bell::Result<> LoginBlob::decodeEncryptedAuthBlob(
 
   if (!decodeRes) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode auth blob");
-    return decodeRes.getError();
+    return decodeRes;
   }
 
   // Calculate the pbkdf2 hmac
@@ -350,7 +354,7 @@ bell::Result<> LoginBlob::decodeEncryptedAuthBlob(
   if (res != 0) {
     BELL_LOG(error, LOG_TAG, "Failed to calculate pbkdf2, mbedtls error: {}",
              res);
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
 
   // Calculate the sha1 hmac
@@ -371,7 +375,7 @@ bell::Result<> LoginBlob::decodeEncryptedAuthBlob(
   if (mbedtls_aes_setkey_dec(&aesCtx, baseKeyHashed.data(), 192) != 0) {
     BELL_LOG(error, LOG_TAG, "Failed to set AES key");
     mbedtls_aes_free(&aesCtx);
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
 
   for (uint64_t x = 0; x < base64DecodedAuthData.size() / 16; x++) {
@@ -383,7 +387,7 @@ bell::Result<> LoginBlob::decodeEncryptedAuthBlob(
                               decryptedChunk.data()) != 0) {
       BELL_LOG(error, LOG_TAG, "Failed to aes decrypt auth data");
       mbedtls_aes_free(&aesCtx);
-      return std::errc::bad_message;
+      return bell::make_unexpected_errc<>(std::errc::bad_message);
     }
 
     std::copy(decryptedChunk.begin(), decryptedChunk.end(),
@@ -446,7 +450,7 @@ bell::Result<> LoginBlob::base64Decode(std::string_view encoded,
       nullptr, 0, &outputSize, reinterpret_cast<const uint8_t*>(encoded.data()),
       encoded.size());
   if (outputSize == 0) {
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
 
   targetBuffer.resize(outputSize);
@@ -455,7 +459,7 @@ bell::Result<> LoginBlob::base64Decode(std::string_view encoded,
                               reinterpret_cast<const uint8_t*>(encoded.data()),
                               encoded.size());
   if (res != 0) {
-    return std::errc::bad_message;
+    return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
 
   return {};

@@ -7,4 +7,4 @@
 	url = git@github.com:nanopb/nanopb.git
 [submodule "external/websocketpp"]
 	path = external/websocketpp
-	url = git@github.com:zaphoyd/websocketpp.git
+	url = git@github.com:feelfreelinux/websocketpp.git
