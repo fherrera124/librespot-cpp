@@ -1,22 +1,20 @@
 #include "api/CredentialsResolver.h"
 
-// Library includes
-#include <bell/http/Client.h>
 #include <mutex>
+
+// Library includes
 #include <tao/json.hpp>
 #include <tao/json/contrib/traits.hpp>
 #include "bell/Logger.h"
-
-// Own includes
-#include "LoginBlob.h"
-#include "NanoPBExtensions.h"
+#include "bell/http/Client.h"
 
 // Protobufs
 #include "bell/Result.h"
-#include "bell/http/Common.h"
-#include "clienttoken.pb.h"
-#include "login5.pb.h"
-#include "tl/expected.hpp"
+#include "proto/ClientTokenPb.h"
+#include "proto/Login5Pb.h"
+#include "proto/NanoPBHelper.h"
+
+#include "AuthInfo.h"
 
 using namespace cspot;
 
@@ -42,310 +40,252 @@ const std::string dealerKey = "dealer-g2";
 const std::string spClientKey = "spclient";
 }  // namespace
 
-CredentialsResolver::CredentialsResolver(
-    std::shared_ptr<bell::HTTPClient> httpClient,
-    std::shared_ptr<LoginBlob> loginBlob)
-    : httpClient(std::move(httpClient)), loginBlob(std::move(loginBlob)) {
-  // Set expiration time to now, will be updated on first call
-  this->addressesExpiresAt =
-      std::chrono::system_clock::now() - std::chrono::hours(1);
-  this->clientTokenExpiresAt =
-      std::chrono::system_clock::now() - std::chrono::hours(1);
-  this->accessKeyExpiresAt =
-      std::chrono::system_clock::now() - std::chrono::hours(1);
-}
-
-bell::Result<std::string> CredentialsResolver::getApAddress(AddressType type) {
-  std::scoped_lock lock(this->accessMutex);
-  // Get current time in seconds
-  auto currentTime = std::chrono::system_clock::now();
-
-  // Check if the address is expired
-  if (currentTime > addressesExpiresAt) {
-    auto res = updateAddresses();
-    if (!res) {
-      return tl::make_unexpected(res.error());
-    }
-  }
-
-  switch (type) {
-    case AddressType::AccessPoint:
-      return this->apAddresses[0];
-    case AddressType::Dealer:
-      return this->dealerAddresses[0];
-    case AddressType::SpClient:
-      return this->spClientAddresses[0];
-  }
-
-  return bell::make_unexpected_errc<std::string>(std::errc::bad_message);
-}
-
-bell::Result<std::string> CredentialsResolver::getClientToken() {
-  std::scoped_lock lock(this->accessMutex);
-  // Get current time in seconds
-  auto currentTime = std::chrono::system_clock::now();
-
-  // Check if the token is expired
-  if (currentTime > clientTokenExpiresAt) {
-    auto res = updateClientToken();
-
-    if (!res) {
-      return tl::make_unexpected(res.error());
-    }
-  }
-
-  return this->clientToken;
-}
-
-bell::Result<std::string> CredentialsResolver::getAccessKey() {
-  std::scoped_lock lock(this->accessMutex);
-  // Get current time in seconds
-  auto currentTime = std::chrono::system_clock::now();
-
-  // Check if the key is expired
-  if (currentTime > accessKeyExpiresAt) {
-    auto res = updateAccessKey();
-    if (!res) {
-      return tl::make_unexpected(res.error());
-    }
-  }
-
-  return this->accessKey;
-}
-
-bell::Result<> CredentialsResolver::updateAddresses() {
-  std::scoped_lock lock(this->accessMutex);
-
-  // Fetch new addresses
-  auto response = httpClient->get(apResolveUrl);
-  if (!response) {
-    return tl::make_unexpected(response.error());
-  }
-
-  if (response->statusCode == 200) {
-    auto responseStr = *response->text();
-
-    // parse json
-    const auto& json = tao::json::from_string(responseStr);
-
-    if (json.at(accessPointKey).is_array() && json.at(dealerKey).is_array() &&
-        json.at(spClientKey).is_array()) {
-      this->apAddresses =
-          json.at(accessPointKey).as<std::vector<std::string>>();
-      json.at(accessPointKey).to(this->apAddresses);
-      json.at(dealerKey).to(this->dealerAddresses);
-      json.at(spClientKey).to(this->spClientAddresses);
-    } else {
-      return bell::make_unexpected_errc(std::errc::bad_message);
-    }
-  } else {
-    return bell::make_unexpected_errc(
-        std::errc::resource_unavailable_try_again);
-  }
-
-  // Set expiration time to 1 hour from now
-  this->addressesExpiresAt =
-      std::chrono::system_clock::now() + std::chrono::hours(1);
-
-  return {};
-}
-
-bell::Result<> CredentialsResolver::updateAccessKey() {
-  std::scoped_lock lock(this->accessMutex);
-
-  if (!loginBlob->isAuthenticated()) {
-    BELL_LOG(error, LOG_TAG,
-             "Cannot fetch access key, user is not authenticated");
-
-    return bell::make_unexpected_errc(std::errc::operation_not_permitted);
-  }
-
-  auto tokenRes = getClientToken();
-
-  if (!tokenRes) {
-    return tl::make_unexpected(tokenRes.error());
-  }
-
-  // Prepare a protobuf login request
-  LoginRequest loginRequest = LoginRequest_init_zero;
-  LoginResponse loginResponse = LoginResponse_init_zero;
-
-  // Assign necessary request fields
-  loginRequest.client_info.client_id.funcs.encode = &cspot::pbEncodeString;
-  loginRequest.client_info.client_id.arg = &spotifyClientId;
-
-  std::string deviceId = loginBlob->getDeviceId();
-  std::string username = loginBlob->getUsername();
-
-  loginRequest.client_info.device_id.funcs.encode = &cspot::pbEncodeString;
-  loginRequest.client_info.device_id.arg = &deviceId;
-
-  loginRequest.login_method.stored_credential.username.funcs.encode =
-      &cspot::pbEncodeString;
-  loginRequest.login_method.stored_credential.username.arg = &username;
-
-  // Set login method to stored credential
-  loginRequest.which_login_method = LoginRequest_stored_credential_tag;
-  loginRequest.login_method.stored_credential.data.funcs.encode =
-      &cspot::pbEncodeUint8Vector;
-
-  std::vector<uint8_t> authData = loginBlob->getStoredAuthBlob();
-  loginRequest.login_method.stored_credential.data.arg = &authData;
-
-  auto encodedSizeRes =
-      pbCalculateEncodedSize(LoginRequest_fields, &loginRequest);
-  if (!encodedSizeRes) {
-    return tl::make_unexpected(encodedSizeRes.error());
-  }
-
-  std::vector<std::byte> encodedBuffer(*encodedSizeRes);
-  auto res =
-      pbEncodeMessage(reinterpret_cast<uint8_t*>(encodedBuffer.data()),
-                      encodedBuffer.size(), LoginRequest_fields, &loginRequest);
-  if (!res) {
-    // Could not encode the message
-    return tl::make_unexpected(res.error());
-  }
-
-  auto httpConnectionResponse =
-      httpClient->post("https://login5.spotify.com/v3/login",
-                       {{"Accept", "application/x-protobuf"},
-                        {
-                            "Content-Type",
-                            "application/x-protobuf",
-                        },
-                        {"Client-Token", *tokenRes}},
-                       encodedBuffer);
-  if (!httpConnectionResponse) {
-    return tl::make_unexpected(httpConnectionResponse.error());
-  }
-
-  if (httpConnectionResponse->statusCode == 200) {
-    loginResponse.ok.access_token.funcs.decode = &cspot::pbDecodeString;
-    loginResponse.ok.access_token.arg = &this->accessKey;
-
-    auto decodeRes = pbDecodeMessage(
-        reinterpret_cast<const uint8_t*>(*httpConnectionResponse->bytesPtr()),
-        *httpConnectionResponse->bytesLength(), LoginResponse_fields,
-        &loginResponse);
-
-    if (!decodeRes) {
-      return decodeRes;
-    }
-
-    if (loginResponse.has_error) {
-      BELL_LOG(error, LOG_TAG,
-               "Error while fetching access key (LoginError enum): {}",
-               static_cast<int>(loginResponse.error));
-      return bell::make_unexpected_errc(
-          std::errc::resource_unavailable_try_again);
-    }
-
-    this->accessKeyExpiresAt =
-        std::chrono::system_clock::now() +
-        std::chrono::seconds(loginResponse.ok.access_token_expires_in);
-
-    BELL_LOG(debug, LOG_TAG, "Access key received, expires in {}",
-             loginResponse.ok.access_token_expires_in);
-  } else {
-    BELL_LOG(error, LOG_TAG,
-             "Error while fetching access key (HTTP status code): {}",
-             httpConnectionResponse->statusCode);
-    return bell::make_unexpected_errc(
-        std::errc::resource_unavailable_try_again);
-  }
-
-  return {};
-}
-
-bell::Result<> CredentialsResolver::updateClientToken() {
-  std::scoped_lock lock(this->accessMutex);
-  BELL_LOG(debug, LOG_TAG, "Fetching client token");
-  ClientTokenRequest request = ClientTokenRequest_init_zero;
-
-  // Prepare request
-  request.request_type = ClientTokenRequestType_REQUEST_CLIENT_DATA_REQUEST;
-  request.which_request = ClientTokenRequest_client_data_tag;
-
-  std::string clientVersion = "0.1.0";
-  std::string deviceId = loginBlob->getDeviceId();
-
-  ClientDataRequest* clientDataRequest = &request.request.client_data;
-  clientDataRequest->client_version.funcs.encode = pbEncodeString;
-  clientDataRequest->client_version.arg = &clientVersion;
-
-  clientDataRequest->client_id.funcs.encode = &pbEncodeString;
-  clientDataRequest->client_id.arg = &spotifyClientId;
-  clientDataRequest->which_data = ClientDataRequest_connectivity_sdk_data_tag;
-  clientDataRequest->data.connectivity_sdk_data.device_id.funcs.encode =
-      &pbEncodeString;
-  clientDataRequest->data.connectivity_sdk_data.device_id.arg = &deviceId;
-
-  clientDataRequest->data.connectivity_sdk_data.has_platform_specific_data =
-      true;
-  clientDataRequest->data.connectivity_sdk_data.platform_specific_data
-      .which_data = PlatformSpecificData_desktop_linux_tag;
-  clientDataRequest->data.connectivity_sdk_data.platform_specific_data.data
-      .desktop_linux = NativeDesktopLinuxData_init_zero;
-
-  auto encodedSizeRes =
-      pbCalculateEncodedSize(ClientTokenRequest_fields, &request);
-
-  if (!encodedSizeRes) {
-    return tl::make_unexpected(encodedSizeRes.error());
-  }
-
-  std::vector<std::byte> encodedBuffer(*encodedSizeRes);
-  auto res = pbEncodeMessage(reinterpret_cast<uint8_t*>(encodedBuffer.data()),
-                             encodedBuffer.size(), ClientTokenRequest_fields,
-                             &request);
-  if (!res) {
-    // Could not encode the message
-    return tl::make_unexpected(res.error());
-  }
-  auto startTime = std::chrono::system_clock::now();
-
-  auto httpConnectionResponse =
-      httpClient->post("https://clienttoken.spotify.com/v1/clienttoken",
-                       {{"Accept", "application/x-protobuf"},
-                        {
-                            "Content-Type",
-                            "application/x-protobuf",
-                        }},
-                       encodedBuffer);
-  auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::system_clock::now() - startTime)
-                       .count();
-  if (!httpConnectionResponse) {
-    return tl::make_unexpected(httpConnectionResponse.error());
-  }
-
-  if (httpConnectionResponse->contentLength > 0) {
-    ClientTokenResponse tokenResponse = ClientTokenResponse_init_zero;
-    std::string clientTokenString;
-
-    tokenResponse.granted_token.token.funcs.decode = &pbDecodeString;
-    tokenResponse.granted_token.token.arg = &clientTokenString;
-
-    auto res = pbDecodeMessage(
-        reinterpret_cast<const uint8_t*>(*httpConnectionResponse->bytesPtr()),
-        *httpConnectionResponse->bytesLength(), ClientTokenResponse_fields,
-        &tokenResponse);
-
-    if (!res) {
-      return res;
-    }
-
-    // Save the token
-    this->clientToken = clientTokenString;
+class DefaultCredentialsResolver : public CredentialsResolver {
+ public:
+  DefaultCredentialsResolver(std::shared_ptr<bell::HTTPClient> httpClient,
+                             std::shared_ptr<AuthInfo> authInfo)
+      : httpClient(std::move(httpClient)), authInfo(std::move(authInfo)) {
+    // Set expiration time to now, will be updated on first call
+    this->addressesExpiresAt =
+        std::chrono::system_clock::now() - std::chrono::hours(1);
     this->clientTokenExpiresAt =
-        std::chrono::system_clock::now() +
-        std::chrono::seconds(tokenResponse.granted_token.expires_after_seconds);
-
-    BELL_LOG(debug, LOG_TAG,
-             "Client token received, expires in {}, elapsedMs={}",
-             tokenResponse.granted_token.expires_after_seconds, elapsedMs);
+        std::chrono::system_clock::now() - std::chrono::hours(1);
+    this->accessKeyExpiresAt =
+        std::chrono::system_clock::now() - std::chrono::hours(1);
   }
 
-  return {};
+  bell::Result<std::string> getApAddress(AddressType type,
+                                         sysclock_timepoint now) override {
+    std::scoped_lock lock(this->accessMutex);
+
+    // Check if the address is expired
+    if (now > addressesExpiresAt) {
+      auto res = fetchApAdresses();
+      if (!res) {
+        return tl::make_unexpected(res.error());
+      }
+
+      // Copy returned addresses
+      res->at(accessPointKey).to(apAddresses);
+      res->at(dealerKey).to(dealerAddresses);
+      res->at(spClientKey).to(spClientAddresses);
+
+      // Expire in 1h
+      addressesExpiresAt = now + std::chrono::hours(1);
+    }
+
+    if (apAddresses.empty() || dealerAddresses.empty() ||
+        spClientAddresses.empty()) {
+      return bell::make_unexpected_errc<std::string>(std::errc::bad_message);
+    }
+
+    switch (type) {
+      case AddressType::AccessPoint:
+        return this->apAddresses[0];
+      case AddressType::Dealer:
+        return this->dealerAddresses[0];
+      case AddressType::SpClient:
+        return this->spClientAddresses[0];
+    }
+
+    return bell::make_unexpected_errc<std::string>(std::errc::bad_message);
+  }
+
+  bell::Result<std::string> getClientToken(
+      sysclock_timepoint now = std::chrono::system_clock::now()) override {
+    std::scoped_lock lock(this->accessMutex);
+
+    // Check if the address is expired
+    if (now > clientTokenExpiresAt) {
+      auto res = fetchClientToken();
+      if (!res) {
+        return tl::make_unexpected(res.error());
+      }
+
+      clientToken = res->first;
+      clientTokenExpiresAt = now + std::chrono::seconds(res->second);
+    }
+
+    return clientToken;
+  }
+
+  bell::Result<std::string> getAccessKey(
+      sysclock_timepoint now = std::chrono::system_clock::now()) override {
+    std::scoped_lock lock(this->accessMutex);
+
+    // Check if the address is expired
+    if (now > accessKeyExpiresAt) {
+      auto res = fetchAccessKey();
+      if (!res) {
+        return tl::make_unexpected(res.error());
+      }
+
+      accessKey = res->first;
+      accessKeyExpiresAt = now + std::chrono::seconds(res->second);
+    }
+
+    return accessKey;
+  }
+
+ private:
+  const char* LOG_TAG = "CredentialsResolver";
+
+  std::shared_ptr<bell::HTTPClient> httpClient;
+  std::shared_ptr<AuthInfo> authInfo;
+
+  std::mutex accessMutex;
+
+  // Expiry dates
+  sysclock_timepoint addressesExpiresAt;
+  sysclock_timepoint clientTokenExpiresAt;
+  sysclock_timepoint accessKeyExpiresAt;
+
+  // Cached values
+  std::vector<std::string> apAddresses;
+  std::vector<std::string> dealerAddresses;
+  std::vector<std::string> spClientAddresses;
+  std::string clientToken;
+  std::string accessKey;
+
+  /**
+   * @brief Fetches a list of ap addresses
+   */
+  bell::Result<tao::json::value> fetchApAdresses() {
+    // Fetch new addresses
+    auto response = httpClient->get(apResolveUrl);
+    if (!response) {
+      return tl::make_unexpected(response.error());
+    }
+
+    if (response->statusCode == 200) {
+      return tao::json::from_string(*response->text());
+    }
+
+    return bell::make_unexpected_errc<tao::json::value>(
+        std::errc::resource_unavailable_try_again);
+  }
+
+  /**
+   * @brief Fetches a new client token and its expireation date
+   */
+  bell::Result<std::pair<std::string, int32_t>> fetchClientToken() {
+    BELL_LOG(debug, LOG_TAG, "Fetching client token");
+    cspot_proto::ClientTokenRequest request;
+
+    request.requestType = ClientTokenRequestType_REQUEST_CLIENT_DATA_REQUEST;
+    request.clientData.clientId = spotifyClientId;
+    request.clientData.clientVersion = "0.1.0";
+    request.clientData.connectivitySdkData.deviceId = authInfo->deviceId;
+
+    std::vector<std::byte> encodedBuffer;
+    if (!nanopb_helper::encodeToVector(request, encodedBuffer)) {
+      return bell::make_unexpected_errc<std::pair<std::string, int32_t>>(
+          std::errc::bad_message);
+    }
+
+    auto clientTokenResponse =
+        httpClient->post("https://clienttoken.spotify.com/v1/clienttoken",
+                         {{"Accept", "application/x-protobuf"},
+                          {
+                              "Content-Type",
+                              "application/x-protobuf",
+                          }},
+                         encodedBuffer);
+
+    if (!clientTokenResponse) {
+      return tl::make_unexpected(clientTokenResponse.error());
+    }
+
+    if (clientTokenResponse->statusCode == 200 &&
+        clientTokenResponse->contentLength > 0) {
+      cspot_proto::ClientTokenResponse tokenResponse;
+
+      if (!nanopb_helper::decodeFromBuffer(
+              tokenResponse, *clientTokenResponse->bytesPtr(),
+              *clientTokenResponse->bytesLength())) {
+        return bell::make_unexpected_errc<std::pair<std::string, int32_t>>(
+            std::errc::bad_address);
+      }
+
+      BELL_LOG(debug, LOG_TAG, "Client token received, expires in {}",
+               tokenResponse.grantedToken.expiresAfterSeconds);
+
+      return std::pair(tokenResponse.grantedToken.token,
+                       tokenResponse.grantedToken.expiresAfterSeconds);
+    }
+
+    return bell::make_unexpected_errc<std::pair<std::string, int32_t>>(
+        std::errc::resource_unavailable_try_again);
+  }
+
+  /**
+   * @brief Fetches a new authenticated access key
+   */
+  bell::Result<std::pair<std::string, int32_t>> fetchAccessKey() {
+    auto tokenRes = getClientToken();
+
+    if (!tokenRes) {
+      return tl::make_unexpected(tokenRes.error());
+    }
+
+    // Prepare a protobuf login request
+    cspot_proto::LoginRequest loginRequest;
+
+    // Assign necessary request fields
+    loginRequest.clientInfo.clientId = spotifyClientId;
+    loginRequest.clientInfo.deviceId = authInfo->deviceId;
+    loginRequest.storedCredential.data = authInfo->loginCredentials->authData;
+    loginRequest.storedCredential.username =
+        authInfo->loginCredentials->username;
+
+    std::vector<std::byte> encodedBuffer;
+    if (!nanopb_helper::encodeToVector(loginRequest, encodedBuffer)) {
+      return bell::make_unexpected_errc<std::pair<std::string, int32_t>>(
+          std::errc::bad_message);
+    }
+
+    auto httpLoginResponse =
+        httpClient->post("https://login5.spotify.com/v3/login",
+                         {{"Accept", "application/x-protobuf"},
+                          {
+                              "Content-Type",
+                              "application/x-protobuf",
+                          },
+                          {"Client-Token", *tokenRes}},
+                         encodedBuffer);
+    if (!httpLoginResponse) {
+      return tl::make_unexpected(httpLoginResponse.error());
+    }
+
+    if (httpLoginResponse->statusCode == 200) {
+      cspot_proto::LoginResponse loginResponse;
+
+      if (!nanopb_helper::decodeFromBuffer(loginResponse,
+                                           *httpLoginResponse->bytesPtr(),
+                                           *httpLoginResponse->bytesLength())) {
+        return bell::make_unexpected_errc<std::pair<std::string, int32_t>>(
+            std::errc::bad_message);
+      }
+      if (loginResponse.loginError.hasValue) {
+        BELL_LOG(error, LOG_TAG,
+                 "Error while fetching access key (LoginError enum): {}",
+                 static_cast<int>(loginResponse.loginError.value));
+        return bell::make_unexpected_errc<std::pair<std::string, int32_t>>(
+            std::errc::resource_unavailable_try_again);
+      }
+
+      return std::pair(loginResponse.loginOk.value.accessToken,
+                       loginResponse.loginOk.value.accessTokenExpiresIn);
+    }
+
+    return bell::make_unexpected_errc<std::pair<std::string, int32_t>>(
+        std::errc::bad_message);
+  }
+};
+
+std::unique_ptr<CredentialsResolver> cspot::createDefaultCredentialsResolver(
+    std::shared_ptr<bell::HTTPClient> httpClient,
+    std::shared_ptr<AuthInfo> authInfo) {
+  return std::make_unique<DefaultCredentialsResolver>(std::move(httpClient),
+                                                      std::move(authInfo));
 }

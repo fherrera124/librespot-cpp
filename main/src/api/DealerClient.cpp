@@ -3,15 +3,15 @@
 // Library includes
 #include <tao/json.hpp>
 
-#include "SessionContext.h"
 #include "bell/Result.h"
+#include "bell/net/SocketPollListener.h"
+#include "events/EventLoop.h"
 #include "tl/expected.hpp"
 
 using namespace cspot;
 
-DealerClient::DealerClient(
-    std::shared_ptr<cspot::SessionContext> sessionContext)
-    : sessionContext(std::move(sessionContext)) {
+DealerClient::DealerClient(std::shared_ptr<cspot::EventLoop> eventLoop)
+    : eventLoop(std::move(eventLoop)) {
   // Bind websocket client handlers
   wsClient.set_open_handler(websocketpp::lib::bind(
       &DealerClient::onWSOpen, this, websocketpp::lib::placeholders::_1));
@@ -27,35 +27,22 @@ DealerClient::DealerClient(
       websocketpp::lib::placeholders::_2, websocketpp::lib::placeholders::_3));
 }
 
-bell::Result<> DealerClient::connect() {
+bell::Result<> DealerClient::connect(
+    const std::string& dealerAddress, const std::string& accessKey,
+    const std::shared_ptr<bell::SocketPollListener>& socketPoll) {
   connectionReady = false;
 
-  auto accessKey = sessionContext->credentialsResolver->getAccessKey();
-  if (!accessKey) {
-    BELL_LOG(error, LOG_TAG, "Could not get access key: {}", accessKey.error());
-    return tl::make_unexpected(accessKey.error());
-  }
-  auto dealerAddress = sessionContext->credentialsResolver->getApAddress(
-      CredentialsResolver::AddressType::Dealer);
-  if (!dealerAddress) {
-    BELL_LOG(error, LOG_TAG, "Could not get dealer address: {}",
-             dealerAddress.error());
-    return tl::make_unexpected(dealerAddress.error());
-  }
-
-  std::string dealerAddressStr = *dealerAddress;
-
   std::string connectionUrl =
-      fmt::format("{}/?access_token={}", dealerAddressStr, *accessKey);
+      fmt::format("{}/?access_token={}", dealerAddress, accessKey);
 
   // Get everything before ":" in the dealer address
-  std::string::size_type pos = dealerAddressStr.find(':');
+  std::string::size_type pos = dealerAddress.find(':');
   if (pos == std::string::npos) {
     BELL_LOG(error, LOG_TAG, "Dealer address does not contain port");
     return bell::make_unexpected_errc(std::errc::invalid_argument);
   }
   // Get the host part of the dealer address
-  std::string dealerHost = dealerAddressStr.substr(0, pos);
+  std::string dealerHost = dealerAddress.substr(0, pos);
 
   socket = std::make_shared<bell::net::TLSSocket>();
   auto connectRes = socket->connect(dealerHost, 443, 3000);
@@ -69,7 +56,7 @@ bell::Result<> DealerClient::connect() {
   wsClient.clear_access_channels(websocketpp::log::alevel::none);
 
   // Register readable listener
-  sessionContext->socketPoll.registerSocket(
+  socketPoll->registerSocket(
       socket, bell::PollEvent::Readable, [this](auto& sock) {
         if (wsConnection) {
           auto res = sock.read(inputBuffer.data(), inputBuffer.size());
@@ -89,9 +76,9 @@ bell::Result<> DealerClient::connect() {
       });
 
   // Register writeable / connected listener
-  sessionContext->socketPoll.registerSocket(
+  socketPoll->registerSocket(
       socket, bell::PollEvent::Writeable,
-      [this, connectionUrl](auto& /*sock*/) {
+      [this, connectionUrl, socketPoll](auto& /*sock*/) {
         if (!wsConnection) {
           websocketpp::lib::error_code ec;
           wsConnection = wsClient.get_connection("wss://" + connectionUrl, ec);
@@ -112,8 +99,7 @@ bell::Result<> DealerClient::connect() {
         }
 
         // We are connected, unregister the writeable event
-        sessionContext->socketPoll.unregisterSocket(socket,
-                                                    bell::PollEvent::Writeable);
+        socketPoll->unregisterSocket(socket, bell::PollEvent::Writeable);
       });
 
   return {};
@@ -139,7 +125,7 @@ void DealerClient::onWSClose(websocketpp::connection_hdl /*conn*/) {
 std::error_code DealerClient::wsWriteHandler(websocketpp::connection_hdl hdl,
                                              char const* data, size_t size) {
   if (socket->isValid()) {
-    auto result = socket->write(reinterpret_cast<const uint8_t*>(data), size);
+    auto result = socket->write(reinterpret_cast<const std::byte*>(data), size);
 
     if (!result || *result != size) {
       BELL_LOG(error, LOG_TAG, "Could not write to socket");
@@ -176,11 +162,9 @@ void DealerClient::onWSMessage(websocketpp::connection_hdl conn,
     std::string type = jsonMessage["type"].get_string();
 
     if (type == "message") {
-      sessionContext->eventLoop->post(EventLoop::EventType::DEALER_MESSAGE,
-                                      jsonMessage);
+      eventLoop->post(EventLoop::EventType::DEALER_MESSAGE, jsonMessage);
     } else if (type == "request") {
-      sessionContext->eventLoop->post(EventLoop::EventType::DEALER_REQUEST,
-                                      jsonMessage);
+      eventLoop->post(EventLoop::EventType::DEALER_REQUEST, jsonMessage);
     } else {
       BELL_LOG(debug, LOG_TAG, "Unknown message type: {}", type);
     }

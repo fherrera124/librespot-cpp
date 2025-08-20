@@ -32,7 +32,7 @@ NANOPB_STRUCT(cspot_proto::ImageGroup, ImageGroup_fields)
 
 namespace cspot_proto {
 struct Album {
-  std::vector<uint8_t> gid;
+  std::vector<std::byte> gid;
   std::string name;
   nanopb_helper::Optional<cspot_proto::ImageGroup> coverGroup;
 
@@ -50,7 +50,7 @@ NANOPB_STRUCT(cspot_proto::Album, Album_fields)
 
 namespace cspot_proto {
 struct Artist {
-  std::vector<uint8_t> gid;
+  std::vector<std::byte> gid;
   std::string name;
 
   static auto bindFields(Artist* self, bool isDecode) {
@@ -65,13 +65,13 @@ NANOPB_STRUCT(cspot_proto::Artist, Artist_fields)
 
 namespace cspot_proto {
 struct AudioFile {
-  std::vector<uint8_t> fileId;
+  std::vector<std::byte> fileId;
   AudioFormat format;
 
   static auto bindFields(AudioFile* self, bool isDecode) {
     _AudioFile rawProto = AudioFile_init_zero;
     nanopb_helper::bindField(rawProto.file_id, self->fileId, isDecode);
-    nanopb_helper::bindVarintField(rawProto.format, self->format, isDecode);
+    nanopb_helper::bindField(rawProto.format, self->format, isDecode);
     return rawProto;
   }
 };
@@ -99,7 +99,7 @@ NANOPB_STRUCT(cspot_proto::Restriction, Restriction_fields)
 
 namespace cspot_proto {
 struct Track {
-  std::vector<uint8_t> gid;
+  std::vector<std::byte> gid;
   std::string name;
   int32_t durationMs;
   nanopb_helper::Optional<cspot_proto::Album> album;
@@ -117,7 +117,7 @@ NANOPB_STRUCT(cspot_proto::Track, Track_fields)
 
 namespace cspot_proto {
 struct Episode {
-  std::vector<uint8_t> gid;
+  std::vector<std::byte> gid;
   std::string name;
   int32_t durationMs;
   std::vector<cspot_proto::Restriction> restrictions;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "NanoPBHelper.h"
+#include "proto/NanoPBHelper.h"
 
 // Protobuf includes
 #include "authentication.pb.h"
@@ -14,9 +14,9 @@ struct SystemInfo {
 
   static auto bindFields(SystemInfo* self, bool isDecode) {
     _SystemInfo rawProto = SystemInfo_init_zero;
-    nanopb_helper::bindVarintField(rawProto.cpu_family, self->cpuFamily,
+    nanopb_helper::bindField(rawProto.cpu_family, self->cpuFamily,
                                    isDecode);
-    nanopb_helper::bindVarintField(rawProto.os, self->os, isDecode);
+    nanopb_helper::bindField(rawProto.os, self->os, isDecode);
     nanopb_helper::bindField(rawProto.system_information_string,
                              self->systemInformationString, isDecode);
     nanopb_helper::bindField(rawProto.device_id, self->deviceId, isDecode);
@@ -30,12 +30,12 @@ NANOPB_STRUCT(cspot_proto::SystemInfo, SystemInfo_fields);
 namespace cspot_proto {
 struct LoginCredentials {
   AuthenticationType type;
-  std::vector<uint8_t> authData;
+  std::vector<std::byte> authData;
   std::string username;
 
   static auto bindFields(LoginCredentials* self, bool isDecode) {
     _LoginCredentials rawProto = LoginCredentials_init_zero;
-    nanopb_helper::bindVarintField(rawProto.typ, self->type, isDecode);
+    nanopb_helper::bindField(rawProto.typ, self->type, isDecode);
     nanopb_helper::bindField(rawProto.auth_data, self->authData, isDecode);
     nanopb_helper::bindField(rawProto.username, self->username, isDecode);
     return rawProto;

@@ -1,18 +1,15 @@
 syntax = "proto3";
+import "nanopb.proto";
 
 message ConnectivitySdkData {
+  option (nanopb_msgopt).type = FT_CALLBACK;
   PlatformSpecificData platform_specific_data = 1;
   string device_id = 2;
 }
 
 message PlatformSpecificData {
-  oneof data {
-    NativeAndroidData android = 1;
-    NativeIOSData ios = 2;
-    NativeDesktopMacOSData desktop_macos = 3;
-    NativeDesktopWindowsData desktop_windows = 4;
-    NativeDesktopLinuxData desktop_linux = 5;
-  }
+  option (nanopb_msgopt).type = FT_CALLBACK;
+  NativeDesktopLinuxData desktop_linux = 5;
 }
 
 message NativeAndroidData {
@@ -50,6 +47,7 @@ message NativeDesktopWindowsData {
 }
 
 message NativeDesktopLinuxData {
+  option (nanopb_msgopt).type = FT_CALLBACK;
   string system_name = 1;         //  uname -s
   string system_release = 2;      //  -r
   string system_version = 3;      //  -v

@@ -23,6 +23,8 @@ bool pbDecodeStringList(pb_istream_t* stream, const pb_field_t* field,
                         void** arg);
 bool pbDecodeUint8Vector(pb_istream_t* stream, const pb_field_t* field,
                          void** arg);
+bool pbDecodeByteVector(pb_istream_t* stream, const pb_field_t* field,
+                        void** arg);
 
 // Basic encoders
 bool pbEncodeString(pb_ostream_t* stream, const pb_field_t* field,
@@ -35,6 +37,8 @@ bool pbEncodeStringList(pb_ostream_t* stream, const pb_field_t* field,
                         void* const* arg);
 bool pbEncodeUint8Vector(pb_ostream_t* stream, const pb_field_t* field,
                          void* const* arg);
+bool pbEncodeByteVector(pb_ostream_t* stream, const pb_field_t* field,
+                        void* const* arg);
 
 // Integer handling
 template <typename IntegerT>
@@ -81,6 +85,15 @@ bool pbDecodeUint8Array(pb_istream_t* stream, const pb_field_t* field,
   auto& arr = *static_cast<std::array<uint8_t, N>*>(*arg);
   assert(N == stream->bytes_left);
   return pb_read(stream, arr.data(), std::min(stream->bytes_left, N));
+}
+
+template <std::size_t N>
+bool pbDecodeByteArray(pb_istream_t* stream, const pb_field_t* field,
+                       void** arg) {
+  auto& arr = *static_cast<std::array<std::byte, N>*>(*arg);
+  assert(N == stream->bytes_left);
+  return pb_read(stream, reinterpret_cast<uint8_t*>(arr.data()),
+                 std::min(stream->bytes_left, N));
 }
 
 template <typename IntegerT>
@@ -153,137 +166,22 @@ bool pbEncodeUint8Array(pb_ostream_t* stream, const pb_field_t* field,
   return true;
 }
 
-// Binding helpers
-template <typename FieldT>
-void bindField(pb_callback_t& pbField, FieldT& field, bool isDecode) {
-  static_assert(sizeof(FieldT) == 0, "No specialization for this field type");
-}
-
-// String types
-inline void bindField(pb_callback_t& pbField, std::string& field,
-                      bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeString;
-  } else {
-    pbField.funcs.encode = &pbEncodeString;
-  }
-  pbField.arg = &field;
-}
-
-// Integer types
-template <typename IntegerT>
-void bindVarintField(pb_callback_t& pbField, IntegerT& field, bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeVarint<IntegerT>;
-  } else {
-    pbField.funcs.encode = &pbEncodeVarint<IntegerT>;
-  }
-  pbField.arg = &field;
-}
-
-// String vector types
-inline void bindField(pb_callback_t& pbField, std::vector<std::string>& field,
-                      bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeStringList;
-  } else {
-    pbField.funcs.encode = &pbEncodeStringList;
-  }
-
-  pbField.arg = &field;
-}
-
-// Varint vector types
-template <typename IntegerT>
-inline void bindVarintListField(pb_callback_t& pbField,
-                                std::vector<IntegerT>& field, bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeVarintList<IntegerT>;
-  } else {
-    pbField.funcs.encode = &pbEncodeVarintList<IntegerT>;
-  }
-
-  pbField.arg = &field;
-}
-
-// Bytes vector types
-inline void bindField(pb_callback_t& pbField, std::vector<uint8_t>& field,
-                      bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeUint8Vector;
-  } else {
-    pbField.funcs.encode = &pbEncodeUint8Vector;
-  }
-
-  pbField.arg = &field;
-}
-
-// Bytes array type
 template <std::size_t N>
-inline void bindField(pb_callback_t& pbField, std::array<uint8_t, N>& field,
-                      bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeUint8Array<N>;
-  } else {
-    pbField.funcs.encode = &pbEncodeUint8Array<N>;
+bool pbEncodeByteArray(pb_ostream_t* stream, const pb_field_t* field,
+                       void* const* arg) {
+  auto& arr = *static_cast<std::array<std::byte, N>*>(*arg);
+  if (!arr.empty()) {
+    if (!pb_encode_tag_for_field(stream, field)) {
+      return false;
+    }
+
+    if (!pb_encode_string(stream, reinterpret_cast<const uint8_t*>(arr.data()),
+                          arr.size())) {
+      return false;
+    }
   }
 
-  pbField.arg = &field;
-}
-
-// Bytes boolean type
-inline void bindField(pb_callback_t& pbField, bool& field, bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeVarint<bool>;
-  } else {
-    pbField.funcs.encode = &pbEncodeVarint<bool>;
-  }
-
-  pbField.arg = &field;
-}
-
-// Double type
-inline void bindField(pb_callback_t& pbField, double& field, bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeFixed64;
-  } else {
-    pbField.funcs.encode = &pbEncodeFixed64;
-  }
-
-  pbField.arg = &field;
-}
-
-// Float type
-inline void bindField(pb_callback_t& pbField, float& field, bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeFixed32;
-  } else {
-    pbField.funcs.encode = &pbEncodeFixed32;
-  }
-
-  pbField.arg = &field;
-}
-
-// int32_t type
-inline void bindField(pb_callback_t& pbField, int32_t& field, bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeSvarint<int32_t>;
-  } else {
-    pbField.funcs.encode = &pbEncodeSvarint<int32_t>;
-  }
-
-  pbField.arg = &field;
-}
-
-// int64_t type
-inline void bindField(pb_callback_t& pbField, int64_t& field, bool isDecode) {
-  if (isDecode) {
-    pbField.funcs.decode = &pbDecodeSvarint<int64_t>;
-  } else {
-    pbField.funcs.encode = &pbEncodeSvarint<int64_t>;
-  }
-
-  pbField.arg = &field;
+  return true;
 }
 
 template <typename T>
@@ -311,21 +209,6 @@ struct Optional {
     return self->wrappedCallback.funcs.encode(stream, field, &valuePtr);
   }
 };
-
-// Specialization for Optional<T>
-template <typename T>
-inline void bindField(pb_callback_t& pbField, Optional<T>& field,
-                      bool isDecode) {
-  bindField(field.wrappedCallback, field.value, isDecode);
-
-  if (isDecode) {
-    pbField.funcs.decode = &Optional<T>::decode;
-  } else {
-    pbField.funcs.encode = &Optional<T>::encode;
-  }
-
-  pbField.arg = &field;
-}
 
 // Struct handlers
 template <typename StructT>
@@ -441,12 +324,118 @@ bool encodeToVector(MessageT& message, std::vector<std::byte>& output) {
                                                       &messagePtr);
 }
 
+// Helper to check if a type is a std::vector
+template <typename>
+struct is_vector : std::false_type {};
+template <typename T, typename A>
+struct is_vector<std::vector<T, A>> : std::true_type {};
+template <typename T>
+inline constexpr bool is_vector_v = is_vector<T>::value;
+
+// Helper to check if a type is a std::array
+template <typename>
+struct is_array : std::false_type {};
+template <typename T, std::size_t N>
+struct is_array<std::array<T, N>> : std::true_type {};
+template <typename T>
+inline constexpr bool is_array_v = is_array<T>::value;
+
+// Helper to check if a type is your custom Optional
+template <typename>
+struct is_optional : std::false_type {};
+template <typename T>
+struct is_optional<Optional<T>> : std::true_type {};
+template <typename T>
+inline constexpr bool is_optional_v = is_optional<T>::value;
+
+template <typename FieldT>
+void bindField(pb_callback_t& pbField, FieldT& field, bool isDecode) {
+  // Use compile-time checks to determine the field's type
+  if constexpr (is_optional_v<FieldT>) {
+    using T = typename std::remove_reference<decltype(field.value)>::type;
+    bindField(field.wrappedCallback, field.value, isDecode);
+    pbField.funcs.decode = &Optional<T>::decode;
+    pbField.funcs.encode = &Optional<T>::encode;
+
+  } else if constexpr (std::is_same_v<FieldT, std::string>) {
+    pbField.funcs.decode = &pbDecodeString;
+    pbField.funcs.encode = &pbEncodeString;
+  } else if constexpr (is_vector_v<FieldT>) {
+    // Vector types
+    using T = typename FieldT::value_type;  // The type inside the vector
+    if constexpr (std::is_same_v<T, std::string>) {
+      pbField.funcs.decode = &pbDecodeStringList;
+      pbField.funcs.encode = &pbEncodeStringList;
+    } else if constexpr (std::is_integral_v<T>) {
+      pbField.funcs.decode = &pbDecodeVarintList<T>;
+      pbField.funcs.encode = &pbEncodeVarintList<T>;
+    } else if constexpr (std::is_same_v<T, uint8_t>) {
+      pbField.funcs.decode = &pbDecodeUint8Vector;
+      pbField.funcs.encode = &pbEncodeUint8Vector;
+    } else if constexpr (std::is_same_v<T, std::byte>) {
+      pbField.funcs.decode = &pbDecodeByteVector;
+      pbField.funcs.encode = &pbEncodeByteVector;
+    } else if constexpr (std::is_class_v<T>) {
+      // This handles std::vector<YourStruct>
+      pbField.funcs.decode = &StructCodec<T>::decodeVector;
+      pbField.funcs.encode = &StructCodec<T>::encodeVector;
+    }
+
+  } else if constexpr (is_array_v<FieldT>) {
+    // Array types
+    using T = typename FieldT::value_type;
+    constexpr std::size_t N = std::tuple_size<FieldT>::value;
+    if constexpr (std::is_same_v<T, uint8_t>) {
+      pbField.funcs.decode = &pbDecodeUint8Array<N>;
+      pbField.funcs.encode = &pbEncodeUint8Array<N>;
+    } else if constexpr (std::is_same_v<T, std::byte>) {
+      pbField.funcs.decode = &pbDecodeByteArray<N>;
+      pbField.funcs.encode = &pbEncodeByteArray<N>;
+    }
+
+  } else if constexpr (std::is_integral_v<FieldT>) {
+    // --- All integral types (int, uint, bool) ---
+    if constexpr (std::is_same_v<FieldT, bool>) {
+      pbField.funcs.decode = &pbDecodeVarint<bool>;
+      pbField.funcs.encode = &pbEncodeVarint<bool>;
+    } else if constexpr (std::is_signed_v<FieldT>) {
+      // Catches int32_t, int64_t, etc.
+      pbField.funcs.decode = &pbDecodeSvarint<FieldT>;
+      pbField.funcs.encode = &pbEncodeSvarint<FieldT>;
+    } else {
+      // Catches uint32_t, uint64_t, etc.
+      pbField.funcs.decode = &pbDecodeVarint<FieldT>;
+      pbField.funcs.encode = &pbEncodeVarint<FieldT>;
+    }
+
+  } else if constexpr (std::is_floating_point_v<FieldT>) {
+    // --- Float and Double ---
+    if constexpr (std::is_same_v<FieldT, float>) {
+      pbField.funcs.decode = &pbDecodeFixed32;
+      pbField.funcs.encode = &pbEncodeFixed32;
+    } else {  // double
+      pbField.funcs.decode = &pbDecodeFixed64;
+      pbField.funcs.encode = &pbEncodeFixed64;
+    }
+
+  } else if constexpr (std::is_class_v<FieldT>) {
+    // --- Custom Struct type ---
+    // This should be the fallback for any user-defined struct
+    pbField.funcs.decode = &StructCodec<FieldT>::decode;
+    pbField.funcs.encode = &StructCodec<FieldT>::encodeSubmessage;
+  }
+
+  // Finally, assign the argument pointer for all types
+  pbField.arg = &field;
+}
+
 template <typename MessageT>
-bool decodeFromBuffer(MessageT& message, const uint8_t* buffer,
+bool decodeFromBuffer(MessageT& message, const std::byte* buffer,
                       size_t bufferLen) {
   message = MessageT();  // Reset the message to its default state
 
-  pb_istream_t stream = pb_istream_from_buffer(buffer, bufferLen);
+  pb_istream_t stream = pb_istream_from_buffer(
+      reinterpret_cast<const uint8_t*>(buffer), bufferLen);
   void* messagePtr = &message;
   return nanopb_helper::StructCodec<MessageT>::decode(&stream, nullptr,
                                                       &messagePtr);

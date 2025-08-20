@@ -12,10 +12,10 @@ const char* const BASE62_ALPHABET =
 const int BASE62_BASE = 62;
 
 // Helper function to convert a byte array to a large integer (represented as a vector of digits)
-std::vector<int> bytesToBigInt(const uint8_t* data, size_t size) {
+std::vector<int> bytesToBigInt(const std::byte* data, size_t size) {
   std::vector<int> bigInt(size);
   for (size_t i = 0; i < size; ++i) {
-    bigInt[i] = data[i];
+    bigInt[i] = static_cast<int>(data[i]);
   }
   return bigInt;
 }
@@ -37,12 +37,12 @@ std::vector<int> divMod(std::vector<int>& number, int divisor, int& remainder) {
   if (firstNonZero == result.end()) {
     return {0};  // Handle case where result is all zeros
   }
-  return std::vector<int>(firstNonZero, result.end());
+  return {firstNonZero, result.end()};
 }
 
 }  // namespace
 
-std::string base62Encode(const uint8_t* data, size_t size) {
+std::string base62Encode(const std::byte* data, size_t size) {
   if (size == 0) {
     return "";
   }
@@ -52,7 +52,7 @@ std::string base62Encode(const uint8_t* data, size_t size) {
 
   // Handle leading zeros in the input byte array
   size_t leadingZeros = 0;
-  while (leadingZeros < size && data[leadingZeros] == 0) {
+  while (leadingZeros < size && data[leadingZeros] == std::byte{0}) {
     encodedStr += BASE62_ALPHABET[0];  // Append '0' for each leading zero byte
     leadingZeros++;
   }
@@ -72,7 +72,7 @@ std::string base62Encode(const uint8_t* data, size_t size) {
   return encodedStr;
 }
 
-bool base62Decode(std::string_view encodedStr, uint8_t* outData,
+bool base62Decode(std::string_view encodedStr, std::byte* outData,
                   size_t& outSize) {
   if (encodedStr.empty()) {
     outSize = 0;
@@ -80,8 +80,8 @@ bool base62Decode(std::string_view encodedStr, uint8_t* outData,
   }
 
   // Initialize the decoded number as a vector of bytes (base 256)
-  std::vector<uint8_t> decodedBytes;
-  decodedBytes.push_back(0);  // Start with 0
+  std::vector<std::byte> decodedBytes;
+  decodedBytes.push_back(std::byte{0});  // Start with 0
 
   // Handle leading '0's in the encoded string
   size_t leadingZeros = 0;
@@ -89,7 +89,7 @@ bool base62Decode(std::string_view encodedStr, uint8_t* outData,
          encodedStr[leadingZeros] == BASE62_ALPHABET[0]) {
     if (decodedBytes.size() <
         outSize) {  // Ensure we don't write beyond outData capacity
-      decodedBytes.insert(decodedBytes.begin(), 0);
+      decodedBytes.insert(decodedBytes.begin(), std::byte{0});
     }
     leadingZeros++;
   }
@@ -105,11 +105,11 @@ bool base62Decode(std::string_view encodedStr, uint8_t* outData,
     int carry = static_cast<int>(value);
     for (size_t i = 0; i < decodedBytes.size(); ++i) {
       long long temp = ((long long)decodedBytes[i] * BASE62_BASE) + carry;
-      decodedBytes[i] = temp % 256;
+      decodedBytes[i] = static_cast<std::byte>(temp % 256);
       carry = static_cast<int>(temp / 256);
     }
     while (carry > 0) {
-      decodedBytes.push_back(carry % 256);
+      decodedBytes.push_back(static_cast<std::byte>(carry % 256));
       carry /= 256;
     }
   }

@@ -9,7 +9,7 @@ set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointe
 include(../external/bell/external/doctest/scripts/cmake/doctest.cmake)
 
 add_executable(cspot-test
-  main.cpp ApResolveTest.cpp
+  main.cpp CredentialsResolverTest.cpp
 )
 target_compile_options(cspot-test PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
 target_link_libraries(cspot-test cspot doctest::doctest trompeloeil::trompeloeil)

@@ -18,14 +18,16 @@
 #include <bell/net/TLSSocket.h>
 
 // Own includes
-#include "SessionContext.h"
+#include "events/EventLoop.h"
 
 namespace cspot {
 class DealerClient {
  public:
-  DealerClient(std::shared_ptr<cspot::SessionContext> sessionContext);
+  DealerClient(std::shared_ptr<cspot::EventLoop> eventLoop);
 
-  bell::Result<> connect();
+  bell::Result<> connect(
+      const std::string& dealerAddress, const std::string& accessKey,
+      const std::shared_ptr<bell::SocketPollListener>& socketPoll);
 
   bell::Result<> replyToRequest(bool success, const std::string& requestKey);
 
@@ -39,9 +41,9 @@ class DealerClient {
 
   std::mutex accessMutex;
 
-  std::shared_ptr<cspot::SessionContext> sessionContext;
+  std::shared_ptr<cspot::EventLoop> eventLoop;
 
-  std::array<uint8_t, 1024 * 8L> inputBuffer{};
+  std::array<std::byte, 1024 * 8L> inputBuffer{};
 
   std::shared_ptr<bell::TLSSocket> socket;
 

@@ -8,11 +8,11 @@ namespace cspot {
 // Implementation of the Shannon stream cipher, used for communication with the Spotify AP
 class Shannon {
  public:
-  void key(const uint8_t* key, size_t keyLen);          /* set key */
-  void nonce(const uint8_t* nonce, size_t nonceLen);    /* set Init Vector */
-  void encrypt(uint8_t* buffer, size_t bufferLen);      /* encrypt + MAC */
-  void decrypt(uint8_t* buffer, size_t bufferLen);      /* finalize + MAC */
-  void finish(uint8_t* macBuffer, size_t macBufferLen); /* finalise MAC */
+  void key(const std::byte* key, size_t keyLen);          /* set key */
+  void nonce(const std::byte* nonce, size_t nonceLen);    /* set Init Vector */
+  void encrypt(std::byte* buffer, size_t bufferLen);      /* encrypt + MAC */
+  void decrypt(std::byte* buffer, size_t bufferLen);      /* finalize + MAC */
+  void finish(std::byte* macBuffer, size_t macBufferLen); /* finalise MAC */
 
  private:
   static constexpr unsigned int N = 16;
@@ -35,6 +35,6 @@ class Shannon {
   void reloadState();
   void genkonst();
   void diffuse();
-  void loadKey(const uint8_t* key, size_t keyLen);
+  void loadKey(const std::byte* key, size_t keyLen);
 };
 }  // namespace cspot

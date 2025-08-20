@@ -6,8 +6,8 @@
 #include <vector>
 
 // Library includes
-#include "SessionContext.h"
 #include "bell/Result.h"
+#include "bell/net/SocketPollListener.h"
 #include "bell/net/TCPSocket.h"
 
 // Own includes
@@ -21,17 +21,15 @@
 namespace cspot {
 class ApConnection {
  public:
-  ApConnection(std::shared_ptr<SessionContext> sessionContext);
-  ~ApConnection();
-
   // Type for the packet handler function
-  using ConnectionPacketHandler =
-      std::function<void(uint8_t packetType, const std::byte* data, size_t len)>;
+  using ConnectionPacketHandler = std::function<void(
+      uint8_t packetType, const std::byte* data, size_t len)>;
 
   /**
    * @brief Connects to the AP, address fetched from the credential resolver
    */
-  bell::Result<> connect();
+  bell::Result<> connect(const std::string& apAddress,
+                         const std::shared_ptr<bell::SocketPollListener>& socketPoll);
 
   /**
    * @brief Sends a shannon encrypted packet to the AP
@@ -50,12 +48,19 @@ class ApConnection {
    * @param packetSize Reference to the packet size
    * @return uint8_t* Buffer containing the received packet data
    */
-  bell::Result<uint8_t*> receivePacket(uint8_t& cmd, uint16_t& packetSize);
+  bell::Result<std::byte*> receivePacket(uint8_t& cmd, uint16_t& packetSize);
 
   /**
    * @brief Assigns a handler called when an encrypted packet is received
    */
   void setPacketHandler(ConnectionPacketHandler handler);
+
+  /**
+   * @brief Authenticates the connection with the AP, using data from login blob
+   */
+  bell::Result<> authenticate(
+      const cspot_proto::LoginCredentials& loginCredentials,
+      const std::string& deviceId);
 
   /**
    * @brief Returns the underlying socket used for the connection
@@ -66,7 +71,6 @@ class ApConnection {
   const char* LOG_TAG = "ApConnection";
   const static uint32_t operationTimeout = 3000;
 
-  std::shared_ptr<SessionContext> sessionContext;
   std::shared_ptr<bell::net::TCPSocket> apSock;
   DH dhPair;
 
@@ -106,11 +110,6 @@ class ApConnection {
                                  std::optional<uint16_t> cmd);
 
   bell::Result<size_t> receivePlainPacket();
-
-  /**
-   * @brief Authenticates the connection with the AP, using data from login blob
-   */
-  bell::Result<> authenticate();
 
   static void updateShannonNonce(uint32_t& nonce, Shannon& cipher);
 };

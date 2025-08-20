@@ -1,6 +1,6 @@
 #pragma once
 
-#include "NanoPBHelper.h"
+#include "proto/NanoPBHelper.h"
 
 // Protobuf includes
 #include "connect.pb.h"
@@ -39,9 +39,9 @@ struct DeviceInfo {
   static auto bindFields(DeviceInfo* self, bool isDecode) {
     _DeviceInfo rawProto = DeviceInfo_init_zero;
     nanopb_helper::bindField(rawProto.can_play, self->canPlay, isDecode);
-    nanopb_helper::bindVarintField(rawProto.volume, self->volume, isDecode);
+    nanopb_helper::bindField(rawProto.volume, self->volume, isDecode);
     nanopb_helper::bindField(rawProto.name, self->name, isDecode);
-    nanopb_helper::bindVarintField(rawProto.device_type, self->deviceType,
+    nanopb_helper::bindField(rawProto.device_type, self->deviceType,
                                    isDecode);
     nanopb_helper::bindField(rawProto.device_software_version,
                              self->deviceSoftwareVersion, isDecode);
@@ -65,8 +65,8 @@ struct ContextIndex {
 
   static auto bindFields(ContextIndex* self, bool isDecode) {
     _ContextIndex rawProto = ContextIndex_init_zero;
-    nanopb_helper::bindVarintField(rawProto.page, self->page, isDecode);
-    nanopb_helper::bindVarintField(rawProto.track, self->track, isDecode);
+    nanopb_helper::bindField(rawProto.page, self->page, isDecode);
+    nanopb_helper::bindField(rawProto.track, self->track, isDecode);
     return rawProto;
   }
 
@@ -86,7 +86,7 @@ namespace cspot_proto {
 struct ContextTrack {
   std::string uri;
   std::string uid;
-  std::vector<uint8_t> gid;
+  std::vector<std::byte> gid;
 
   // Not a part of protobuf, added for indexing purposes
   cspot_proto::ContextIndex index;
@@ -238,7 +238,7 @@ struct PlayerState {
 
   static auto bindFields(PlayerState* self, bool isDecode) {
     _PlayerState rawProto = PlayerState_init_zero;
-    nanopb_helper::bindVarintField(rawProto.timestamp, self->timestamp,
+    nanopb_helper::bindField(rawProto.timestamp, self->timestamp,
                                    isDecode);
     nanopb_helper::bindField(rawProto.context_uri, self->contextUri, isDecode);
     nanopb_helper::bindField(rawProto.context_url, self->contextUrl, isDecode);
@@ -247,9 +247,9 @@ struct PlayerState {
     nanopb_helper::bindField(rawProto.index, self->index, isDecode);
     nanopb_helper::bindField(rawProto.playback_speed, self->playbackSpeed,
                              isDecode);
-    nanopb_helper::bindVarintField(rawProto.position_as_of_timestamp,
+    nanopb_helper::bindField(rawProto.position_as_of_timestamp,
                                    self->positionAsOfTimestamp, isDecode);
-    nanopb_helper::bindVarintField(rawProto.duration, self->duration, isDecode);
+    nanopb_helper::bindField(rawProto.duration, self->duration, isDecode);
     nanopb_helper::bindField(rawProto.is_playing, self->isPlaying, isDecode);
     nanopb_helper::bindField(rawProto.is_buffering, self->isBuffering,
                              isDecode);
@@ -262,7 +262,7 @@ struct PlayerState {
     rawProto.next_tracks = self->nextTracks;
     rawProto.prev_tracks = self->prevTracks;
     nanopb_helper::bindField(rawProto.session_id, self->sessionId, isDecode);
-    nanopb_helper::bindVarintField(rawProto.position, self->position, isDecode);
+    nanopb_helper::bindField(rawProto.position, self->position, isDecode);
     return rawProto;
   }
 };
@@ -280,9 +280,9 @@ struct Playback {
 
   static auto bindFields(Playback* self, bool isDecode) {
     _Playback rawProto = Playback_init_zero;
-    nanopb_helper::bindVarintField(rawProto.timestamp, self->timestamp,
+    nanopb_helper::bindField(rawProto.timestamp, self->timestamp,
                                    isDecode);
-    nanopb_helper::bindVarintField(rawProto.position_as_of_timestamp,
+    nanopb_helper::bindField(rawProto.position_as_of_timestamp,
                                    self->positionAsOfTimestamp, isDecode);
     nanopb_helper::bindField(rawProto.playback_speed, self->playbackSpeed,
                              isDecode);
@@ -368,22 +368,22 @@ struct PutStateRequest {
   static auto bindFields(PutStateRequest* self, bool isDecode) {
     _PutStateRequest rawProto = PutStateRequest_init_zero;
     nanopb_helper::bindField(rawProto.device, self->device, isDecode);
-    nanopb_helper::bindVarintField(rawProto.member_type, self->memberType,
+    nanopb_helper::bindField(rawProto.member_type, self->memberType,
                                    isDecode);
     nanopb_helper::bindField(rawProto.is_active, self->isActive, isDecode);
-    nanopb_helper::bindVarintField(rawProto.put_state_reason,
+    nanopb_helper::bindField(rawProto.put_state_reason,
                                    self->putStateReason, isDecode);
-    nanopb_helper::bindVarintField(rawProto.message_id, self->messageId,
+    nanopb_helper::bindField(rawProto.message_id, self->messageId,
                                    isDecode);
     nanopb_helper::bindField(rawProto.last_command_sent_by_device_id,
                              self->lastCommandSentByDeviceId, isDecode);
-    nanopb_helper::bindVarintField(rawProto.last_command_message_id,
+    nanopb_helper::bindField(rawProto.last_command_message_id,
                                    self->lastCommandMessageId, isDecode);
-    nanopb_helper::bindVarintField(rawProto.started_playing_at,
+    nanopb_helper::bindField(rawProto.started_playing_at,
                                    self->startedPlayingAt, isDecode);
-    nanopb_helper::bindVarintField(rawProto.has_been_playing_for_ms,
+    nanopb_helper::bindField(rawProto.has_been_playing_for_ms,
                                    self->hasBeenPlayingForMs, isDecode);
-    nanopb_helper::bindVarintField(rawProto.client_side_timestamp,
+    nanopb_helper::bindField(rawProto.client_side_timestamp,
                                    self->clientSideTimestamp, isDecode);
     nanopb_helper::bindField(rawProto.only_write_player_state,
                              self->onlyWritePlayerState, isDecode);

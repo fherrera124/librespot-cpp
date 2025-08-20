@@ -92,11 +92,11 @@ void ConnectStateHandler::initialize() {
   auto& deviceInfo = deviceProto.deviceInfo;
   deviceInfo.canPlay = true;
   deviceInfo.volume = 100;
-  deviceInfo.name = sessionContext->loginBlob->getDeviceName();
+  // deviceInfo.name = sessionContext->sessionInfo->getDeviceName();
 
   deviceInfo.deviceType = DeviceType_SPEAKER;
   deviceInfo.deviceSoftwareVersion = deviceSoftwareVersion;
-  deviceInfo.deviceId = sessionContext->loginBlob->getDeviceId();
+  // deviceInfo.deviceId = sessionContext->loginBlob->getDeviceId();
   deviceInfo.clientId = clientId;
   deviceInfo.spircVersion = spircVersion;
 

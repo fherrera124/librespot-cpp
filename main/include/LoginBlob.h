@@ -29,14 +29,14 @@ class LoginBlob {
   bool isAuthenticated();
   uint32_t getAuthType();
 
-  std::vector<uint8_t> getStoredAuthBlob();
+  std::vector<std::byte> getStoredAuthBlob();
 
   bell::Result<tao::json::value> getJSONForStorage();
   bell::Result<> restoreFromJSON(
       const tao::json::value& jsonData);  // Restore from JSON
 
-  bell::Result<> decodeEncryptedAuthBlob(const std::string& username,
-                                         const std::vector<uint8_t>& authBlob);
+  bell::Result<> decodeEncryptedAuthBlob(
+      const std::string& username, const std::vector<std::byte>& authBlob);
 
  private:
   const char* LOG_TAG = "LoginBlob";
@@ -61,18 +61,19 @@ class LoginBlob {
 
   std::recursive_mutex accessMutex;
 
-  std::vector<uint8_t> encryptedAuthBlob;
+  std::vector<std::byte> encryptedAuthBlob;
 
-  std::vector<uint8_t> authBlob;
+  std::vector<std::byte> authBlob;
 
   uint32_t authType = 0;  // Authentication type, set after authentication
 
-  bell::Result<std::vector<uint8_t>> decodeZeroconfBlob(
-      const std::vector<uint8_t>& blob, const std::vector<uint8_t>& clientKey);
+  bell::Result<std::vector<std::byte>> decodeZeroconfBlob(
+      const std::vector<std::byte>& blob,
+      const std::vector<std::byte>& clientKey);
 
   static uint32_t readUvarint(bell::io::BinaryStream& stream);
 
   static bell::Result<> base64Decode(std::string_view encoded,
-                                     std::vector<uint8_t>& targetBuffer);
+                                     std::vector<std::byte>& targetBuffer);
 };
 }  // namespace cspot

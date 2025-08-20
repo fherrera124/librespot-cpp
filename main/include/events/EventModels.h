@@ -14,8 +14,8 @@ struct CurrentTrackMetadata {
 struct AudioKeyResponse {
   bool success = false;
   SpotifyId trackId;
-  std::vector<uint8_t> fileId;
-  std::vector<uint8_t> audioKey;
+  std::vector<std::byte> fileId;
+  std::vector<std::byte> audioKey;
 };
 
 struct TrackQueueUpdate {
@@ -28,8 +28,8 @@ struct ProvidedFile {
   std::optional<cspot_proto::Track> trackMetadata = std::nullopt;
   std::optional<cspot_proto::Episode> episodeMetadata = std::nullopt;
   std::string cdnUrl{};
-  std::vector<uint8_t> fileId{};
-  std::vector<uint8_t> decryptionKey{};
+  std::vector<std::byte> fileId{};
+  std::vector<std::byte> decryptionKey{};
   bool isError = false;
 };
 };  // namespace cspot

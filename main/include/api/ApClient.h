@@ -14,7 +14,7 @@ class ApClient {
   bell::Result<> connectAndAuthenticate();
 
   bell::Result<> requestAudioKey(const SpotifyId& trackId,
-                                 const std::vector<uint8_t>& fileId);
+                                 const std::vector<std::byte>& fileId);
 
   void doHousekeeping();
 
@@ -27,9 +27,9 @@ class ApClient {
   uint32_t audioKeySequence = 0;
 
   // Holds a mapping of audio key requests to track IDs
-  std::unordered_map<uint32_t, std::pair<SpotifyId, std::vector<uint8_t>>>
+  std::unordered_map<uint32_t, std::pair<SpotifyId, std::vector<std::byte>>>
       audioKeyRequests;
 
-  void apPacketHandler(uint8_t packetType, const uint8_t* data, size_t len);
+  void apPacketHandler(uint8_t packetType, const std::byte* data, size_t len);
 };
 };  // namespace cspot

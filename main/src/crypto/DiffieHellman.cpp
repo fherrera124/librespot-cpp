@@ -40,7 +40,9 @@ DH::DH() {
   // Read bin into big num mpi
   mbedtls_mpi_read_binary(&prime, dhPrime.data(), dhPrime.size());
   mbedtls_mpi_read_binary(&generator, dhGenerator.data(), dhGenerator.size());
-  mbedtls_mpi_read_binary(&privateMpi, privateKey.data(), privateKey.size());
+  mbedtls_mpi_read_binary(&privateMpi,
+                          reinterpret_cast<const uint8_t*>(privateKey.data()),
+                          privateKey.size());
 
   // perform diffie hellman G^X mod P
   int calcRes = mbedtls_mpi_exp_mod(&publicKeyMpi, &generator, &privateMpi,
@@ -53,14 +55,16 @@ DH::DH() {
   }
 
   // Write generated public key to vector
-  mbedtls_mpi_write_binary(&publicKeyMpi, publicKey.data(), publicKey.size());
+  mbedtls_mpi_write_binary(&publicKeyMpi,
+                           reinterpret_cast<uint8_t*>(publicKey.data()),
+                           publicKey.size());
 
   // Free memory for public key mpi
   mbedtls_mpi_free(&publicKeyMpi);
 }
 
-void DH::computeSharedKey(const uint8_t* remotePublicKey, size_t keySize,
-                          uint8_t* sharedKey) {
+void DH::computeSharedKey(const std::byte* remotePublicKey, size_t keySize,
+                          std::byte* sharedKey) {
   // initialize big num for result and remote key
   mbedtls_mpi sharedKeyMpi;
   mbedtls_mpi remoteKeyMpi;
@@ -68,7 +72,9 @@ void DH::computeSharedKey(const uint8_t* remotePublicKey, size_t keySize,
   mbedtls_mpi_init(&remoteKeyMpi);
 
   // Read bin into big num mpi
-  mbedtls_mpi_read_binary(&remoteKeyMpi, remotePublicKey, keySize);
+  mbedtls_mpi_read_binary(&remoteKeyMpi,
+                          reinterpret_cast<const uint8_t*>(remotePublicKey),
+                          keySize);
 
   // perform diffie hellman (G^Y)^X mod P (for shared secret)
   int res = mbedtls_mpi_exp_mod(&sharedKeyMpi, &remoteKeyMpi, &privateMpi,
@@ -81,7 +87,8 @@ void DH::computeSharedKey(const uint8_t* remotePublicKey, size_t keySize,
     throw std::runtime_error("Failed to calculate DH shared key");
   }
 
-  mbedtls_mpi_write_binary(&sharedKeyMpi, sharedKey, dhKeySize);
+  mbedtls_mpi_write_binary(&sharedKeyMpi, reinterpret_cast<uint8_t*>(sharedKey),
+                           dhKeySize);
 
   // Release memory
   mbedtls_mpi_free(&remoteKeyMpi);
@@ -98,8 +105,9 @@ std::string DH::getPublicKeyBase64() {
   std::string publicKeyBase64;
 
   size_t outputSize = 0;
-  int res = mbedtls_base64_encode(nullptr, 0, &outputSize, publicKey.data(),
-                                  publicKey.size());
+  int res = mbedtls_base64_encode(
+      nullptr, 0, &outputSize,
+      reinterpret_cast<const uint8_t*>(publicKey.data()), publicKey.size());
   if (outputSize == 0) {
     throw std::runtime_error(
         fmt::format("Failed to calculate base64 encoded public key size"));
@@ -108,7 +116,8 @@ std::string DH::getPublicKeyBase64() {
   publicKeyBase64.resize(outputSize);
   res = mbedtls_base64_encode(
       reinterpret_cast<uint8_t*>(publicKeyBase64.data()),
-      publicKeyBase64.size(), &outputSize, publicKey.data(), publicKey.size());
+      publicKeyBase64.size(), &outputSize,
+      reinterpret_cast<const uint8_t*>(publicKey.data()), publicKey.size());
   if (res != 0) {
     throw std::runtime_error("Failed to calculate base64 encoded public key");
   }
@@ -135,7 +144,9 @@ void DH::generatePrivateKey() {
                         pers.size());
 
   // Generate random bytes
-  mbedtls_ctr_drbg_random(&ctrDrbg, privateKey.data(), privateKey.size());
+  mbedtls_ctr_drbg_random(&ctrDrbg,
+                          reinterpret_cast<uint8_t*>(privateKey.data()),
+                          privateKey.size());
 
   // Release memory
   mbedtls_entropy_free(&entropy);

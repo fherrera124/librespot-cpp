@@ -1,20 +1,20 @@
 #pragma once
 
-#include "NanoPBHelper.h"
+#include "proto/NanoPBHelper.h"
 
 // Protobuf includes
 #include "keyexchange.pb.h"
 
 namespace cspot_proto {
 struct LoginCryptoDiffieHellmanHello {
-  std::array<uint8_t, 96> gc;
+  std::array<std::byte, 96> gc;
   uint32_t serverKeysKnown;
 
   static auto bindFields(LoginCryptoDiffieHellmanHello* self, bool isDecode) {
     _LoginCryptoDiffieHellmanHello rawProto =
         LoginCryptoDiffieHellmanHello_init_zero;
     nanopb_helper::bindField(rawProto.gc, self->gc, isDecode);
-    nanopb_helper::bindVarintField(rawProto.server_keys_known,
+    nanopb_helper::bindField(rawProto.server_keys_known,
                                    self->serverKeysKnown, isDecode);
     return rawProto;
   }
@@ -41,7 +41,7 @@ NANOPB_STRUCT(cspot_proto::LoginCryptoHelloUnion, LoginCryptoHelloUnion_fields);
 
 namespace cspot_proto {
 struct LoginCryptoDiffieHellmanChallenge {
-  std::array<uint8_t, 96> gs;
+  std::array<std::byte, 96> gs;
 
   static auto bindFields(LoginCryptoDiffieHellmanChallenge* self,
                          bool isDecode) {
@@ -102,7 +102,7 @@ NANOPB_STRUCT(cspot_proto::APResponseMessage, APResponseMessage_fields);
 
 namespace cspot_proto {
 struct LoginCryptoDiffieHellmanResponse {
-  std::array<uint8_t, 20> hmac;
+  std::array<std::byte, 20> hmac;
 
   static auto bindFields(LoginCryptoDiffieHellmanResponse* self,
                          bool isDecode) {
@@ -185,9 +185,9 @@ struct BuildInfo {
 
   static auto bindFields(BuildInfo* self, bool isDecode) {
     _BuildInfo rawProto = BuildInfo_init_zero;
-    nanopb_helper::bindVarintField(rawProto.product, self->product, isDecode);
-    nanopb_helper::bindVarintField(rawProto.platform, self->platform, isDecode);
-    nanopb_helper::bindVarintField(rawProto.version, self->version, isDecode);
+    nanopb_helper::bindField(rawProto.product, self->product, isDecode);
+    nanopb_helper::bindField(rawProto.platform, self->platform, isDecode);
+    nanopb_helper::bindField(rawProto.version, self->version, isDecode);
     return rawProto;
   }
 };
@@ -214,8 +214,8 @@ struct ClientHello {
   cspot_proto::BuildInfo buildInfo;
   cspot_proto::LoginCryptoHelloUnion loginCryptoHello;
   std::vector<uint32_t> cryptosuitesSupported;
-  std::vector<uint8_t> padding;
-  std::array<uint8_t, 16> clientNonce;
+  std::vector<std::byte> padding;
+  std::array<std::byte, 16> clientNonce;
   cspot_proto::FeatureSet featureSet;
 
   static auto bindFields(ClientHello* self, bool isDecode) {
@@ -223,7 +223,7 @@ struct ClientHello {
     nanopb_helper::bindField(rawProto.build_info, self->buildInfo, isDecode);
     nanopb_helper::bindField(rawProto.login_crypto_hello,
                              self->loginCryptoHello, isDecode);
-    nanopb_helper::bindVarintListField(rawProto.cryptosuites_supported,
+    nanopb_helper::bindField(rawProto.cryptosuites_supported,
                                        self->cryptosuitesSupported, isDecode);
     nanopb_helper::bindField(rawProto.padding, self->padding, isDecode);
     nanopb_helper::bindField(rawProto.feature_set, self->featureSet, isDecode);

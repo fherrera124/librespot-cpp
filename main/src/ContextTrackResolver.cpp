@@ -569,14 +569,14 @@ void ContextTrackResolver::setRetreatWindow() {
 
 bell::Result<> ContextTrackResolver::resolveRootContext() {
   BELL_LOG(info, LOG_TAG, "Resolving root context: {}", rootContextUrl);
-  auto reader = spClient->contextResolve(rootContextUrl);
-  if (!reader) {
+  auto response = spClient->contextResolve(rootContextUrl);
+  if (!response) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve root context: {}",
-             reader.error());
-    return tl::make_unexpected(reader.error());
+             response.error());
+    return tl::make_unexpected(response.error());
   }
 
-  auto dataVector = *reader->getBodyStringView();
+  auto dataVector = *response->bytes();
 
   // Prepare for root context parsing
   resetParseState();
@@ -616,6 +616,7 @@ bell::Result<> ContextTrackResolver::resolveRootContext() {
 }
 
 bell::Result<> ContextTrackResolver::resolveContextPage(uint32_t pageIndex) {
+  /*
   if (pageMetadata.size() < pageIndex + 1) {
     BELL_LOG(error, LOG_TAG,
              "Page index {} is out of bounds for page metadata size {}",
@@ -689,7 +690,7 @@ bell::Result<> ContextTrackResolver::resolveContextPage(uint32_t pageIndex) {
              "window");
     return resolveContextPage(pageIndex);
   }
-
+*/
   return {};
 }
 

@@ -172,8 +172,8 @@ bell::Result<> LoginBlob::authenticateZeroconfQuery(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
   // Holds base64 decoded blob and client key
-  std::vector<uint8_t> decodedBlob;
-  std::vector<uint8_t> decodedClientKey;
+  std::vector<std::byte> decodedBlob;
+  std::vector<std::byte> decodedClientKey;
 
   auto res = base64Decode(queryParams.at("blob"), decodedBlob);
   if (!res) {
@@ -231,54 +231,54 @@ bell::Result<> LoginBlob::authenticateZeroconfString(
   return authenticateZeroconfQuery(queryParams);
 }
 
-std::vector<uint8_t> LoginBlob::getStoredAuthBlob() {
+std::vector<std::byte> LoginBlob::getStoredAuthBlob() {
   std::scoped_lock lock(accessMutex);
   return authBlob;
 }
 
-bell::Result<std::vector<uint8_t>> LoginBlob::decodeZeroconfBlob(
-    const std::vector<uint8_t>& blob, const std::vector<uint8_t>& clientKey) {
+bell::Result<std::vector<std::byte>> LoginBlob::decodeZeroconfBlob(
+    const std::vector<std::byte>& blob,
+    const std::vector<std::byte>& clientKey) {
   std::scoped_lock lock(accessMutex);
   // 0:16 - iv; 17:-20 - blob; -20:0 - checksum
   auto iv = std::span(blob.data(), 16);
   auto encryptedData = std::span(blob.data() + 16, blob.size() - 20 - 16);
   auto checksum = std::span(blob.data() + blob.size() - 20, 20);
 
-  std::array<uint8_t, 96> sharedKey{};
+  std::array<std::byte, 96> sharedKey{};
   // Calculate the shared key
   dhPair.computeSharedKey(clientKey.data(), clientKey.size(), sharedKey.data());
 
   // Base key = sha1(sharedKey) 0:16
-  std::vector<uint8_t> baseKey(20);
-  sha1Context.getDigest(reinterpret_cast<const uint8_t*>(sharedKey.data()),
-                        sharedKey.size(), baseKey.data());
+  std::vector<std::byte> baseKey(20);
+  sha1Context.getDigest(sharedKey.data(), sharedKey.size(), baseKey.data());
   // Only use the first 16 bytes
   baseKey.resize(16);
 
   std::string checksumMessage = "checksum";
-  std::vector<uint8_t> checksumKey(20);
+  std::vector<std::byte> checksumKey(20);
   // Calculate the checksum hmac
-  sha1Context.getHmac(baseKey.data(), baseKey.size(),
-                      reinterpret_cast<const uint8_t*>(checksumMessage.data()),
-                      checksumMessage.size(), checksumKey.data());
+  sha1Context.getHmac(
+      baseKey.data(), baseKey.size(),
+      reinterpret_cast<const std::byte*>(checksumMessage.data()),
+      checksumMessage.size(), checksumKey.data());
 
   std::string encryptionMessage = "encryption";
-  std::vector<uint8_t> encryptionKey(20);
+  std::vector<std::byte> encryptionKey(20);
   // Calculate the encryption hmac
   sha1Context.getHmac(
       baseKey.data(), baseKey.size(),
-      reinterpret_cast<const uint8_t*>(encryptionMessage.data()),
+      reinterpret_cast<const std::byte*>(encryptionMessage.data()),
       encryptionMessage.size(), encryptionKey.data());
 
-  std::vector<uint8_t> mac(20);
+  std::vector<std::byte> mac(20);
   // Calculate the mac
   sha1Context.getHmac(checksumKey.data(), checksumKey.size(),
-                      reinterpret_cast<const uint8_t*>(encryptedData.data()),
-                      encryptedData.size(), mac.data());
+                      encryptedData.data(), encryptedData.size(), mac.data());
 
   if (!std::equal(mac.begin(), mac.end(), checksum.begin())) {
     BELL_LOG(error, LOG_TAG, "Encryption and checksum keys do not match");
-    return bell::make_unexpected_errc<std::vector<uint8_t>>(
+    return bell::make_unexpected_errc<std::vector<std::byte>>(
         std::errc::bad_message);
   }
 
@@ -291,45 +291,45 @@ bell::Result<std::vector<uint8_t>> LoginBlob::decodeZeroconfBlob(
   std::array<uint8_t, 16> streamBlock;
 
   // set IV
-  if (mbedtls_aes_setkey_enc(&aesCtx, encryptionKey.data(), 128) != 0) {
+  if (mbedtls_aes_setkey_enc(
+          &aesCtx, reinterpret_cast<const uint8_t*>(encryptionKey.data()),
+          128) != 0) {
     BELL_LOG(error, LOG_TAG, "Failed to set AES key");
     mbedtls_aes_free(&aesCtx);
-    return bell::make_unexpected_errc<std::vector<uint8_t>>(
+    return bell::make_unexpected_errc<std::vector<std::byte>>(
         std::errc::bad_message);
   }
 
-  std::array<uint8_t, 16> nounceCounter;
+  std::array<std::byte, 16> nounceCounter;
   std::copy(iv.begin(), iv.end(), nounceCounter.begin());
 
-  std::vector<uint8_t> authBlob;
+  std::vector<std::byte> authBlob;
   authBlob.resize(encryptedData.size());
 
   // Perform decrypt
   if (mbedtls_aes_crypt_ctr(
-          &aesCtx, encryptedData.size(), &off, nounceCounter.data(),
-          streamBlock.data(),
+          &aesCtx, encryptedData.size(), &off,
+          reinterpret_cast<uint8_t*>(nounceCounter.data()),
+          reinterpret_cast<uint8_t*>(streamBlock.data()),
           reinterpret_cast<const uint8_t*>(encryptedData.data()),
-          authBlob.data()) != 0) {
+          reinterpret_cast<uint8_t*>(authBlob.data())) != 0) {
     BELL_LOG(error, LOG_TAG, "Failed to aes decrypt auth data");
     mbedtls_aes_free(&aesCtx);
-    return bell::make_unexpected_errc<std::vector<uint8_t>>(
+    return bell::make_unexpected_errc<std::vector<std::byte>>(
         std::errc::bad_message);
   }
 
   mbedtls_aes_free(&aesCtx);
-
-  BELL_LOG(info, LOG_TAG, "Decoded auth data: {}",
-           std::string(authBlob.begin(), authBlob.end()));
 
   return authBlob;
 }
 
 bell::Result<> LoginBlob::decodeEncryptedAuthBlob(
     const std::string& username,
-    const std::vector<uint8_t>& encryptedAuthBlob) {
+    const std::vector<std::byte>& encryptedAuthBlob) {
   std::scoped_lock lock(accessMutex);
 
-  std::vector<uint8_t> base64DecodedAuthData;
+  std::vector<std::byte> base64DecodedAuthData;
   auto decodeRes = base64Decode(
       std::string_view(reinterpret_cast<const char*>(encryptedAuthBlob.data()),
                        encryptedAuthBlob.size()),
@@ -341,16 +341,16 @@ bell::Result<> LoginBlob::decodeEncryptedAuthBlob(
   }
 
   // Calculate the pbkdf2 hmac
-  std::array<uint8_t, 20> deviceIdDigest;
-  std::array<uint8_t, 20> pbkdf2Hmac;
+  std::array<std::byte, 20> deviceIdDigest;
+  std::array<std::byte, 20> pbkdf2Hmac;
   sha1Context.reset();
-  sha1Context.getDigest(reinterpret_cast<const uint8_t*>(deviceId.data()),
+  sha1Context.getDigest(reinterpret_cast<const std::byte*>(deviceId.data()),
                         deviceId.size(), deviceIdDigest.data());
 
   int res = mbedtls_pkcs5_pbkdf2_hmac_ext(
-      MBEDTLS_MD_SHA1, deviceIdDigest.data(), deviceIdDigest.size(),
-      reinterpret_cast<const uint8_t*>(username.data()), username.size(), 256,
-      20, pbkdf2Hmac.data());
+      MBEDTLS_MD_SHA1, reinterpret_cast<const uint8_t*>(deviceIdDigest.data()),
+      deviceIdDigest.size(), reinterpret_cast<const uint8_t*>(username.data()),
+      username.size(), 256, 20, reinterpret_cast<uint8_t*>(pbkdf2Hmac.data()));
   if (res != 0) {
     BELL_LOG(error, LOG_TAG, "Failed to calculate pbkdf2, mbedtls error: {}",
              res);
@@ -358,10 +358,10 @@ bell::Result<> LoginBlob::decodeEncryptedAuthBlob(
   }
 
   // Calculate the sha1 hmac
-  std::array<uint8_t, 20 + 4> baseKeyHashed{};
+  std::array<std::byte, 20 + 4> baseKeyHashed{};
   // First 4 bytes are the length of the base key, which is 20 bytes
   // The rest is the sha1 hash of the base key
-  baseKeyHashed[23] = 0x14;
+  baseKeyHashed[23] = std::byte{0x14};
 
   sha1Context.reset();
   sha1Context.getDigest(pbkdf2Hmac.data(), pbkdf2Hmac.size(),
@@ -372,7 +372,9 @@ bell::Result<> LoginBlob::decodeEncryptedAuthBlob(
   mbedtls_aes_init(&aesCtx);
 
   // Set the key
-  if (mbedtls_aes_setkey_dec(&aesCtx, baseKeyHashed.data(), 192) != 0) {
+  if (mbedtls_aes_setkey_dec(
+          &aesCtx, reinterpret_cast<const uint8_t*>(baseKeyHashed.data()),
+          192) != 0) {
     BELL_LOG(error, LOG_TAG, "Failed to set AES key");
     mbedtls_aes_free(&aesCtx);
     return bell::make_unexpected_errc<>(std::errc::bad_message);
@@ -380,11 +382,12 @@ bell::Result<> LoginBlob::decodeEncryptedAuthBlob(
 
   for (uint64_t x = 0; x < base64DecodedAuthData.size() / 16; x++) {
     // Temporary buffer for decrypted 16 bytes
-    std::array<uint8_t, 16> decryptedChunk{};
+    std::array<std::byte, 16> decryptedChunk{};
 
-    if (mbedtls_aes_crypt_ecb(&aesCtx, MBEDTLS_AES_DECRYPT,
-                              &base64DecodedAuthData[x * 16],
-                              decryptedChunk.data()) != 0) {
+    if (mbedtls_aes_crypt_ecb(
+            &aesCtx, MBEDTLS_AES_DECRYPT,
+            reinterpret_cast<const uint8_t*>(&base64DecodedAuthData[x * 16]),
+            reinterpret_cast<uint8_t*>(decryptedChunk.data())) != 0) {
       BELL_LOG(error, LOG_TAG, "Failed to aes decrypt auth data");
       mbedtls_aes_free(&aesCtx);
       return bell::make_unexpected_errc<>(std::errc::bad_message);
@@ -401,9 +404,8 @@ bell::Result<> LoginBlob::decodeEncryptedAuthBlob(
     base64DecodedAuthData[l - i - 1] ^= base64DecodedAuthData[l - i - 17];
   }
 
-  bell::io::IMemoryStream blobMemoryStream(
-      reinterpret_cast<const std::byte*>(base64DecodedAuthData.data()),
-      base64DecodedAuthData.size());
+  bell::io::IMemoryStream blobMemoryStream(base64DecodedAuthData.data(),
+                                           base64DecodedAuthData.size());
 
   // Construct the binary stream reader
   bell::io::BinaryStream blobBinaryStream(&blobMemoryStream);
@@ -444,7 +446,7 @@ uint32_t LoginBlob::readUvarint(bell::io::BinaryStream& stream) {
 }
 
 bell::Result<> LoginBlob::base64Decode(std::string_view encoded,
-                                       std::vector<uint8_t>& targetBuffer) {
+                                       std::vector<std::byte>& targetBuffer) {
   size_t outputSize = 0;
   int res = mbedtls_base64_decode(
       nullptr, 0, &outputSize, reinterpret_cast<const uint8_t*>(encoded.data()),

@@ -5,7 +5,6 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-#include "fmt/format.h"
 
 using namespace cspot;
 
@@ -41,7 +40,8 @@ SpotifyIdType uriToType(std::string_view prefix) {
 }
 }  // namespace
 
-cspot::SpotifyId::SpotifyId(SpotifyIdType type, const std::vector<uint8_t>& gid)
+cspot::SpotifyId::SpotifyId(SpotifyIdType type,
+                            const std::vector<std::byte>& gid)
     : type(type) {
   if (gid.size() != 16) {
     throw std::invalid_argument("GID must be exactly 16 bytes long");

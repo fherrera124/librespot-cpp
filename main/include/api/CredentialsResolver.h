@@ -1,19 +1,18 @@
 #pragma once
 
-#include <memory>
-#include <mutex>
+#include <chrono>
 #include <string>
-#include <vector>
 
 #include "bell/Result.h"
 #include "bell/http/Client.h"
 
-#include "LoginBlob.h"
+#include "AuthInfo.h"
 
 namespace cspot {
+// Clock defined as template, allows for testing with a mocked clock externally
 class CredentialsResolver {
  public:
-  CredentialsResolver(std::shared_ptr<bell::HTTPClient> httpClient, std::shared_ptr<LoginBlob> loginBlob);
+  virtual ~CredentialsResolver() = default;
 
   // Enumeration of the endpoint types
   enum class AddressType {
@@ -21,6 +20,9 @@ class CredentialsResolver {
     Dealer,
     SpClient,
   };
+
+  // Alias for a timepoint
+  using sysclock_timepoint = std::chrono::time_point<std::chrono::system_clock>;
 
   /**
    * @brief Resolve the address of the access point, dealer, or spClient.
@@ -30,63 +32,31 @@ class CredentialsResolver {
    * @param type The type of address to resolve
    * @return std::string The resolved address
    */
-  bell::Result<std::string> getApAddress(AddressType type);
+  virtual bell::Result<std::string> getApAddress(
+      AddressType type,
+      sysclock_timepoint now = std::chrono::system_clock::now()) = 0;
 
   /**
    * @brief Retrieve the Spotify client token, using the "clienttoken.spotify.com" endpoint, caching the token for subsequent calls.
    *
    * @return std::string retrieved token
    */
-  bell::Result<std::string> getClientToken();
+  virtual bell::Result<std::string> getClientToken(
+      sysclock_timepoint now = std::chrono::system_clock::now()) = 0;
 
   /**
   * @brief Fetches a new access key from the Spotify API, caching the key for subsequent calls.
   *
   * @returns std::string access key
   */
-  bell::Result<std::string> getAccessKey();
-
-  /**
-   * @brief Forces a refresh of the addresses.
-   */
-  bell::Result<> updateAddresses();
-
-  /**
-   * @brief Forces a refresh of the client token.
-   */
-  bell::Result<> updateClientToken();
-
-  /**
-   * @brief Forces a refresh of the access key.
-   */
-  bell::Result<> updateAccessKey();
-
-  std::string getSessionId() { return this->sessionId; }
-
-  void setSessionId(const std::string& sessionId) {
-    this->sessionId = sessionId;
-  }
-
- private:
-  const char* LOG_TAG = "CredentialsResolver";
-
-  std::shared_ptr<bell::HTTPClient> httpClient;
-  std::shared_ptr<LoginBlob> loginBlob;
-
-  // Cached
-  std::vector<std::string> apAddresses;
-  std::vector<std::string> dealerAddresses;
-  std::vector<std::string> spClientAddresses;
-  std::string clientToken;
-  std::string accessKey;
-  std::string sessionId;
-
-  // Expiry times
-  using sysclock_timepoint = std::chrono::time_point<std::chrono::system_clock>;
-  sysclock_timepoint addressesExpiresAt;
-  sysclock_timepoint clientTokenExpiresAt;
-  sysclock_timepoint accessKeyExpiresAt;
-
-  std::recursive_mutex accessMutex;
+  virtual bell::Result<std::string> getAccessKey(
+      sysclock_timepoint now = std::chrono::system_clock::now()) = 0;
 };
+
+/**
+ * Creates an instance of the default credentials resolver
+ */
+std::unique_ptr<CredentialsResolver> createDefaultCredentialsResolver(
+    std::shared_ptr<bell::HTTPClient> httpClient,
+    std::shared_ptr<AuthInfo> authInfo);
 }  // namespace cspot

@@ -1,7 +1,5 @@
 #include "api/ApConnection.h"
 
-#include "Utils.h"
-#include "api/CredentialsResolver.h"
 #include "authentication.pb.h"
 #include "bell/Logger.h"
 #include "bell/Result.h"
@@ -16,27 +14,16 @@ const long long SPOTIFY_VERSION = 0x10800000000;
 const size_t shannonMacSize = 4;
 }  // namespace
 
-ApConnection::ApConnection(std::shared_ptr<SessionContext> sessionContext)
-    : sessionContext(std::move(sessionContext)) {}
-
-bell::Result<> ApConnection::connect() {
+bell::Result<> ApConnection::connect(
+    const std::string& apAddress,
+    const std::shared_ptr<bell::SocketPollListener>& socketPoll) {
   BELL_LOG(debug, LOG_TAG, "Connecting to AP");
-  auto addr = sessionContext->credentialsResolver->getApAddress(
-      CredentialsResolver::AddressType::AccessPoint);
-  BELL_LOG(debug, LOG_TAG, "Got AP address");
-  if (!addr) {
-    BELL_LOG(error, LOG_TAG, "Could not resolve AP address: {}", addr.error());
-    return tl::make_unexpected<>(addr.error());
-  }
-
-  const std::string& apAddress = *addr;
-
   apSock = std::make_unique<bell::net::TCPSocket>();
 
   // Split the address into hostname and port
   auto colonPos = apAddress.find(':');
   if (colonPos == std::string::npos) {
-    throw std::runtime_error("AP address missing port");
+    return bell::make_unexpected_errc(std::errc::invalid_argument);
   }
 
   auto hostname = apAddress.substr(0, colonPos);
@@ -52,13 +39,12 @@ bell::Result<> ApConnection::connect() {
   }
 
   // Register readable listener
-  sessionContext->socketPoll.registerSocket(
-      apSock, bell::PollEvent::Readable,
-      [this](auto& /*sock*/) { this->handleRead(); });
+  socketPoll->registerSocket(apSock, bell::PollEvent::Readable,
+                             [this](auto& /*sock*/) { this->handleRead(); });
 
   // Register writeable / connected listener
-  sessionContext->socketPoll.registerSocket(
-      apSock, bell::PollEvent::Writeable, [this](auto& /*sock*/) {
+  socketPoll->registerSocket(
+      apSock, bell::PollEvent::Writeable, [socketPoll, this](auto& /*sock*/) {
         if (apSock->lastError()) {
           BELL_LOG(error, LOG_TAG, "AP connection error: {}",
                    apSock->lastError());
@@ -80,16 +66,10 @@ bell::Result<> ApConnection::connect() {
         }
 
         // We are connected, unregister the writeable event
-        sessionContext->socketPoll.unregisterSocket(apSock,
-                                                    bell::PollEvent::Writeable);
+        socketPoll->unregisterSocket(apSock, bell::PollEvent::Writeable);
       });
 
   return {};
-}
-
-ApConnection::~ApConnection() {
-  // Close the socket
-  apSock->close();
 }
 
 void ApConnection::handleRead() {
@@ -140,13 +120,13 @@ void ApConnection::handleRead() {
     BELL_LOG(info, LOG_TAG, "Hello challenge solved successfully");
     state = State::CONNECTED_SHANNON;
 
-    res = authenticate();
-    if (!res) {
-      BELL_LOG(error, LOG_TAG, "Could not authenticate with AP: {}",
-               res.error());
-      state = State::ERROR;
-      return;
-    }
+    // res = authenticate();
+    // if (!res) {
+    //   BELL_LOG(error, LOG_TAG, "Could not authenticate with AP: {}",
+    //            res.error());
+    //   state = State::ERROR;
+    //   return;
+    // }
   }
 }
 
@@ -163,7 +143,7 @@ bell::Result<> ApConnection::sendClientHelloPacket() {
   pbClientHello.featureSet.autoupdate2 = true;
   pbClientHello.cryptosuitesSupported.push_back(
       Cryptosuite_CRYPTO_SUITE_SHANNON);
-  pbClientHello.padding.push_back(0x1E);
+  pbClientHello.padding.push_back(std::byte{0x1E});
 
   // Copy the public key into the ClientHello message
   auto publicKey = dhPair.getPublicKey();
@@ -172,8 +152,8 @@ bell::Result<> ApConnection::sendClientHelloPacket() {
   std::copy(publicKey.begin(), publicKey.end(), pbGcArr.begin());
 
   // Fill nonce with random data
-  for (unsigned char& nonceByte : pbClientHello.clientNonce) {
-    nonceByte = rand() % 256;
+  for (std::byte& nonceByte : pbClientHello.clientNonce) {
+    nonceByte = static_cast<std::byte>(rand() % 256);
   }
 
   std::vector<std::byte> encodedHelloPacket = {};
@@ -198,7 +178,7 @@ bell::Result<> ApConnection::sendClientHelloPacket() {
 }
 
 bell::Result<> ApConnection::solveHelloChallenge(
-    const uint8_t* apResponsePacket, size_t apResponsePacketSize) {
+    const std::byte* apResponsePacket, size_t apResponsePacketSize) {
 
   bool res = nanopb_helper::decodeFromBuffer(pbApResponse, apResponsePacket,
                                              apResponsePacketSize);
@@ -207,7 +187,7 @@ bell::Result<> ApConnection::solveHelloChallenge(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  std::array<uint8_t, 96> sharedKey{};
+  std::array<std::byte, 96> sharedKey{};
 
   // Compute the diffie hellman shared key based on the response
   dhPair.computeSharedKey(pbApResponse.challenge.value.loginCryptoChallenge
@@ -215,14 +195,16 @@ bell::Result<> ApConnection::solveHelloChallenge(
                           96, sharedKey.data());
 
   // Init client packet + Init server packets are required for the hmac challenge
-  accumulatedExchangeBuffer.push_back(0x00);  // Add a terminator byte
+  accumulatedExchangeBuffer.push_back(
+      std::byte{0x00});  // Add a terminator byte
 
   bell::utils::DigestCrypto sha1Context{MBEDTLS_MD_SHA1, true};
 
-  std::array<uint8_t, 100> challengeResult{};
+  std::array<std::byte, 100> challengeResult{};
   // Solve the hmac challenge
-  for (size_t x = 0; x < 5; x++) {
-    accumulatedExchangeBuffer[accumulatedExchangeBuffer.size() - 1] = x + 1;
+  for (uint8_t x = 0; x < 5; x++) {
+    accumulatedExchangeBuffer[accumulatedExchangeBuffer.size() - 1] =
+        static_cast<std::byte>(x + 1);
 
     // Calculate the hmac
     sha1Context.getHmac(
@@ -230,7 +212,7 @@ bell::Result<> ApConnection::solveHelloChallenge(
         accumulatedExchangeBuffer.size(), &challengeResult[x * 20]);
   }
 
-  std::array<uint8_t, 20> responseHmac{};
+  std::array<std::byte, 20> responseHmac{};
   sha1Context.getHmac(
       challengeResult.data(), 20, accumulatedExchangeBuffer.data(),
       accumulatedExchangeBuffer.size() - 1, responseHmac.data());
@@ -240,8 +222,8 @@ bell::Result<> ApConnection::solveHelloChallenge(
       responseHmac.begin(), responseHmac.end(),
       pbClientResponse.loginCryptoResponse.diffieHellman.value.hmac.data());
 
-  std::array<uint8_t, 32> shanSendKey{};
-  std::array<uint8_t, 32> shanRecvKey{};
+  std::array<std::byte, 32> shanSendKey{};
+  std::array<std::byte, 32> shanRecvKey{};
 
   // Shan send key = [0x14:0x34]
   std::copy(challengeResult.begin() + 0x14, challengeResult.begin() + 0x34,
@@ -288,7 +270,7 @@ bell::Result<> ApConnection::sendPlainPacket(const std::byte* data, size_t len,
   uint32_t packetSize = htonl(len + 4 + (cmd.has_value() ? 2 : 0));
   if (cmd.has_value()) {
     uint32_t prefix = htons(cmd.value());
-    auto res = apSock->write(reinterpret_cast<const uint8_t*>(&prefix),
+    auto res = apSock->write(reinterpret_cast<const std::byte*>(&prefix),
                              sizeof(uint16_t));
     if (!res) {
       return tl::make_unexpected(res.error());
@@ -301,7 +283,7 @@ bell::Result<> ApConnection::sendPlainPacket(const std::byte* data, size_t len,
           reinterpret_cast<const std::byte*>(&prefix) + sizeof(uint16_t));
     }
   }
-  auto res = apSock->write(reinterpret_cast<const uint8_t*>(&packetSize),
+  auto res = apSock->write(reinterpret_cast<const std::byte*>(&packetSize),
                            sizeof(packetSize));
   if (!res) {
     return tl::make_unexpected(res.error());
@@ -315,7 +297,7 @@ bell::Result<> ApConnection::sendPlainPacket(const std::byte* data, size_t len,
   }
 
   // Send the packet data
-  res = apSock->write(reinterpret_cast<const uint8_t*>(data), len);
+  res = apSock->write(data, len);
   if (!res) {
     return tl::make_unexpected(res.error());
   }
@@ -331,16 +313,12 @@ bell::Result<> ApConnection::sendPlainPacket(const std::byte* data, size_t len,
   return {};
 }
 
-bell::Result<> ApConnection::authenticate() {
-  auto deviceId = sessionContext->loginBlob->getDeviceId();
+bell::Result<> ApConnection::authenticate(
+    const cspot_proto::LoginCredentials& loginCredentials,
+    const std::string& deviceId) {
 
   // Prepare the authentication request
-  pbClientResponseEncrypted.loginCredentials.authData =
-      sessionContext->loginBlob->getStoredAuthBlob();
-  pbClientResponseEncrypted.loginCredentials.type =
-      static_cast<AuthenticationType>(sessionContext->loginBlob->getAuthType());
-  pbClientResponseEncrypted.loginCredentials.username =
-      sessionContext->loginBlob->getUsername();
+  pbClientResponseEncrypted.loginCredentials = loginCredentials;
   pbClientResponseEncrypted.systemInfo.cpuFamily = CpuFamily_CPU_UNKNOWN;
   pbClientResponseEncrypted.systemInfo.os = Os_OS_UNKNOWN;
   pbClientResponseEncrypted.systemInfo.systemInformationString = "cspot-player";
@@ -348,7 +326,7 @@ bell::Result<> ApConnection::authenticate() {
   pbClientResponseEncrypted.versionString = "cspot-1.1";
 
   // Encode the ClientResponseEncrypted message
-  std::vector<uint8_t> encodedResponse;
+  std::vector<std::byte> encodedResponse;
   auto encodeRes =
       nanopb_helper::encodeToVector(pbClientResponseEncrypted, encodedResponse);
   if (!encodeRes) {
@@ -375,8 +353,8 @@ bell::Result<size_t> ApConnection::receivePlainPacket() {
   uint32_t packetSize = 0;
 
   // Not using a BinaryStream here, as we only really need to read a single uint32_t
-  auto res =
-      apSock->read(reinterpret_cast<uint8_t*>(&packetSize), sizeof(packetSize));
+  auto res = apSock->read(reinterpret_cast<std::byte*>(&packetSize),
+                          sizeof(packetSize));
 
   if (!res) {
     return res;
@@ -385,8 +363,8 @@ bell::Result<size_t> ApConnection::receivePlainPacket() {
   if (state != State::CONNECTED_SHANNON) {
     accumulatedExchangeBuffer.insert(
         accumulatedExchangeBuffer.end(),
-        reinterpret_cast<uint8_t*>(&packetSize),
-        reinterpret_cast<uint8_t*>(&packetSize) + sizeof(packetSize));
+        reinterpret_cast<std::byte*>(&packetSize),
+        reinterpret_cast<std::byte*>(&packetSize) + sizeof(packetSize));
   }
 
   packetSize = ntohl(packetSize);
@@ -416,16 +394,17 @@ bell::Result<size_t> ApConnection::receivePlainPacket() {
 }
 
 void ApConnection::updateShannonNonce(uint32_t& nonce, Shannon& cipher) {
-  std::array<uint8_t, 4> nonceData{};
+  std::array<std::byte, 4> nonceData{};
   uint32_t packedNonce = htonl(nonce);
 
-  std::copy(reinterpret_cast<uint8_t*>(&packedNonce),
-            reinterpret_cast<uint8_t*>(&packedNonce) + 4, nonceData.begin());
+  std::copy(reinterpret_cast<std::byte*>(&packedNonce),
+            reinterpret_cast<std::byte*>(&packedNonce) + 4, nonceData.begin());
 
   cipher.nonce(nonceData.data(), nonceData.size());
 }
 
-bell::Result<> ApConnection::sendPacket(uint8_t cmd, const uint8_t* packetData,
+bell::Result<> ApConnection::sendPacket(uint8_t cmd,
+                                        const std::byte* packetData,
                                         uint16_t packetSize) {
   if (state != State::CONNECTED_SHANNON) {
     return bell::make_unexpected_errc(std::errc::operation_not_permitted);
@@ -439,7 +418,7 @@ bell::Result<> ApConnection::sendPacket(uint8_t cmd, const uint8_t* packetData,
   }
 
   // Set the command byte
-  connectionBuffer[0] = cmd;
+  connectionBuffer[0] = static_cast<std::byte>(cmd);
 
   // Copy the packet data
   std::copy(packetData, packetData + packetSize,
@@ -447,8 +426,8 @@ bell::Result<> ApConnection::sendPacket(uint8_t cmd, const uint8_t* packetData,
 
   // Encode the packet size
   packetSize = htons(packetSize);
-  std::copy(reinterpret_cast<uint8_t*>(&packetSize),
-            reinterpret_cast<uint8_t*>(&packetSize) + sizeof(uint16_t),
+  std::copy(reinterpret_cast<std::byte*>(&packetSize),
+            reinterpret_cast<std::byte*>(&packetSize) + sizeof(uint16_t),
             &connectionBuffer[1]);
 
   // Encrypt the packet
@@ -471,10 +450,10 @@ bell::Result<> ApConnection::sendPacket(uint8_t cmd, const uint8_t* packetData,
   return {};
 }
 
-bell::Result<uint8_t*> ApConnection::receivePacket(uint8_t& cmd,
-                                                   uint16_t& packetSize) {
+bell::Result<std::byte*> ApConnection::receivePacket(uint8_t& cmd,
+                                                     uint16_t& packetSize) {
   if (state != State::CONNECTED_SHANNON) {
-    return bell::make_unexpected_errc<uint8_t*>(
+    return bell::make_unexpected_errc<std::byte*>(
         std::errc::operation_not_permitted);
   }
 
@@ -487,10 +466,10 @@ bell::Result<uint8_t*> ApConnection::receivePacket(uint8_t& cmd,
   recvCipher.decrypt(connectionBuffer.data(), 3);
 
   // Extract the command byte
-  cmd = connectionBuffer[0];
+  cmd = static_cast<uint8_t>(connectionBuffer[0]);
 
   std::copy(&connectionBuffer[1], &connectionBuffer[3],
-            reinterpret_cast<uint8_t*>(&packetSize));
+            reinterpret_cast<std::byte*>(&packetSize));
   packetSize = ntohs(packetSize);
 
   if (packetSize + shannonMacSize > connectionBuffer.size()) {
@@ -507,7 +486,7 @@ bell::Result<uint8_t*> ApConnection::receivePacket(uint8_t& cmd,
   recvCipher.decrypt(connectionBuffer.data(), packetSize);
 
   // Generate mac
-  std::array<uint8_t, shannonMacSize> mac{};
+  std::array<std::byte, shannonMacSize> mac{};
   recvCipher.finish(mac.data(), mac.size());
 
   // Compare the received mac with the calculated mac

@@ -18,22 +18,22 @@ class DH {
 
   /**
    * @brief Compute the shared key from the remote public key.
-   * 
+   *
    * @param remotePublicKey Pointer to the remote public key buffer.
    * @param keySize Amount of bytes in the remote public key.
    * @param sharedKey Pointer to the buffer where the shared key will be stored. Must be at least 96 bytes.
    */
-  void computeSharedKey(const uint8_t* remotePublicKey, size_t keySize,
-                        uint8_t* sharedKey);
+  void computeSharedKey(const std::byte* remotePublicKey, size_t keySize,
+                        std::byte* sharedKey);
 
   /**
    * @brief Returns the public key as a base64-encoded string.
-   * 
+   *
    * @return std::string string containing the public key.
    */
   std::string getPublicKeyBase64();
 
-  std::vector<uint8_t> getPublicKey() const {
+  std::vector<std::byte> getPublicKey() const {
     return {publicKey.begin(), publicKey.end()};
   }
 
@@ -42,8 +42,8 @@ class DH {
   static const size_t dhKeySize = 96;
 
   // Holds the private and public key.
-  std::array<uint8_t, dhKeySize> privateKey;
-  std::array<uint8_t, dhKeySize> publicKey;
+  std::array<std::byte, dhKeySize> privateKey;
+  std::array<std::byte, dhKeySize> publicKey;
 
   // MbedTLS bignums
   mbedtls_mpi prime{};

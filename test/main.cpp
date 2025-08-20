@@ -1,11 +1,20 @@
 #include "bell/Logger.h"
 
-#define CATCH_CONFIG_RUNNER
-#include <catch2/catch_session.hpp>
+#define DOCTEST_CONFIG_IMPLEMENT
+#include <doctest/doctest.h>
 
 int main(int argc, char* argv[]) {
   bell::registerDefaultLogger();
 
-  int result = Catch::Session().run(argc, argv);
-  return result;
+  doctest::Context context;
+  context.applyCommandLine(argc, argv);
+
+  int res = context.run();  // run doctest
+
+  // important - query flags (and --exit) rely on the user doing this
+  if (context.shouldExit()) {
+    return res;
+  }
+
+  return 0;
 }

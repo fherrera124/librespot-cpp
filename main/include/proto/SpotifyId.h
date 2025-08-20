@@ -9,7 +9,7 @@ namespace cspot {
 enum class SpotifyIdType : std::uint8_t { Track, Episode, Playlist };
 struct SpotifyId {
   // GID constructor
-  SpotifyId(SpotifyIdType type, const std::vector<uint8_t>& gid);
+  SpotifyId(SpotifyIdType type, const std::vector<std::byte>& gid);
 
   // Base62 GID constructor
   SpotifyId(SpotifyIdType type, const std::string& base62Gid);
@@ -26,9 +26,9 @@ struct SpotifyId {
   std::string hexGid() const;
 
   SpotifyIdType type;
-  std::array<uint8_t, 16> gid{};  // GID is always 16 bytes
-  std::string base62Gid;          // Base62 GID representation
-  std::string uri;                // Full URI representation
+  std::array<std::byte, 16> gid{};  // GID is always 16 bytes
+  std::string base62Gid;            // Base62 GID representation
+  std::string uri;                  // Full URI representation
 
   // Implement compare operators
   bool operator==(const SpotifyId& other) const {

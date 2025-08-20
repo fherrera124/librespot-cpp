@@ -1,23 +1,19 @@
 syntax = "proto3";
 
 import "connectivity.proto";
+import "nanopb.proto";
 
 message ClientTokenRequest {
+  option (nanopb_msgopt).type = FT_CALLBACK;
   ClientTokenRequestType request_type = 1;
-
-  oneof request {
-    ClientDataRequest client_data = 2;
-    ChallengeAnswersRequest challenge_answers = 3;
-  }
+  ClientDataRequest client_data = 2;
 }
 
 message ClientDataRequest {
+  option (nanopb_msgopt).type = FT_CALLBACK;
   string client_version = 1;
   string client_id = 2;
-
-  oneof data {
-    ConnectivitySdkData connectivity_sdk_data = 3;
-  }
+  ConnectivitySdkData connectivity_sdk_data = 3;
 }
 
 message ChallengeAnswersRequest {
@@ -26,6 +22,7 @@ message ChallengeAnswersRequest {
 }
 
 message ClientTokenResponse {
+  option (nanopb_msgopt).type = FT_CALLBACK;
   ClientTokenResponseType response_type = 1;
   GrantedTokenResponse granted_token = 2;
 }
@@ -35,6 +32,7 @@ message TokenDomain {
 }
 
 message GrantedTokenResponse {
+  option (nanopb_msgopt).type = FT_CALLBACK;
   string token = 1;
   int32 expires_after_seconds = 2;
   int32 refresh_after_seconds = 3;

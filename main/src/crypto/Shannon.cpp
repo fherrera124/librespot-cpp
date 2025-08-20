@@ -1,19 +1,36 @@
 #include "crypto/Shannon.h"
 
-#include <cstddef>
+#include <array>
 #include <climits>
+#include <cstddef>
 
 using namespace cspot;
 
 namespace {
+// Rotates a 32-bit integer left.
 inline uint32_t rotl(uint32_t n, unsigned int c) {
-  const unsigned int mask =
-      (CHAR_BIT * sizeof(n) - 1);  // assumes width is a power of 2.
-  // assert ( (c<=mask) &&"rotate by type width or more");
+  const unsigned int mask = (CHAR_BIT * sizeof(n) - 1);
   c &= mask;
   return (n << c) | (n >> ((-c) & mask));
 }
+
+// Converts 4 bytes to a 32-bit word.
+inline uint32_t bytesToWord(const std::byte* b) {
+  return (static_cast<uint32_t>(b[3]) << 24) |
+         (static_cast<uint32_t>(b[2]) << 16) |
+         (static_cast<uint32_t>(b[1]) << 8) | (static_cast<uint32_t>(b[0]));
+}
+
+// Convert a 32-bit word to 4 bytes.
+inline void wordToBytes(uint32_t w, std::byte* b) {
+  b[3] = static_cast<std::byte>(w >> 24);
+  b[2] = static_cast<std::byte>(w >> 16);
+  b[1] = static_cast<std::byte>(w >> 8);
+  b[0] = static_cast<std::byte>(w);
+}
 }  // namespace
+
+// --- No changes needed in the functions below this line ---
 
 uint32_t Shannon::sbox1(uint32_t w) {
   w ^= rotl(w, 5) | rotl(w, 7);
@@ -86,62 +103,33 @@ void Shannon::diffuse() {
   }
 }
 
-#define Byte(x, i) ((uint32_t)(((x) >> (8 * (i))) & 0xFF))
-#define BYTE2WORD(b)                                                       \
-  ((((uint32_t)(b)[3] & 0xFF) << 24) | (((uint32_t)(b)[2] & 0xFF) << 16) | \
-   (((uint32_t)(b)[1] & 0xFF) << 8) | (((uint32_t)(b)[0] & 0xFF)))
-#define WORD2BYTE(w, b)  \
-  {                      \
-    (b)[3] = Byte(w, 3); \
-    (b)[2] = Byte(w, 2); \
-    (b)[1] = Byte(w, 1); \
-    (b)[0] = Byte(w, 0); \
-  }
-#define XORWORD(w, b)     \
-  {                       \
-    (b)[3] ^= Byte(w, 3); \
-    (b)[2] ^= Byte(w, 2); \
-    (b)[1] ^= Byte(w, 1); \
-    (b)[0] ^= Byte(w, 0); \
-  }
+// --- Start of functions with fixes ---
 
-#define XORWORD(w, b)     \
-  {                       \
-    (b)[3] ^= Byte(w, 3); \
-    (b)[2] ^= Byte(w, 2); \
-    (b)[1] ^= Byte(w, 1); \
-    (b)[0] ^= Byte(w, 0); \
-  }
-
-/* Load key material into the register
- */
-#define ADDKEY(k) this->R[KEYP] ^= (k);
-
-void Shannon::loadKey(const uint8_t* key, size_t keyLen) {
+void Shannon::loadKey(const std::byte* key, size_t keyLen) {
   uint32_t i;
   uint32_t j;
   uint32_t k;
-  std::array<uint32_t, 4> xtra{};
+
   /* start folding in key */
   for (i = 0; i < (keyLen & ~0x3); i += 4) {
-    k = BYTE2WORD(&key[i]);
-    ADDKEY(k);
+    k = bytesToWord(&key[i]);
+    this->R[KEYP] ^= k;
     this->cycle();
   }
 
   /* if there were any extra key bytes, zero pad to a word */
   if (i < keyLen) {
-    for (j = 0 /* i unchanged */; i < keyLen; ++i)
-      xtra[j++] = key[i];
-    for (/* j unchanged */; j < 4; ++j)
-      xtra[j] = 0;
-    k = BYTE2WORD(xtra);
-    ADDKEY(k);
+    // Correctly handle partial words with a std::byte array
+    std::array<std::byte, 4> xtra{};
+    for (j = 0; i < keyLen; ++i, ++j)
+      xtra[j] = key[i];
+    k = bytesToWord(xtra.data());
+    this->R[KEYP] ^= k;
     this->cycle();
   }
 
   /* also fold in the length of the key */
-  ADDKEY(keyLen);
+  this->R[KEYP] ^= keyLen;
   this->cycle();
 
   /* save a copy of the register */
@@ -156,7 +144,7 @@ void Shannon::loadKey(const uint8_t* key, size_t keyLen) {
     this->R[i] ^= this->CRC[i];
 }
 
-void Shannon::key(const uint8_t* key, size_t keyLen) {
+void Shannon::key(const std::byte* key, size_t keyLen) {
   this->initState();
   this->loadKey(key, keyLen);
   this->genkonst(); /* in case we proceed to stream generation */
@@ -164,7 +152,7 @@ void Shannon::key(const uint8_t* key, size_t keyLen) {
   this->nbuf = 0;
 }
 
-void Shannon::nonce(const uint8_t* nonce, size_t nonceLen) {
+void Shannon::nonce(const std::byte* nonce, size_t nonceLen) {
   this->reloadState();
   this->konst = Shannon::INITKONST;
   this->loadKey(nonce, nonceLen);
@@ -172,33 +160,32 @@ void Shannon::nonce(const uint8_t* nonce, size_t nonceLen) {
   this->nbuf = 0;
 }
 
-void Shannon::encrypt(uint8_t* buffer, size_t bufferLen) {
-  uint8_t* endbuf;
-  uint32_t t = 0;
-
+void Shannon::encrypt(std::byte* buffer, size_t bufferLen) {
   /* handle any previously buffered bytes */
   if (this->nbuf != 0) {
     while (this->nbuf != 0 && bufferLen != 0) {
-      this->mbuf ^= *buffer << (32 - this->nbuf);
-      *buffer ^= (this->sbuf >> (32 - this->nbuf)) & 0xFF;
+      // Cast std::byte to integer for bitwise operations
+      this->mbuf ^= static_cast<uint32_t>(*buffer) << (32 - this->nbuf);
+      // Cast result back to std::byte for assignment
+      *buffer ^=
+          static_cast<std::byte>((this->sbuf >> (32 - this->nbuf)) & 0xFF);
       ++buffer;
       this->nbuf -= 8;
       --bufferLen;
     }
     if (this->nbuf != 0) /* not a whole word yet */
       return;
-    /* LFSR already cycled */
     this->macfunc(this->mbuf);
   }
 
   /* handle whole words */
-  endbuf = &buffer[bufferLen & ~((uint32_t)0x03)];
+  std::byte* endbuf = &buffer[bufferLen & ~((uint32_t)0x03)];
   while (buffer < endbuf) {
     this->cycle();
-    t = BYTE2WORD(buffer);
+    uint32_t t = bytesToWord(buffer);
     this->macfunc(t);
     t ^= this->sbuf;
-    WORD2BYTE(t, buffer);
+    wordToBytes(t, buffer);
     buffer += 4;
   }
 
@@ -209,8 +196,9 @@ void Shannon::encrypt(uint8_t* buffer, size_t bufferLen) {
     this->mbuf = 0;
     this->nbuf = 32;
     while (this->nbuf != 0 && bufferLen != 0) {
-      this->mbuf ^= *buffer << (32 - this->nbuf);
-      *buffer ^= (this->sbuf >> (32 - this->nbuf)) & 0xFF;
+      this->mbuf ^= static_cast<uint32_t>(*buffer) << (32 - this->nbuf);
+      *buffer ^=
+          static_cast<std::byte>((this->sbuf >> (32 - this->nbuf)) & 0xFF);
       ++buffer;
       this->nbuf -= 8;
       --bufferLen;
@@ -218,32 +206,29 @@ void Shannon::encrypt(uint8_t* buffer, size_t bufferLen) {
   }
 }
 
-void Shannon::decrypt(uint8_t* buffer, size_t bufferLen) {
-  uint8_t* endbuf;
-  uint32_t t = 0;
-
+void Shannon::decrypt(std::byte* buffer, size_t bufferLen) {
   /* handle any previously buffered bytes */
   if (this->nbuf != 0) {
     while (this->nbuf != 0 && bufferLen != 0) {
-      *buffer ^= (this->sbuf >> (32 - this->nbuf)) & 0xFF;
-      this->mbuf ^= *buffer << (32 - this->nbuf);
+      *buffer ^=
+          static_cast<std::byte>((this->sbuf >> (32 - this->nbuf)) & 0xFF);
+      this->mbuf ^= static_cast<uint32_t>(*buffer) << (32 - this->nbuf);
       ++buffer;
       this->nbuf -= 8;
       --bufferLen;
     }
     if (this->nbuf != 0) /* not a whole word yet */
       return;
-    /* LFSR already cycled */
     this->macfunc(this->mbuf);
   }
 
   /* handle whole words */
-  endbuf = &buffer[bufferLen & ~((uint32_t)0x03)];
+  std::byte* endbuf = &buffer[bufferLen & ~((uint32_t)0x03)];
   while (buffer < endbuf) {
     this->cycle();
-    t = BYTE2WORD(buffer) ^ this->sbuf;
+    uint32_t t = bytesToWord(buffer) ^ this->sbuf;
     this->macfunc(t);
-    WORD2BYTE(t, buffer);
+    wordToBytes(t, buffer);
     buffer += 4;
   }
 
@@ -254,8 +239,9 @@ void Shannon::decrypt(uint8_t* buffer, size_t bufferLen) {
     this->mbuf = 0;
     this->nbuf = 32;
     while (this->nbuf != 0 && bufferLen != 0) {
-      *buffer ^= (this->sbuf >> (32 - this->nbuf)) & 0xFF;
-      this->mbuf ^= *buffer << (32 - this->nbuf);
+      *buffer ^=
+          static_cast<std::byte>((this->sbuf >> (32 - this->nbuf)) & 0xFF);
+      this->mbuf ^= static_cast<uint32_t>(*buffer) << (32 - this->nbuf);
       ++buffer;
       this->nbuf -= 8;
       --bufferLen;
@@ -263,20 +249,14 @@ void Shannon::decrypt(uint8_t* buffer, size_t bufferLen) {
   }
 }
 
-void Shannon::finish(uint8_t* macBuffer, size_t macBufferLen) {
+void Shannon::finish(std::byte* macBuffer, size_t macBufferLen) {
   /* handle any previously buffered bytes */
   if (this->nbuf != 0) {
-    /* LFSR already cycled */
     this->macfunc(this->mbuf);
   }
 
-  /* perturb the MAC to mark end of input.
-     * Note that only the stream register is updated, not the CRC. This is an
-     * action that can't be duplicated by passing in plaintext, hence
-     * defeating any kind of extension attack.
-     */
   this->cycle();
-  ADDKEY(INITKONST ^ (this->nbuf << 3));
+  this->R[KEYP] ^= (INITKONST ^ (this->nbuf << 3));
   this->nbuf = 0;
 
   /* now add the CRC to the stream register and diffuse it */
@@ -288,12 +268,14 @@ void Shannon::finish(uint8_t* macBuffer, size_t macBufferLen) {
   while (macBufferLen > 0) {
     this->cycle();
     if (macBufferLen >= 4) {
-      WORD2BYTE(this->sbuf, macBuffer);
+      wordToBytes(this->sbuf, macBuffer);
       macBufferLen -= 4;
       macBuffer += 4;
     } else {
-      for (uint32_t i = 0; i < macBufferLen; ++i)
-        macBuffer[i] = Byte(this->sbuf, i);
+      for (uint32_t i = 0; i < macBufferLen; ++i) {
+        // Extract i-th byte and cast to std::byte
+        macBuffer[i] = static_cast<std::byte>((this->sbuf >> (8 * i)) & 0xFF);
+      }
       break;
     }
   }
