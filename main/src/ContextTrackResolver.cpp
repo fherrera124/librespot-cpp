@@ -616,7 +616,7 @@ bell::Result<> ContextTrackResolver::resolveRootContext() {
 }
 
 bell::Result<> ContextTrackResolver::resolveContextPage(uint32_t pageIndex) {
-  /*
+
   if (pageMetadata.size() < pageIndex + 1) {
     BELL_LOG(error, LOG_TAG,
              "Page index {} is out of bounds for page metadata size {}",
@@ -690,7 +690,7 @@ bell::Result<> ContextTrackResolver::resolveContextPage(uint32_t pageIndex) {
              "window");
     return resolveContextPage(pageIndex);
   }
-*/
+
   return {};
 }
 
