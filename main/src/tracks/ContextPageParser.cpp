@@ -19,14 +19,17 @@ int onNumber(void* /*ctx*/, const char* /*s*/, size_t /*len*/) {
 }
 }  // namespace
 
-ContextPageParser::ContextPageParser(OnTrackCallback trackCallback,
-                                     OnPageMetadataCallback pageCallback)
-    : trackCallback(std::move(trackCallback)),
-      pageCallback(std::move(pageCallback)) {
+ContextPageParser::ContextPageParser() {
   callbacks = {
       onNull,      onBoolean, nullptr,   nullptr,       onNumber,    &onString,
       &onStartMap, &onMapKey, &onEndMap, &onStartArray, &onEndArray,
   };
+}
+
+void ContextPageParser::setCallbacks(OnTrackCallback onTrackCallback,
+                                     OnPageMetadataCallback onPageCallback) {
+  this->trackCallback = std::move(onTrackCallback);
+  this->pageCallback = std::move(onPageCallback);
 }
 
 ContextPageParser::~ContextPageParser() {
@@ -52,6 +55,7 @@ bool ContextPageParser::finish() {
   if (yajlHandle != nullptr) {
     yajl_status status = yajl_complete_parse(yajlHandle);
     yajl_free(yajlHandle);
+    yajlHandle = nullptr;
     return status == yajl_status_ok;
   }
 

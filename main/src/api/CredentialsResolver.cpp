@@ -32,8 +32,14 @@ std::string spotifyClientId = "65b708073fc0480ea92a077233ca87bd";
 
 // Required access scopes
 const std::string accessTokenScopes =
-    "streaming,user-library-read,user-library-modify,user-top-read,user-read-"
-    "recently-played";
+    "app-remote-control,playlist-modify,playlist-modify-private,playlist-"
+    "modify-public,playlist-read,playlist-read-collaborative,playlist-read-"
+    "private,streaming,ugc-image-upload,user-follow-modify,user-follow-read,"
+    "user-library-modify,user-library-read,user-modify,user-modify-playback-"
+    "state,user-modify-private,user-personalized,user-read-birthdate,user-read-"
+    "currently-playing,user-read-email,user-read-play-history,user-read-"
+    "playback-position,user-read-playback-state,user-read-private,user-read-"
+    "recently-player,user-top-read";
 
 // JSON keys
 const std::string accessPointKey = "accesspoint";

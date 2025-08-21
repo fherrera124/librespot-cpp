@@ -10,6 +10,7 @@ enum class SpotifyIdType : std::uint8_t { Track, Episode, Playlist };
 struct SpotifyId {
   // GID constructor
   SpotifyId(SpotifyIdType type, const std::vector<std::byte>& gid);
+  SpotifyId(SpotifyIdType type, const std::array<std::byte, 16>& gid);
 
   // Base62 GID constructor
   SpotifyId(SpotifyIdType type, const std::string& base62Gid);

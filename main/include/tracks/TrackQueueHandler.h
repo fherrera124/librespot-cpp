@@ -5,6 +5,7 @@
 
 #include "api/SpClient.h"
 #include "bell/Result.h"
+#include "connect.pb.h"
 #include "events/EventLoop.h"
 #include "proto/ConnectPb.h"
 
@@ -52,20 +53,26 @@ class TrackQueueHandler {
  public:
   virtual ~TrackQueueHandler() = default;
 
-  virtual bell::Result<> loadContext(const std::string& contextUri,
-                                     const TrackId& currentTrackId) = 0;
+  virtual bell::Result<> loadContext(
+      const std::string& contextUri,
+      std::optional<std::string> currentTrackUri = std::nullopt,
+      std::optional<std::string> currentTrackUid = std::nullopt) = 0;
+
+  virtual void setQueue(
+      const std::vector<cspot_proto::ContextTrack>& queue) = 0;
+
+  virtual void setPlayingQueue(bool isPlayingQueue) = 0;
 
   virtual std::optional<cspot_proto::ProvidedTrack> currentTrack() = 0;
 
-  virtual std::optional<cspot_proto::ContextIndex> currentContextIndex() = 0;
+  // virtual std::optional<cspot_proto::ContextIndex> currentContextIndex() = 0;
 
-  virtual bell::Result<cspot_proto::ProvidedTrack> next();
-  virtual bell::Result<cspot_proto::ProvidedTrack> previous();
+  // virtual bell::Result<cspot_proto::ProvidedTrack> next();
+  // virtual bell::Result<cspot_proto::ProvidedTrack> previous();
 
-  virtual bell::Result<> enableShuffle(bool shuffle);
+  // virtual bell::Result<> enableShuffle(bool shuffle);
 };
 
 std::unique_ptr<TrackQueueHandler> createDefaultTrackQueueHandler(
-    std::shared_ptr<SpClient> spClient, std::shared_ptr<EventLoop> eventLoop,
-    uint32_t maxWindowSize = 33, uint32_t trackUpdateThreshold = 8);
+    std::shared_ptr<SpClient> spClient, std::shared_ptr<EventLoop> eventLoop);
 };  // namespace cspot

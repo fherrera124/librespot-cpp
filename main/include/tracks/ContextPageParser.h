@@ -22,10 +22,12 @@ class ContextPageParser {
   using OnPageMetadataCallback =
       std::function<void(uint32_t, const PageMetadata&)>;
 
-  ContextPageParser(OnTrackCallback trackCallback,
-                    OnPageMetadataCallback pageCallback);
+  ContextPageParser();
 
   ~ContextPageParser();
+
+  void setCallbacks(OnTrackCallback onTrackCallback,
+                    OnPageMetadataCallback onPageCallback);
 
   // Feed streaming data
   bell::Result<> feed(const std::byte* data, size_t len);
@@ -56,7 +58,7 @@ class ContextPageParser {
   yajl_handle yajlHandle = nullptr;
 
   // Yajl callbacks
-  static yajl_callbacks callbacks;
+  yajl_callbacks callbacks;
   static int onStartArray(void* ctx);
   static int onEndArray(void* ctx);
   static int onStartMap(void* ctx);
