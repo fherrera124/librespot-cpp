@@ -9,9 +9,41 @@
 
 using namespace cspot;
 
-FileProvider::FileProvider(std::shared_ptr<EventLoop> eventLoop,
-                           std::shared_ptr<SpClient> spClient,
-                           std::shared_ptr<ApClient> apClient)
+class DefaultFileProvider : public FileProvider, bell::Task {
+ public:
+  DefaultFileProvider(std::shared_ptr<EventLoop> eventLoop,
+                      std::shared_ptr<SpClient> spClient,
+                      std::shared_ptr<ApClient> apClient);
+
+  ~DefaultFileProvider() override;
+
+  void provideTrack(const SpotifyId& trackId) override;
+
+  // Cancels providing a track by its ID
+  void cancel(const SpotifyId& trackId) override;
+
+ private:
+  const char* LOG_TAG = "FileProvider";
+
+  std::shared_ptr<EventLoop> eventLoop;
+  std::shared_ptr<SpClient> spClient;
+  std::shared_ptr<ApClient> apClient;
+
+  std::mutex providedFilesMutex;
+  bell::Semaphore providedFileSemaphore;
+  std::vector<ProvidedFile> currentlyProvidedFiles;
+
+  std::mutex pendingAudioKeyFilesMutex;
+  std::unordered_map<SpotifyId, ProvidedFile> pendingAudioKeyFiles;
+
+  void taskLoop() override;
+
+  void handleAudioKeyResponse(const AudioKeyResponse& response);
+};
+
+DefaultFileProvider::DefaultFileProvider(std::shared_ptr<EventLoop> eventLoop,
+                                         std::shared_ptr<SpClient> spClient,
+                                         std::shared_ptr<ApClient> apClient)
     : bell::Task("cspot_file_provider", 4 * 1024, false),
       eventLoop(std::move(eventLoop)),
       spClient(std::move(spClient)),
@@ -32,11 +64,11 @@ FileProvider::FileProvider(std::shared_ptr<EventLoop> eventLoop,
       });
 }
 
-FileProvider::~FileProvider() {
+DefaultFileProvider::~DefaultFileProvider() {
   stopTask();
 }
 
-void FileProvider::provideTrack(const SpotifyId& trackId) {
+void DefaultFileProvider::provideTrack(const SpotifyId& trackId) {
   std::scoped_lock lock(providedFilesMutex);
 
   ProvidedFile file = {.itemId = trackId};
@@ -46,7 +78,7 @@ void FileProvider::provideTrack(const SpotifyId& trackId) {
   providedFileSemaphore.give();
 }
 
-void FileProvider::cancel(const SpotifyId& trackId) {
+void DefaultFileProvider::cancel(const SpotifyId& trackId) {
   std::scoped_lock lock(providedFilesMutex);
 
   auto it = std::remove_if(
@@ -58,7 +90,7 @@ void FileProvider::cancel(const SpotifyId& trackId) {
   }
 }
 
-void FileProvider::taskLoop() {
+void DefaultFileProvider::taskLoop() {
   if (providedFileSemaphore.take(100)) {
     std::optional<ProvidedFile> file = std::nullopt;
 
@@ -141,7 +173,8 @@ void FileProvider::taskLoop() {
   }
 }
 
-void FileProvider::handleAudioKeyResponse(const AudioKeyResponse& response) {
+void DefaultFileProvider::handleAudioKeyResponse(
+    const AudioKeyResponse& response) {
   std::scoped_lock lock(pendingAudioKeyFilesMutex);
 
   auto fileRes = pendingAudioKeyFiles.find(response.trackId);
@@ -159,4 +192,11 @@ void FileProvider::handleAudioKeyResponse(const AudioKeyResponse& response) {
     // post result
     eventLoop->post(EventLoop::EventType::FILE_PROVIDED, file);
   }
+}
+
+std::unique_ptr<FileProvider> cspot::createDefaultFileProvider(
+    std::shared_ptr<EventLoop> eventLoop, std::shared_ptr<SpClient> spClient,
+    std::shared_ptr<ApClient> apClient) {
+  return std::make_unique<DefaultFileProvider>(
+      std::move(eventLoop), std::move(spClient), std::move(apClient));
 }

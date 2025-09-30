@@ -12,7 +12,7 @@ include(../external/bell/external/doctest/scripts/cmake/doctest.cmake)
 set(TEST_DATA_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data")
 
 add_executable(cspot-test
-  main.cpp CredentialsResolverTest.cpp SpClientTest.cpp TrackQueueHandlerTest.cpp
+  main.cpp CredentialsResolverTest.cpp SpClientTest.cpp TrackQueueHandlerTest.cpp StreamPlayerTest.cpp
 )
 target_compile_options(cspot-test PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
 target_compile_definitions(cspot-test PRIVATE TEST_DATA_PATH="${TEST_DATA_PATH}")

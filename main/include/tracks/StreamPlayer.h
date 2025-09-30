@@ -5,23 +5,22 @@
 #include "FileProvider.h"
 #include "api/ApClient.h"
 #include "api/SpClient.h"
-#include "audio/CDNDataStream.h"
 #include "bell/utils/Semaphore.h"
 #include "bell/utils/Task.h"
 #include "events/EventModels.h"
-#include "tracks/TrackDecoder.h"
+#include "tracks/AudioDecoder.h"
 
 namespace cspot {
-class TrackPlayer : public bell::Task {
+class StreamPlayer : public bell::Task {
  public:
-  TrackPlayer(std::shared_ptr<cspot::EventLoop> eventLoop,
-              std::shared_ptr<cspot::SpClient> spClient,
-              std::shared_ptr<cspot::ApClient> apClient);
+  StreamPlayer(std::shared_ptr<cspot::EventLoop> eventLoop,
+               std::unique_ptr<cspot::FileProvider> fileProvider,
+               std::unique_ptr<cspot::AudioDecoder> audioDecoder);
 
-  ~TrackPlayer() override;
+  ~StreamPlayer() override;
 
  private:
-  const char* LOG_TAG = "TrackPlayer";
+  const char* LOG_TAG = "StreamPlayer";
 
   std::shared_ptr<cspot::EventLoop> eventLoop;
   std::shared_ptr<cspot::SpClient> spClient;
@@ -36,7 +35,7 @@ class TrackPlayer : public bell::Task {
 
   int currentTrackIndex = 0;
   bool flushRequested = false;
-  std::unique_ptr<TrackDecoder> trackDecoder;
+  std::unique_ptr<AudioDecoder> audioDecoder;
 
   void taskLoop() override;
 

@@ -1,4 +1,4 @@
-#include "tracks/TrackPlayer.h"
+#include "tracks/StreamPlayer.h"
 #include "FileProvider.h"
 #include "Utils.h"
 #include "bell/utils/Utils.h"
@@ -9,27 +9,22 @@ namespace {
 const size_t maxPreloadedTracks = 3;
 }
 
-TrackPlayer::TrackPlayer(std::shared_ptr<cspot::EventLoop> eventLoop,
-                         std::shared_ptr<cspot::SpClient> spClient,
-                         std::shared_ptr<cspot::ApClient> apClient)
+StreamPlayer::StreamPlayer(std::shared_ptr<cspot::EventLoop> eventLoop,
+                           std::unique_ptr<cspot::FileProvider> fileProvider,
+                           std::unique_ptr<cspot::AudioDecoder> audioDecoder)
     : bell::Task("cspot_player", 4 * 1024),
       eventLoop(std::move(eventLoop)),
-      spClient(std::move(spClient)),
-      apClient(std::move(apClient)) {
-  this->fileProvider = std::make_unique<FileProvider>(
-      this->eventLoop, this->spClient, this->apClient);
-
-  this->trackDecoder = std::make_unique<TrackDecoder>();
-
+      fileProvider(std::move(fileProvider)),
+      audioDecoder(std::move(audioDecoder)) {
   registerHandlers();
   startTask();
 }
 
-TrackPlayer::~TrackPlayer() {
+StreamPlayer::~StreamPlayer() {
   stopTask();
 }
 
-void TrackPlayer::registerHandlers() {
+void StreamPlayer::registerHandlers() {
   eventLoop->registerHandler(
       EventLoop::EventType::QUEUE_UPDATED, [&](EventLoop::Event&& ev) {
         BELL_LOG(info, LOG_TAG, "Received QUEUE_UPDATED event");
@@ -55,7 +50,7 @@ void TrackPlayer::registerHandlers() {
                              [&](auto&& /*ev*/) { handleFlushEvent(); });
 }
 
-void TrackPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
+void StreamPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
 
   std::cout << "Handling queue update, current track id: "
             << (update.currentTrackId ? update.currentTrackId->uri : "none")
@@ -119,7 +114,7 @@ void TrackPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
   }
 }
 
-void TrackPlayer::handleFileProvided(const ProvidedFile& providedFile) {
+void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
   std::scoped_lock lock(playbackMutex);
 
   if (providedFile.isError) {
@@ -145,16 +140,16 @@ void TrackPlayer::handleFileProvided(const ProvidedFile& providedFile) {
   }
 }
 
-void TrackPlayer::handlePlayEvent(bool shouldPlay) {
+void StreamPlayer::handlePlayEvent(bool shouldPlay) {
   std::scoped_lock lock(playbackMutex);
 }
 
-void TrackPlayer::handleFlushEvent() {
+void StreamPlayer::handleFlushEvent() {
   std::scoped_lock lock(playbackMutex);
   flushRequested = true;
 }
 
-void TrackPlayer::announceState() {
+void StreamPlayer::announceState() {
   std::scoped_lock lock(playbackMutex);
 
   PlayerStateUpdate stateUpdate{
@@ -177,59 +172,60 @@ void TrackPlayer::announceState() {
   eventLoop->post(EventLoop::EventType::PLAYER_STATE_UPDATED, stateUpdate);
 }
 
-void TrackPlayer::taskLoop() {
-  if (!trackDecoder->isOpen()) {
-    // In case there's no stream, wait for semaphore
-    queueUpdateSemaphore.take(100);
-  }
+void StreamPlayer::taskLoop() {
+    bell::utils::sleepMs(100);
+  // if (!trackDecoder->isOpen()) {
+  //   // In case there's no stream, wait for semaphore
+  //   queueUpdateSemaphore.take(100);
+  // }
 
-  std::optional<ProvidedFile> requestedProvidedFile;
-  {
-    std::scoped_lock lock(playbackMutex);
+  // std::optional<ProvidedFile> requestedProvidedFile;
+  // {
+  //   std::scoped_lock lock(playbackMutex);
 
-    // Got a flush, reset state
-    if (flushRequested) {
-      BELL_LOG(info, LOG_TAG, "Flush requested, resetting state");
-      flushRequested = false;
-      trackDecoder->resetStream();
-      currentTrackIndex = 0;
-    }
+  //   // Got a flush, reset state
+  //   if (flushRequested) {
+  //     BELL_LOG(info, LOG_TAG, "Flush requested, resetting state");
+  //     flushRequested = false;
+  //     trackDecoder->resetStream();
+  //     currentTrackIndex = 0;
+  //   }
 
-    if (!trackDecoder->isOpen() && isCurrentTrackReady()) {
-      requestedProvidedFile = providedTracks[playbackQueue[currentTrackIndex]];
-    }
-  }
+  //   if (!trackDecoder->isOpen() && isCurrentTrackReady()) {
+  //     requestedProvidedFile = providedTracks[playbackQueue[currentTrackIndex]];
+  //   }
+  // }
 
-  if (requestedProvidedFile) {
-    BELL_LOG(info, LOG_TAG, "Starting playback of track {}",
-             requestedProvidedFile->itemId.uri);
+  // if (requestedProvidedFile) {
+  //   BELL_LOG(info, LOG_TAG, "Starting playback of track {}",
+  //            requestedProvidedFile->itemId.uri);
 
-    auto res = trackDecoder->open(requestedProvidedFile->cdnUrl,
-                                  requestedProvidedFile->decryptionKey);
-    if (!res) {
-      BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
-      return;
-    }
-  }
+  //   auto res = trackDecoder->open(requestedProvidedFile->cdnUrl,
+  //                                 requestedProvidedFile->decryptionKey);
+  //   if (!res) {
+  //     BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
+  //     return;
+  //   }
+  // }
 
-  if (trackDecoder->isOpen()) {
-    auto res = trackDecoder->decodePacket();
-    if (!res) {
-      BELL_LOG(error, LOG_TAG, "Failed to decode packet: {}", res.error());
-    } else {
-    }
-    bell::utils::sleepMs(2);  // Simulate some processing time
+  // if (trackDecoder->isOpen()) {
+  //   auto res = trackDecoder->decodePacket();
+  //   if (!res) {
+  //     BELL_LOG(error, LOG_TAG, "Failed to decode packet: {}", res.error());
+  //   } else {
+  //   }
+  //   bell::utils::sleepMs(2);  // Simulate some processing time
 
-    if (trackDecoder->isEndOfStream()) {
-      BELL_LOG(info, LOG_TAG, "Track ended, moving to next track");
-      std::scoped_lock lock(playbackMutex);
-      trackDecoder->resetStream();
-      currentTrackIndex++;
-    }
-  }
+  //   if (trackDecoder->isEndOfStream()) {
+  //     BELL_LOG(info, LOG_TAG, "Track ended, moving to next track");
+  //     std::scoped_lock lock(playbackMutex);
+  //     trackDecoder->resetStream();
+  //     currentTrackIndex++;
+  //   }
+  // }
 }
 
-bool TrackPlayer::isCurrentTrackReady() {
+bool StreamPlayer::isCurrentTrackReady() {
   if (playbackQueue.empty() ||
       currentTrackIndex >= static_cast<int>(playbackQueue.size())) {
     return false;

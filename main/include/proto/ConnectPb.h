@@ -84,12 +84,12 @@ NANOPB_STRUCT(cspot_proto::ContextIndex, ContextIndex_fields)
 
 namespace cspot_proto {
 struct ContextTrack {
-  std::string uri;
-  std::string uid;
-  std::vector<std::byte> gid;
+  std::string uri{};
+  std::string uid{};
+  std::vector<std::byte> gid{};
 
   // Not a part of protobuf, added for indexing purposes
-  cspot_proto::ContextIndex index;
+  cspot_proto::ContextIndex index{};
 
   static auto bindFields(ContextTrack* self, bool isDecode) {
     _ContextTrack rawProto = ContextTrack_init_zero;

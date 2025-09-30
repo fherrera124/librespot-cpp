@@ -2,6 +2,7 @@
 
 #include <crypto/Base62.h>
 #include <cassert>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -93,7 +94,7 @@ cspot::SpotifyId::SpotifyId(const std::string& uri)
 
   if (gidSize < 16) {
     // Move gid right to fill leading zeros
-    std::memmove(this->gid.data() + (16 - gidSize), this->gid.data(), gidSize);
+    memmove(this->gid.data() + (16 - gidSize), this->gid.data(), gidSize);
   }
 }
 

@@ -3,47 +3,24 @@
 // Standard includes
 #include <memory>
 
-// Library includes
-#include "bell/utils/Semaphore.h"
-#include "bell/utils/Task.h"
-
-#include "CDNAudioStream.h"
 #include "api/ApClient.h"
 #include "api/SpClient.h"
-#include "events/EventModels.h"
 #include "proto/SpotifyId.h"
 
 namespace cspot {
-class FileProvider : public bell::Task {
+class FileProvider {
  public:
-  FileProvider(std::shared_ptr<cspot::EventLoop> eventLoop,
-               std::shared_ptr<cspot::SpClient> spClient,
-               std::shared_ptr<cspot::ApClient> apClient);
-
-  ~FileProvider() override;
+  virtual ~FileProvider() = default;
 
   // Submits a track for providing, will return a ProvidedFile through the event loop
-  void provideTrack(const SpotifyId& trackId);
+  virtual void provideTrack(const SpotifyId& trackId) = 0;
 
   // Cancels providing a track by its ID
-  void cancel(const SpotifyId& trackId);
-
- private:
-  const char* LOG_TAG = "FileProvider";
-
-  std::shared_ptr<EventLoop> eventLoop;
-  std::shared_ptr<SpClient> spClient;
-  std::shared_ptr<ApClient> apClient;
-
-  std::mutex providedFilesMutex;
-  bell::Semaphore providedFileSemaphore;
-  std::vector<ProvidedFile> currentlyProvidedFiles;
-
-  std::mutex pendingAudioKeyFilesMutex;
-  std::unordered_map<SpotifyId, ProvidedFile> pendingAudioKeyFiles;
-
-  void taskLoop() override;
-
-  void handleAudioKeyResponse(const AudioKeyResponse& response);
+  virtual void cancel(const SpotifyId& trackId) = 0;
 };
+
+std::unique_ptr<FileProvider> createDefaultFileProvider(
+    std::shared_ptr<EventLoop> eventLoop, std::shared_ptr<SpClient> spClient,
+    std::shared_ptr<ApClient> apClient);
+
 }  // namespace cspot

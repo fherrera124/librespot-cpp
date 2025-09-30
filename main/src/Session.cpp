@@ -27,7 +27,7 @@ cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo)
   connectStateHandler = std::make_shared<ConnectStateHandler>(
       eventLoop, this->authInfo, spClient);
 
-  trackPlayer = std::make_shared<TrackPlayer>(eventLoop, spClient, apClient);
+  // trackPlayer = std::make_shared<TrackPlayer>(eventLoop, spClient, apClient);
 
   eventLoop->registerHandler(EventLoop::EventType::DEALER_MESSAGE,
                              std::bind(&cspot::Session::handleDealerMessage,

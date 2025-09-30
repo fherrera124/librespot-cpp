@@ -10,7 +10,7 @@
 #include "bell/Result.h"
 #include "bell/net/SocketPollListener.h"
 #include "events/EventLoop.h"
-#include "tracks/TrackPlayer.h"
+#include "tracks/StreamPlayer.h"
 
 namespace cspot {
 class Session {
@@ -32,7 +32,7 @@ class Session {
   std::shared_ptr<cspot::SpClient> spClient;
   std::shared_ptr<cspot::ApClient> apClient;
   std::shared_ptr<cspot::ConnectStateHandler> connectStateHandler;
-  std::shared_ptr<cspot::TrackPlayer> trackPlayer;
+  std::shared_ptr<cspot::StreamPlayer> streamPlayer;
 
   void handleDealerMessage(EventLoop::Event&& event);
   void handleDealerRequest(EventLoop::Event&& event);
