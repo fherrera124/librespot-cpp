@@ -1,22 +1,17 @@
-// player/command dispatch + implementations (transfer/play/pause/resume/
-// skip/seek/repeat/update_context/add_to_queue/set_queue) and the queue
-// loading helpers they share. Split out of ConnectStateHandler.cpp
-// (2026-07-18) to keep that file to PUT construction/sending, the task
-// loop, and cluster/volume/notify handling - mirrors go-librespot's own
-// split between player.go's dispatch and controls.go's implementations,
-// see docs/aprendizaje.md 2026-07-18.
-#include "ConnectStateHandler.h"
+#include "PlayerCommandHandler.h"
 
 #include <mutex>    // for lock_guard
 #include <string>   // for string
 #include <utility>  // for pair, move
 #include <vector>   // for vector
 
-#include "CSpotContext.h"    // for Context
+#include "CSpotContext.h"     // for cJSON
 #include "Crypto.h"          // for Crypto::base64Decode
+#include "ConnectStateModel.h"
+#include "ContextResolver.h"
 #include "Logger.h"          // for CSPOT_LOG
 #include "NanoPBHelper.h"    // for pbDecode, pbArrayToVector
-#include "TimeProvider.h"
+#include "PlaybackController.h"
 #include "TrackReference.h"  // for TrackReference
 #include "pb_decode.h"       // for pb_release
 
@@ -51,8 +46,23 @@ bool contextTrackToRef(const connectstate_ContextTrack& t,
 }
 }  // namespace
 
-bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
-                                              cJSON* command) {
+PlayerCommandHandler::PlayerCommandHandler(
+    PlaybackController& playbackController, ConnectStateModel& stateModel,
+    cspot::ContextResolver& contextResolver,
+    PutBufferingStateCallback putBufferingState,
+    UpdatePlayerStateCallback updatePlayerState,
+    SendEngineEventCallback sendEngineEvent,
+    SendEngineEventDataCallback sendEngineEventData)
+    : playbackController(playbackController),
+      stateModel(stateModel),
+      contextResolver(contextResolver),
+      putBufferingState(std::move(putBufferingState)),
+      updatePlayerState(std::move(updatePlayerState)),
+      sendEngineEvent(std::move(sendEngineEvent)),
+      sendEngineEventData(std::move(sendEngineEventData)) {}
+
+bool PlayerCommandHandler::handlePlayerCommand(const std::string& endpoint,
+                                               cJSON* command) {
   if (endpoint == "transfer") {
     return handleTransfer(command);
   } else if (endpoint == "play") {
@@ -89,7 +99,8 @@ bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
     bool ok = false;
     if (relative == "current" && positionItem != nullptr &&
         cJSON_IsNumber(positionItem)) {
-      position = getPositionMs() + (uint32_t)positionItem->valuedouble;
+      position = playbackController.getPositionMs() +
+                (uint32_t)positionItem->valuedouble;
       ok = true;
     } else if (relative == "beginning" && positionItem != nullptr &&
               cJSON_IsNumber(positionItem)) {
@@ -187,7 +198,10 @@ bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
                                shuffleReason);
     stateModel.setContextMetadata(std::move(metadata));
 
-    updatePlayerState(playing, trackUri, getPositionMs(), durationMs);
+    updatePlayerState(playing, trackUri, playbackController.getPositionMs(),
+                      durationMs,
+                      connectstate_PutStateReason_PLAYER_STATE_CHANGED,
+                      /*isBuffering=*/false);
     return true;
   } else if (endpoint == "add_to_queue") {
     // command.track is one ContextTrack, same canonical-JSON shape
@@ -244,15 +258,15 @@ bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
   return false;
 }
 
-void ConnectStateHandler::loadTracks(const std::vector<TrackReference>& tracks,
-                                     int startIndex,
-                                     uint32_t requestedPositionMs,
-                                     bool startPaused) {
+void PlayerCommandHandler::loadTracks(const std::vector<TrackReference>& tracks,
+                                      int startIndex,
+                                      uint32_t requestedPositionMs,
+                                      bool startPaused) {
   playbackController.loadTracks(tracks, startIndex, requestedPositionMs,
                                 startPaused);
 }
 
-bool ConnectStateHandler::handleTransfer(cJSON* command) {
+bool PlayerCommandHandler::handleTransfer(cJSON* command) {
   cJSON* dataItem =
       command != nullptr ? cJSON_GetObjectItem(command, "data") : nullptr;
   std::vector<uint8_t> raw;
@@ -267,7 +281,9 @@ bool ConnectStateHandler::handleTransfer(cJSON* command) {
                     "queue");
     // is_active only reaches spclient via runTask()'s PUT, which needs a
     // real playback event to fire - force one here. See §10.
-    updatePlayerState(false, "", 0, 0);
+    updatePlayerState(false, "", 0, 0,
+                      connectstate_PutStateReason_PLAYER_STATE_CHANGED,
+                      /*isBuffering=*/false);
     return true;
   }
 
@@ -361,7 +377,9 @@ bool ConnectStateHandler::handleTransfer(cJSON* command) {
     CSPOT_LOG(info, "transfer: no context/queue tracks in TransferState, "
                     "becoming active with an empty queue");
     pb_release(connectstate_TransferState_fields, &transferState);
-    updatePlayerState(false, "", 0, 0);
+    updatePlayerState(false, "", 0, 0,
+                      connectstate_PutStateReason_PLAYER_STATE_CHANGED,
+                      /*isBuffering=*/false);
     return true;
   }
 
@@ -398,7 +416,7 @@ bool ConnectStateHandler::handleTransfer(cJSON* command) {
   return true;
 }
 
-bool ConnectStateHandler::handlePlay(cJSON* command) {
+bool PlayerCommandHandler::handlePlay(cJSON* command) {
   cJSON* contextItem =
       command != nullptr ? cJSON_GetObjectItem(command, "context") : nullptr;
   cJSON* uriItem =
@@ -470,9 +488,9 @@ bool ConnectStateHandler::handlePlay(cJSON* command) {
   return true;
 }
 
-void ConnectStateHandler::setPause(bool pause) {
+void PlayerCommandHandler::setPause(bool pause) {
   playbackController.setPlaybackPlaying(!pause);
-  sendEngineEvent(EventType::PLAY_PAUSE, pause);
+  sendEngineEventData(EventType::PLAY_PAUSE, pause);
 
   // Sent here (F105, docs/spotify_component_analysis.md), not left to the
   // app layer: this is the single entry point for both a remote
@@ -481,25 +499,28 @@ void ConnectStateHandler::setPause(bool pause) {
   // cache to go stale.
   std::string trackUri = stateModel.trackUri();
   if (!trackUri.empty()) {
-    updatePlayerState(!pause, trackUri, getPositionMs(), stateModel.duration());
+    updatePlayerState(!pause, trackUri, playbackController.getPositionMs(),
+                      stateModel.duration(),
+                      connectstate_PutStateReason_PLAYER_STATE_CHANGED,
+                      /*isBuffering=*/false);
   }
 }
 
-bool ConnectStateHandler::nextSong() {
+bool PlayerCommandHandler::nextSong() {
   return playbackController.nextSong();
 }
 
-bool ConnectStateHandler::previousSong() {
+bool PlayerCommandHandler::previousSong() {
   return playbackController.previousSong();
 }
 
-void ConnectStateHandler::seekMs(uint32_t position) {
+void PlayerCommandHandler::seekMs(uint32_t position) {
   playbackController.seekMs(position);
 
   std::string trackUri = stateModel.trackUri();
   uint32_t durationMs = stateModel.duration();
   bool playing = playbackController.isPlaying();
-  sendEngineEvent(EventType::SEEK, (int)position);
+  sendEngineEventData(EventType::SEEK, (int)position);
 
   // A seek while playing (not paused) otherwise never reaches the app at
   // all - EventType::SEEK isn't handled in cspot_connect.cpp's
@@ -509,10 +530,12 @@ void ConnectStateHandler::seekMs(uint32_t position) {
   // wherever it last heard from us, since it never got told. Matches
   // go-librespot's seek() (controls.go), which always calls updateState()
   // right after SeekMs() too.
-  updatePlayerState(playing, trackUri, position, durationMs);
+  updatePlayerState(playing, trackUri, position, durationMs,
+                    connectstate_PutStateReason_PLAYER_STATE_CHANGED,
+                    /*isBuffering=*/false);
 }
 
-void ConnectStateHandler::setRepeatContext(bool repeat) {
+void PlayerCommandHandler::setRepeatContext(bool repeat) {
   playbackController.setRepeatContext(repeat);
-  sendEngineEvent(EventType::REPEAT_CONTEXT, repeat);
+  sendEngineEventData(EventType::REPEAT_CONTEXT, repeat);
 }

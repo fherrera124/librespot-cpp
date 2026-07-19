@@ -14,6 +14,7 @@
 #include "ContextResolver.h"
 #include "PlaybackController.h"
 #include "PlaybackEvent.h"
+#include "PlayerCommandHandler.h"
 #include "PutStateClient.h"
 #include "protobuf/connectstate.pb.h"
 
@@ -23,7 +24,6 @@ namespace cspot {
 struct Context;
 class Login5Client;
 class TrackPlayer;
-struct TrackReference;
 
 // Publishes this device's connect-state to spclient, and owns the playback
 // engine (TrackQueue/TrackPlayer, position tracking, command execution).
@@ -86,12 +86,6 @@ class ConnectStateHandler : public bell::Task {
   // PlaybackEvent.h).
   void setEventHandler(EventHandler handler);
 
-  // Loads a fresh track list starting at `startIndex`/`positionMs`,
-  // replacing whatever was queued before. Playing state becomes "paused"
-  // until the engine's own trackLoadedCallback fires with the real one.
-  void loadTracks(const std::vector<TrackReference>& tracks, int startIndex,
-                  uint32_t requestedPositionMs, bool startPaused);
-
   void setPause(bool pause);
   bool nextSong();
   bool previousSong();
@@ -109,16 +103,6 @@ class ConnectStateHandler : public bell::Task {
   void runTask() override;
 
  private:
-  // Decodes a "transfer" command's base64 TransferState (protobuf),
-  // resolves the context it names, and loads it via loadTracks(). Returns
-  // whether the transfer could be carried out at all (decode/resolve
-  // failure only - "transferred to an empty context" isn't one).
-  bool handleTransfer(cJSON* command);
-  // Decodes a "play" command - context as plain JSON on the command
-  // object (command.context.uri), not base64 protobuf. Fired when
-  // starting new playback, as opposed to "transfer" resuming a session
-  // already playing elsewhere.
-  bool handlePlay(cJSON* command);
   // Synchronous PUT (is_buffering=true, is_playing=true), sent from
   // handlePlay()/handleTransfer() before loadTracks() kicks off the async
   // key/CDN fetch and before the command's WS reply goes out. trackUri
@@ -164,6 +148,13 @@ class ConnectStateHandler : public bell::Task {
   // Owns PlayerState/session_id/playback_id/context_uri/restrictions/
   // context_metadata - see ConnectStateModel.h. Has its own internal lock.
   ConnectStateModel stateModel;
+
+  // Decodes/executes hm://connect-state/v1/player/command requests
+  // (transfer/play/pause/skip/seek/repeat/queue edits) against
+  // playbackController/stateModel/contextResolver above - see
+  // PlayerCommandHandler.h. Declared after all three: only holds
+  // references to them, requires they're already constructed.
+  PlayerCommandHandler playerCommandHandler;
 
   // Set whenever a PUT with is_active=true is sent - read by
   // handleClusterUpdate() to tell "someone else just took over" apart

@@ -73,6 +73,22 @@ ConnectStateHandler::ConnectStateHandler(
                               (uint32_t)track->trackInfo.duration);
           },
           [this] { sendEngineEvent(EventType::DEPLETED); }),
+      playerCommandHandler(
+          playbackController, stateModel, contextResolver,
+          [this](const std::string& trackUri, uint32_t positionMs,
+                bool paused) {
+            return putBufferingState(trackUri, positionMs, paused);
+          },
+          [this](bool isPlaying, const std::string& trackUri,
+                uint32_t positionMs, uint32_t durationMs,
+                connectstate_PutStateReason reason, bool isBuffering) {
+            updatePlayerState(isPlaying, trackUri, positionMs, durationMs,
+                              reason, isBuffering);
+          },
+          [this](EventType type) { sendEngineEvent(type); },
+          [this](EventType type, EventData data) {
+            sendEngineEvent(type, data);
+          }),
       putStateClient(PutStateClient::defaultHostResolver,
                     [this](const std::string& host) {
                       contextResolver.seedSpclientHost(host);
@@ -447,10 +463,30 @@ void ConnectStateHandler::setLastCommand(uint32_t messageId,
   lastCommandSentByDeviceId = sentByDeviceId;
 }
 
-// handlePlayerCommand() and its per-endpoint implementations (transfer/play/
-// pause/resume/skip/seek/repeat/update_context/add_to_queue/set_queue), plus
-// loadTracks(), now live in ConnectStateHandlerCommands.cpp - see that
-// file's header comment.
+bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
+                                              cJSON* command) {
+  return playerCommandHandler.handlePlayerCommand(endpoint, command);
+}
+
+void ConnectStateHandler::setPause(bool pause) {
+  playerCommandHandler.setPause(pause);
+}
+
+bool ConnectStateHandler::nextSong() {
+  return playerCommandHandler.nextSong();
+}
+
+bool ConnectStateHandler::previousSong() {
+  return playerCommandHandler.previousSong();
+}
+
+void ConnectStateHandler::seekMs(uint32_t position) {
+  playerCommandHandler.seekMs(position);
+}
+
+void ConnectStateHandler::setRepeatContext(bool repeat) {
+  playerCommandHandler.setRepeatContext(repeat);
+}
 
 void ConnectStateHandler::setEventHandler(EventHandler handler) {
   engineEventHandler = handler;
