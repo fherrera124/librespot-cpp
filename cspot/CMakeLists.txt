@@ -1,5 +1,15 @@
 cmake_minimum_required(VERSION 2.8.12)
 
+# cmake_minimum_required(2.8.12) leaves CMP0079 OLD for this directory
+# scope, which blocks target_link_libraries(bell ...) below (bell is
+# add_subdirectory()'d, a different directory than this one) - this file
+# used to be add_subdirectory()'d from a wrapper with no such downgrade,
+# so it never surfaced there; now that the wrapper logic lives here too,
+# it needs an explicit opt-in.
+if(POLICY CMP0079)
+    cmake_policy(SET CMP0079 NEW)
+endif()
+
 # ESP-IDF (Component Manager) vs plain CMake (CLI target, host tests):
 # idf_component_register() must run before anything touches ${COMPONENT_LIB}.
 # No project() call here in either branch - ESP-IDF's early component-
