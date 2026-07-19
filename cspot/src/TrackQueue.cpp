@@ -191,8 +191,7 @@ std::shared_ptr<cspot::CDNAudioFile> QueuedTrack::getAudioFile(
 }
 
 void QueuedTrack::stepParseMetadata(Track* pbTrack, Episode* pbEpisode) {
-  int alternativeCount, filesCount = 0;
-  bool canPlay = false;
+  int filesCount = 0;
   AudioFile* selectedFiles = nullptr;
 
   const char* countryCode = ctx->config.countryCode.c_str();

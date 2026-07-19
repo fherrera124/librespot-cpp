@@ -278,10 +278,7 @@ MercurySession::Response MercurySession::decodeResponse(
   Response response = {};
   response.parts = {};
 
-  auto sequenceLength = ntohs(extract<uint16_t>(data, 0));
   response.sequenceId = hton64(extract<uint64_t>(data, 2));
-
-  auto partsNumber = ntohs(extract<uint16_t>(data, 11));
 
   auto headerSize = ntohs(extract<uint16_t>(data, 13));
   auto headerBytes =

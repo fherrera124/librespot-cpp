@@ -301,53 +301,63 @@ void TrackPlayer::runTask() {
       bool notifiedThisTrack = false;
 
       if (isVorbis) {
-        int32_t r =
+        int32_t openResult =
             ov_open_callbacks(this, &vorbisFile, NULL, 0, vorbisCallbacks);
 
-        if (pendingSeekPositionMs > 0) {
-          track->requestedPosition = pendingSeekPositionMs;
-        }
-
-        if (track->requestedPosition > 0) {
-          VORBIS_SEEK(&vorbisFile, track->requestedPosition);
-        }
-        decoderPositionMs = VORBIS_TIME_TELL_MS(&vorbisFile);
-        hasDecoderPosition = true;
-
-        eof = false;
-
-        CSPOT_LOG(info, "Playing");
-
-        while (!eof && currentSongPlaying) {
+        if (openResult != 0) {
+          CSPOT_LOG(error, "ov_open_callbacks failed: %d", openResult);
+          // Same fallthrough as a mid-stream decode error below: must
+          // still reach the eofCallback()/isFinished() check, or a bad
+          // track never advances or signals DEPLETED. vorbisFile was
+          // never successfully opened, so ov_clear() is skipped.
+          currentSongPlaying = false;
+          eof = true;
+        } else {
           if (pendingSeekPositionMs > 0) {
-            uint32_t seekPosition = pendingSeekPositionMs;
-            pendingSeekPositionMs = 0;
-            VORBIS_SEEK(&vorbisFile, seekPosition);
-            decoderPositionMs = VORBIS_TIME_TELL_MS(&vorbisFile);
+            track->requestedPosition = pendingSeekPositionMs;
           }
 
-          long ret = VORBIS_READ(&vorbisFile, (char*)&pcmBuffer[0],
-                                 pcmBuffer.size(), &currentSection);
+          if (track->requestedPosition > 0) {
+            VORBIS_SEEK(&vorbisFile, track->requestedPosition);
+          }
           decoderPositionMs = VORBIS_TIME_TELL_MS(&vorbisFile);
+          hasDecoderPosition = true;
 
-          if (ret == 0) {
-            CSPOT_LOG(info, "EOF");
-            eof = true;
-          } else if (ret < 0) {
-            CSPOT_LOG(error, "An error has occured in the stream %d", ret);
-            // eof, not just currentSongPlaying: a mid-stream decode error
-            // must still reach the eofCallback()/isFinished() check below,
-            // same as a clean EOF - otherwise a decode error on the last
-            // queued track never advances or signals DEPLETED.
-            currentSongPlaying = false;
-            eof = true;
-          } else {
-            feedChunk((const uint8_t*)&pcmBuffer[0], (size_t)ret,
-                     track->identifier, notifiedThisTrack);
+          eof = false;
+
+          CSPOT_LOG(info, "Playing");
+
+          while (!eof && currentSongPlaying) {
+            if (pendingSeekPositionMs > 0) {
+              uint32_t seekPosition = pendingSeekPositionMs;
+              pendingSeekPositionMs = 0;
+              VORBIS_SEEK(&vorbisFile, seekPosition);
+              decoderPositionMs = VORBIS_TIME_TELL_MS(&vorbisFile);
+            }
+
+            long ret = VORBIS_READ(&vorbisFile, (char*)&pcmBuffer[0],
+                                   pcmBuffer.size(), &currentSection);
+            decoderPositionMs = VORBIS_TIME_TELL_MS(&vorbisFile);
+
+            if (ret == 0) {
+              CSPOT_LOG(info, "EOF");
+              eof = true;
+            } else if (ret < 0) {
+              CSPOT_LOG(error, "An error has occured in the stream %d", ret);
+              // eof, not just currentSongPlaying: a mid-stream decode error
+              // must still reach the eofCallback()/isFinished() check below,
+              // same as a clean EOF - otherwise a decode error on the last
+              // queued track never advances or signals DEPLETED.
+              currentSongPlaying = false;
+              eof = true;
+            } else {
+              feedChunk((const uint8_t*)&pcmBuffer[0], (size_t)ret,
+                       track->identifier, notifiedThisTrack);
+            }
           }
+          ov_clear(&vorbisFile);
+          hasDecoderPosition = false;
         }
-        ov_clear(&vorbisFile);
-        hasDecoderPosition = false;
       } else {
         // MP3 (podcast episodes). No seek support yet: mid-track seeking
         // would need bitrate-based position estimation or frame
