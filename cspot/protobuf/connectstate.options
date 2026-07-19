@@ -1,0 +1,38 @@
+# Encode-only messages (PutStateRequest tree): static arrays, stack-friendly,
+# no malloc bookkeeping. Decode-only messages (ClusterUpdate): FT_POINTER, so
+# an unexpectedly long server string can never fail the whole decode against
+# a fixed max_size - released with pb_release after use.
+connectstate.ProvidedTrack.uri max_size:150, fixed_length:false
+connectstate.ProvidedTrack.uid max_size:64, fixed_length:false
+connectstate.ProvidedTrack.provider max_size:16, fixed_length:false
+connectstate.ProvidedTrack.album_uri max_size:100, fixed_length:false
+connectstate.ProvidedTrack.artist_uri max_size:100, fixed_length:false
+connectstate.PlayerState.context_uri max_size:150, fixed_length:false
+connectstate.PlayerState.context_url max_size:200, fixed_length:false
+connectstate.PlayerState.playback_id max_size:64, fixed_length:false
+connectstate.PlayerState.session_id max_size:64, fixed_length:false
+connectstate.PlayerState.queue_revision max_size:32, fixed_length:false
+connectstate.PlayerState.prev_tracks max_count:3
+connectstate.PlayerState.next_tracks max_count:3
+connectstate.PlayerState.context_metadata max_count:2
+connectstate.PlayerState.ContextMetadataEntry.key max_size:32, fixed_length:false
+connectstate.PlayerState.ContextMetadataEntry.value max_size:32, fixed_length:false
+connectstate.Restrictions.disallow_toggling_repeat_context_reasons max_size:48, fixed_length:false
+connectstate.Restrictions.disallow_toggling_repeat_track_reasons max_size:48, fixed_length:false
+connectstate.Restrictions.disallow_toggling_shuffle_reasons max_size:48, fixed_length:false
+connectstate.Capabilities.supported_types max_count:2, max_size:24
+connectstate.DeviceInfo.name max_size:64, fixed_length:false
+connectstate.DeviceInfo.device_software_version max_size:32, fixed_length:false
+connectstate.DeviceInfo.spirc_version max_size:16, fixed_length:false
+connectstate.DeviceInfo.device_id max_size:50, fixed_length:false
+connectstate.DeviceInfo.client_id max_size:33, fixed_length:false
+connectstate.DeviceInfo.brand max_size:32, fixed_length:false
+connectstate.DeviceInfo.model max_size:32, fixed_length:false
+connectstate.PutStateRequest.last_command_sent_by_device_id max_size:64, fixed_length:false
+connectstate.Cluster.active_device_id type:FT_POINTER
+connectstate.ClusterUpdate.ack_id type:FT_POINTER
+connectstate.ContextTrack.uri type:FT_POINTER
+connectstate.ContextTrack.gid type:FT_POINTER
+connectstate.Context.uri type:FT_POINTER
+connectstate.Session.original_session_id type:FT_POINTER
+connectstate.Queue.tracks type:FT_POINTER

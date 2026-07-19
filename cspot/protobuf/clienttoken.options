@@ -1,0 +1,8 @@
+clienttoken.NativeDesktopLinuxData.system_name max_size:32, fixed_length:false
+clienttoken.NativeDesktopLinuxData.system_release max_size:32, fixed_length:false
+clienttoken.NativeDesktopLinuxData.system_version max_size:32, fixed_length:false
+clienttoken.NativeDesktopLinuxData.hardware max_size:32, fixed_length:false
+clienttoken.ConnectivitySdkData.device_id max_size:50, fixed_length:false
+clienttoken.ClientDataRequest.client_version max_size:32, fixed_length:false
+clienttoken.ClientDataRequest.client_id max_size:33, fixed_length:false
+clienttoken.GrantedTokenResponse.token type:FT_POINTER

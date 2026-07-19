@@ -1,4 +1,11 @@
 // A minimal set of protobuf messages required to auth through login5, with a stored credential.
+// Extended (see docs/dealer_websocket_migration.md, Fase 1b) with the
+// hashcash challenge round-trip: the server may answer the first login
+// attempt with a proof-of-work challenge that must be solved and sent back
+// (with the server's login_context echoed) before it grants a token. Message
+// and field numbers match the full schema vendored in devgianlu/go-librespot
+// (proto/spotify/login5/v3/) - only the branches cspot doesn't use (password
+// login, code challenge, user info, etc.) are trimmed.
 message StoredCredential {
   required string username = 1;
   required bytes data = 2;
@@ -9,9 +16,49 @@ message ClientInfo {
   required string device_id = 2;
 }
 
+message HashcashChallenge {
+  optional bytes prefix = 1;
+  optional int32 length = 2;
+}
+
+// Wire-compatible stand-in for google.protobuf.Duration (field numbers and
+// types match) - avoids importing nanopb's well-known-types machinery for
+// one two-field message.
+message HashcashDuration {
+  optional int64 seconds = 1;
+  optional int32 nanos = 2;
+}
+
+message HashcashSolution {
+  optional bytes suffix = 1;
+  optional HashcashDuration duration = 2;
+}
+
+message Challenge {
+  oneof challenge {
+    HashcashChallenge hashcash = 1;
+  }
+}
+
+message Challenges {
+  repeated Challenge challenges = 1;
+}
+
+message ChallengeSolution {
+  oneof solution {
+    HashcashSolution hashcash = 1;
+  }
+}
+
+message ChallengeSolutions {
+  repeated ChallengeSolution solutions = 1;
+}
+
 message LoginRequest {
     required ClientInfo client_info = 1;
-    
+    optional bytes login_context = 2;
+    optional ChallengeSolutions challenge_solutions = 3;
+
     oneof login_method {
         StoredCredential stored_credential = 100;
     }
@@ -23,9 +70,12 @@ message LoginOk {
 }
 
 message LoginResponse {
+    optional bytes login_context = 5;
+
     oneof response {
         LoginOk ok = 1;
         LoginError error = 2;
+        Challenges challenges = 3;
     }
 }
 

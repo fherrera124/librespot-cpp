@@ -1,0 +1,271 @@
+// Trimmed subset of Spotify's connect-state schema (full version vendored in
+// devgianlu/go-librespot, proto/spotify/connectstate/ - 527 lines) with only
+// what cspot's ConnectStateHandler encodes (PutStateRequest -> spclient) and
+// decodes (ClusterUpdate / SetVolumeCommand <- Dealer). Field numbers match
+// the full schema; omitted fields are simply skipped by nanopb on decode.
+// Deliberately left out for now (see docs/dealer_websocket_migration.md,
+// Fase 3): prev_tracks/next_tracks queues, metadata maps, restrictions,
+// Cluster.player_state and the per-device map - each can be added later
+// without breaking anything, at a measured RAM cost, if a real need shows up.
+//
+// proto3, unlike the other (proto2) schemas here: zero-valued scalars are
+// not serialized, which is what spclient expects from modern clients.
+syntax = "proto3";
+
+package connectstate;
+
+enum DeviceType {
+    UNKNOWN = 0;
+    COMPUTER = 1;
+    TABLET = 2;
+    SMARTPHONE = 3;
+    SPEAKER = 4;
+    TV = 5;
+    AVR = 6;
+    STB = 7;
+    AUDIO_DONGLE = 8;
+    GAME_CONSOLE = 9;
+    CAST_VIDEO = 10;
+    CAST_AUDIO = 11;
+    AUTOMOBILE = 12;
+    SMARTWATCH = 13;
+    CHROMEBOOK = 14;
+    UNKNOWN_SPOTIFY = 100;
+    CAR_THING = 101;
+    OBSERVER = 102;
+    HOME_THING = 103;
+}
+
+enum PutStateReason {
+    UNKNOWN_PUT_STATE_REASON = 0;
+    SPIRC_HELLO = 1;
+    SPIRC_NOTIFY = 2;
+    NEW_DEVICE = 3;
+    PLAYER_STATE_CHANGED = 4;
+    VOLUME_CHANGED = 5;
+    PICKER_OPENED = 6;
+    BECAME_INACTIVE = 7;
+    ALIAS_CHANGED = 8;
+    NEW_CONNECTION = 9;
+    PULL_PLAYBACK = 10;
+    AUDIO_DRIVER_INFO_CHANGED = 11;
+    PUT_STATE_RATE_LIMITED = 12;
+    BACKEND_METADATA_APPLIED = 13;
+}
+
+enum MemberType {
+    SPIRC_V2 = 0;
+    SPIRC_V3 = 1;
+    CONNECT_STATE = 2;
+    CONNECT_STATE_EXTENDED = 5;
+    ACTIVE_DEVICE_TRACKER = 6;
+    PLAY_TOKEN = 7;
+}
+
+enum ClusterUpdateReason {
+    UNKNOWN_CLUSTER_UPDATE_REASON = 0;
+    DEVICES_DISAPPEARED = 1;
+    DEVICE_STATE_CHANGED = 2;
+    NEW_DEVICE_APPEARED = 3;
+    DEVICE_VOLUME_CHANGED = 4;
+    DEVICE_ALIAS_CHANGED = 5;
+    DEVICE_NEW_CONNECTION = 6;
+}
+
+message ContextPlayerOptions {
+    bool shuffling_context = 1;
+    bool repeating_context = 2;
+    bool repeating_track = 3;
+}
+
+message ProvidedTrack {
+    string uri = 1;
+    string uid = 2;
+    string provider = 6;
+    string album_uri = 8;
+    string artist_uri = 10;
+}
+
+message ContextIndex {
+    uint32 page = 1;
+    uint32 track = 2;
+}
+
+// Trimmed to the 3 reason lists go-librespot's own logic actually reads
+// (daemon/controls.go's handleSetOptions()) to decide whether a
+// shuffle/repeat toggle from the app is honored - the other ~22 categories
+// in the real Restrictions message (player.proto) exist so the app can
+// grey out buttons for things this project has no button for anyway
+// (seeking, transferring, queue editing...). Also simplified from
+// `repeated string` to a single `string` per reason - go-librespot itself
+// only ever checks "is the list non-empty", never enumerates multiple
+// reasons; a single non-empty string carries the same signal without
+// nanopb's repeated-field max_count/max_size bookkeeping. Field numbers
+// match the real schema. See docs/dealer_websocket_migration.md §36.
+message Restrictions {
+    string disallow_toggling_repeat_context_reasons = 8;
+    string disallow_toggling_repeat_track_reasons = 9;
+    string disallow_toggling_shuffle_reasons = 10;
+}
+
+message PlayerState {
+    int64 timestamp = 1;
+    string context_uri = 2;
+    string context_url = 3;
+    Restrictions context_restrictions = 4;
+    ContextIndex index = 6;
+    ProvidedTrack track = 7;
+    string playback_id = 8;
+    double playback_speed = 9;
+    int64 position_as_of_timestamp = 10;
+    int64 duration = 11;
+    bool is_playing = 12;
+    bool is_paused = 13;
+    bool is_buffering = 14;
+    bool is_system_initiated = 15;
+    ContextPlayerOptions options = 16;
+    // Queue display ("playing next") - go-librespot sends these on nearly
+    // every PUT (tracks/tracks.go's MaxTracksInContext=32, capped much
+    // lower here: full ProvidedTrack arrays at that size would blow this
+    // project's encode-time stack budget, see the .options file). Filled
+    // from TrackQueue's own resolved context list - only `uri` is
+    // populated (TrackReference has no uid/provider/album_uri/artist_uri
+    // to draw from), which is enough for the real Spotify app to render
+    // the queue from its own metadata cache.
+    repeated ProvidedTrack prev_tracks = 19;
+    repeated ProvidedTrack next_tracks = 20;
+    // update_context's other payload besides restrictions (above) - a flat
+    // string map (usually 0-2 entries in practice). Capped in .options,
+    // same rationale as everything else in this file.
+    map<string, string> context_metadata = 21;
+    string session_id = 23;
+    string queue_revision = 24;
+}
+
+message Capabilities {
+    bool can_be_player = 2;
+    bool gaia_eq_connect_id = 5;
+    bool supports_logout = 6;
+    bool is_observable = 7;
+    int32 volume_steps = 8;
+    repeated string supported_types = 9;
+    bool command_acks = 10;
+    bool supports_rename = 11;
+    bool hidden = 12;
+    bool disable_volume = 13;
+    bool connect_disabled = 14;
+    bool supports_playlist_v2 = 15;
+    bool is_controllable = 16;
+    bool supports_external_episodes = 17;
+    bool supports_transfer_command = 19;
+    bool supports_command_request = 20;
+    bool needs_full_player_state = 22;
+    bool supports_gzip_pushes = 23;
+}
+
+message DeviceInfo {
+    bool can_play = 1;
+    uint32 volume = 2;
+    string name = 3;
+    Capabilities capabilities = 4;
+    string device_software_version = 6;
+    DeviceType device_type = 7;
+    string spirc_version = 9;
+    string device_id = 10;
+    string client_id = 13;
+    string brand = 14;
+    string model = 15;
+}
+
+message Device {
+    DeviceInfo device_info = 1;
+    PlayerState player_state = 2;
+}
+
+message PutStateRequest {
+    Device device = 2;
+    MemberType member_type = 3;
+    bool is_active = 4;
+    PutStateReason put_state_reason = 5;
+    uint32 message_id = 6;
+    string last_command_sent_by_device_id = 7;
+    uint32 last_command_message_id = 8;
+    uint64 started_playing_at = 9;
+    uint64 has_been_playing_for_ms = 11;
+    uint64 client_side_timestamp = 12;
+}
+
+message Cluster {
+    int64 changed_timestamp_ms = 1;
+    string active_device_id = 2;
+    int64 server_timestamp_ms = 9;
+}
+
+message ClusterUpdate {
+    Cluster cluster = 1;
+    ClusterUpdateReason update_reason = 2;
+    string ack_id = 3;
+}
+
+message ConnectCommandOptions {
+    int32 message_id = 1;
+}
+
+message SetVolumeCommand {
+    int32 volume = 1;
+    ConnectCommandOptions command_options = 2;
+}
+
+// Transfer command payload (docs/dealer_websocket_migration.md, Fase 6
+// "corte completo" Comando Transfer): base64 protobuf inside the "data"
+// field of a hm://connect-state/v1/player/command "transfer" request -
+// confirmed against go-librespot's transfer.proto (proto/spotify/
+// connectstate/transfer.proto in devgianlu/go-librespot). Deliberately
+// minimal: only the fields ConnectStateHandler actually reads (context uri
+// to resolve, playback position/pause state, current track to find the
+// start index in the resolved list) - everything else (queue, play_origin,
+// option overrides, suppressions...) is simply skipped by nanopb on decode,
+// same trimming rationale as the rest of this file.
+message ContextTrack {
+    string uri = 1;
+    bytes gid = 3;
+}
+
+message Context {
+    string uri = 1;
+}
+
+message Session {
+    Context context = 2;
+    // The transferred playback session's identity. go-librespot adopts this
+    // into PlayerState.session_id on every transfer (daemon/player.go),
+    // generating a fresh random one only when it's absent - keeping the
+    // device's boot-time session_id across context changes is a real
+    // protocol divergence from both references. Field number from
+    // librespot's protocol/proto/session.proto. See
+    // docs/dealer_websocket_migration.md §24.
+    string original_session_id = 9;
+}
+
+message Playback {
+    int32 position_as_of_timestamp = 2;
+    bool is_paused = 4;
+    ContextTrack current_track = 5;
+}
+
+// Ad-hoc queue (no context/playlist behind it - search results, radio, a
+// manually built queue...): confirmed needed on real hardware (2026-07-14,
+// docs/dealer_websocket_migration.md §10) - a second real Transfer request
+// arrived with current_session.context.uri present but genuinely empty,
+// which the context-only MVP treated as "resolve an empty uri" (404) and
+// failed outright instead of falling back to this. Tracks here are already
+// resolved - no context-resolve HTTP call needed for this path.
+message Queue {
+    repeated ContextTrack tracks = 1;
+}
+
+message TransferState {
+    Playback playback = 2;
+    Session current_session = 3;
+    Queue queue = 4;
+}

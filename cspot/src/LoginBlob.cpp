@@ -2,6 +2,7 @@
 
 #include <stdio.h>           // for sprintf
 #include <initializer_list>  // for initializer_list
+#include <stdexcept>         // for runtime_error
 
 #include "BellLogger.h"                  // for AbstractLogger
 #include "ConstantParameters.h"          // for brandName, cspot, protoc...
@@ -55,8 +56,16 @@ std::vector<uint8_t> LoginBlob::decodeBlob(
   auto mac = crypto->sha1HMAC(checksumKey, encrypted);
 
   // Check checksum
+  //
+  // FIX: this used to only log and fall through into decrypting/returning
+  // the data anyway with a key that's provably wrong (a stale/repeated DH
+  // shared key, or a tampered blob) - garbage plaintext then fed straight
+  // into decodeBlobSecondary()/readBlobInt(), exactly the kind of input
+  // that findings F21/F22 had to harden against. See
+  // docs/spotify_component_analysis.md, finding F35.
   if (mac != checksum) {
     CSPOT_LOG(error, "Mac doesn't match!");
+    throw std::runtime_error("blob checksum mismatch");
   }
 
   encryptionKey =
@@ -67,12 +76,22 @@ std::vector<uint8_t> LoginBlob::decodeBlob(
 }
 
 uint32_t LoginBlob::readBlobInt(const std::vector<uint8_t>& data) {
+  // `data` is derived from the ZeroConf pairing blob, decrypted but
+  // otherwise attacker/network-controlled - blobSkipPosition walks it
+  // without any prior guarantee it stays in range. See
+  // docs/spotify_component_analysis.md, finding F22.
+  if (static_cast<size_t>(blobSkipPosition) >= data.size()) {
+    throw std::runtime_error("readBlobInt: position out of range");
+  }
   auto lo = data[blobSkipPosition];
   if ((int)(lo & 0x80) == 0) {
     this->blobSkipPosition += 1;
     return lo;
   }
 
+  if (static_cast<size_t>(blobSkipPosition + 1) >= data.size()) {
+    throw std::runtime_error("readBlobInt: position out of range");
+  }
   auto hi = data[blobSkipPosition + 1];
   this->blobSkipPosition += 2;
 
@@ -123,6 +142,16 @@ void LoginBlob::loadZeroconf(const std::vector<uint8_t>& blob,
   this->authType = readBlobInt(loginData);
   blobSkipPosition += 1;
   auto authSize = readBlobInt(loginData);
+
+  // authSize comes off the wire (via readBlobInt, itself now bounds-checked
+  // - see F22) - without this, a corrupt/malicious blob can make
+  // blobSkipPosition + authSize exceed loginData.size(), producing an
+  // invalid iterator range below (undefined behavior). See
+  // docs/spotify_component_analysis.md, finding F22.
+  if (static_cast<size_t>(blobSkipPosition) + authSize > loginData.size()) {
+    throw std::runtime_error("loadZeroconf: authData range out of bounds");
+  }
+
   this->username = username;
   this->authData =
       std::vector<uint8_t>(loginData.begin() + blobSkipPosition,
@@ -223,7 +252,7 @@ std::string LoginBlob::buildZeroconfInfo() {
   cJSON_AddStringToObject(json_obj, "deviceID", deviceId.c_str());
   cJSON_AddStringToObject(json_obj, "remoteName", name.c_str());
   cJSON_AddStringToObject(json_obj, "publicKey", encodedKey.c_str());
-  cJSON_AddStringToObject(json_obj, "deviceType", "deviceType");
+  cJSON_AddStringToObject(json_obj, "deviceType", "SPEAKER");
 
   char* str = cJSON_PrintUnformatted(json_obj);
   cJSON_Delete(json_obj);

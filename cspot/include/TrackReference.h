@@ -1,12 +1,8 @@
 #pragma once
 
-#include <pb_encode.h>
-#include <optional>
-#include <string_view>
+#include <cstdint>
+#include <string>
 #include <vector>
-#include "NanoPBHelper.h"
-#include "pb_decode.h"
-#include "protobuf/spirc.pb.h"
 
 namespace cspot {
 struct TrackReference {
@@ -14,8 +10,7 @@ struct TrackReference {
 
   // Resolved track GID
   std::vector<uint8_t> gid;
-  std::string uri, context;
-  std::optional<bool> queued;
+  std::string uri;
 
   // Type identifier
   enum class Type { TRACK, EPISODE };
@@ -26,11 +21,11 @@ struct TrackReference {
 
   bool operator==(const TrackReference& other) const;
 
-  // Encodes list of track references into a pb structure, used by nanopb
-  static bool pbEncodeTrackList(pb_ostream_t* stream, const pb_field_t* field,
-                                void* const* arg);
-
-  static bool pbDecodeTrackList(pb_istream_t* stream, const pb_field_t* field,
-                                void** arg);
+  // Inverse of decodeURI(): builds "spotify:track:..."/"spotify:episode:..."
+  // from a raw GID. Used to report a real track URI in connect-state PUTs
+  // (docs/dealer_websocket_migration.md, Fase 5 - bridging real playback
+  // events).
+  static std::string encodeURI(const std::vector<uint8_t>& gid,
+                               bool isEpisode = false);
 };
 }  // namespace cspot

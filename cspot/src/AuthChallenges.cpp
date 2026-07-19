@@ -1,16 +1,13 @@
 #include "AuthChallenges.h"
 
 #include <algorithm>  // for copy
-#include <climits>    // for CHAR_BIT
-#include <random>     // for default_random_engine, independent_bits_en...
+#include <stdexcept>  // for runtime_error
 
 #include "NanoPBHelper.h"  // for pbPutString, pbEncode, pbDecode
 #include "pb.h"            // for pb_byte_t
 #include "pb_decode.h"     // for pb_release
 
 using namespace cspot;
-using random_bytes_engine =
-    std::independent_bits_engine<std::default_random_engine, CHAR_BIT, uint8_t>;
 
 AuthChallenges::AuthChallenges() {
   this->crypto = std::make_unique<Crypto>();
@@ -21,7 +18,6 @@ AuthChallenges::AuthChallenges() {
 }
 
 AuthChallenges::~AuthChallenges() {
-  // Destruct the protobufs
   pb_release(ClientHello_fields, &clientHello);
   pb_release(APResponseMessage_fields, &apResponse);
   pb_release(ClientResponsePlaintext_fields, &clientResPlaintext);
@@ -31,8 +27,15 @@ AuthChallenges::~AuthChallenges() {
 std::vector<uint8_t> AuthChallenges::prepareAuthPacket(
     std::vector<uint8_t>& authData, int authType, const std::string& deviceId,
     const std::string& username) {
-  // prepare authentication request proto
   pbPutString(username, authRequest.login_credentials.username);
+
+  // auth_data is a fixed array (max_size:512) - authData comes from an
+  // unauthenticated HTTP POST body on the ZeroConf pairing path
+  // (LoginBlob.cpp), so an oversized value must be rejected here or it
+  // overruns auth_data.bytes. See F21.
+  if (authData.size() > sizeof(authRequest.login_credentials.auth_data.bytes)) {
+    throw std::runtime_error("authData too large for auth_data.bytes");
+  }
 
   std::copy(authData.begin(), authData.end(),
             authRequest.login_credentials.auth_data.bytes);
@@ -55,7 +58,12 @@ std::vector<uint8_t> AuthChallenges::prepareAuthPacket(
 
 std::vector<uint8_t> AuthChallenges::solveApHello(
     std::vector<uint8_t>& helloPacket, std::vector<uint8_t>& data) {
-  // Decode the response
+  // `data` is a raw network packet - guard against a short/malformed
+  // AP-Hello response before slicing off its first 4 bytes below. See F23.
+  if (data.size() < 4) {
+    throw std::runtime_error("AP-Hello response too short");
+  }
+
   auto skipSize = std::vector<uint8_t>(data.begin() + 4, data.end());
 
   pb_release(APResponseMessage_fields, &apResponse);
@@ -65,10 +73,9 @@ std::vector<uint8_t> AuthChallenges::solveApHello(
       apResponse.challenge.login_crypto_challenge.diffie_hellman.gs,
       apResponse.challenge.login_crypto_challenge.diffie_hellman.gs + 96);
 
-  // Compute the diffie hellman shared key based on the response
   auto sharedKey = this->crypto->dhCalculateShared(diffieKey);
 
-  // Init client packet + Init server packets are required for the hmac challenge
+  // The hmac challenge is computed over client hello + server response.
   data.insert(data.begin(), helloPacket.begin(), helloPacket.end());
 
   // Solve the hmac challenge
@@ -85,14 +92,12 @@ std::vector<uint8_t> AuthChallenges::solveApHello(
   auto lastVec =
       std::vector<uint8_t>(resultData.begin(), resultData.begin() + 0x14);
 
-  // Digest generated!
   auto digest = crypto->sha1HMAC(lastVec, data);
   clientResPlaintext.login_crypto_response.has_diffie_hellman = true;
 
   std::copy(digest.begin(), digest.end(),
             clientResPlaintext.login_crypto_response.diffie_hellman.hmac);
 
-  // Get send and receive keys
   this->shanSendKey = std::vector<uint8_t>(resultData.begin() + 0x14,
                                            resultData.begin() + 0x34);
   this->shanRecvKey = std::vector<uint8_t>(resultData.begin() + 0x34,
@@ -102,10 +107,8 @@ std::vector<uint8_t> AuthChallenges::solveApHello(
 }
 
 std::vector<uint8_t> AuthChallenges::prepareClientHello() {
-  // Prepare protobuf message
   this->crypto->dhInit();
 
-  // Copy the public key into diffiehellman hello packet
   std::copy(this->crypto->publicKey.begin(), this->crypto->publicKey.end(),
             clientHello.login_crypto_hello.diffie_hellman.gc);
 
@@ -120,9 +123,7 @@ std::vector<uint8_t> AuthChallenges::prepareClientHello() {
   clientHello.has_feature_set = true;
   clientHello.login_crypto_hello.has_diffie_hellman = true;
   clientHello.has_padding = true;
-  clientHello.has_feature_set = true;
 
-  // Generate the random nonce
   auto nonce = crypto->generateVectorWithRandomData(16);
   std::copy(nonce.begin(), nonce.end(), clientHello.client_nonce);
 

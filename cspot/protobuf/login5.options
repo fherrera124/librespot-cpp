@@ -1,1 +1,11 @@
 LoginOk.access_token type: FT_POINTER
+StoredCredential.username max_size:64, fixed_length:false
+StoredCredential.data max_size:512, fixed_length:false
+ClientInfo.client_id max_size:33, fixed_length:false
+ClientInfo.device_id max_size:50, fixed_length:false
+LoginRequest.login_context max_size:512, fixed_length:false
+LoginResponse.login_context max_size:512, fixed_length:false
+HashcashChallenge.prefix max_size:64, fixed_length:false
+HashcashSolution.suffix max_size:16, fixed_length:true
+Challenges.challenges max_count:4, fixed_count:false
+ChallengeSolutions.solutions max_count:4, fixed_count:false

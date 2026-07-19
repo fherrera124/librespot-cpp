@@ -7,6 +7,7 @@
 #include <vector>            // for vector
 
 #include "BellLogger.h"    // for AbstractLogger
+#include "BellUtils.h"     // for BELL_SLEEP_MS
 #include "CSpotContext.h"  // for Context
 #include "HTTPClient.h"
 #include "Logger.h"            // for CSPOT_LOG
@@ -24,12 +25,7 @@
 #include "nlohmann/json_fwd.hpp"  // for json
 #endif
 
-#include "protobuf/login5.pb.h"  // for LoginRequest
-
 using namespace cspot;
-
-static std::string CLIENT_ID =
-    "65b708073fc0480ea92a077233ca87bd";  // Spotify web client's client id
 
 static std::string SCOPES =
     "streaming,user-library-read,user-library-modify,user-top-read,user-read-"
@@ -68,69 +64,82 @@ void AccessKeyFetcher::updateAccessKey() {
 
   keyPending = true;
 
-  // Prepare a protobuf login request
-  static LoginRequest loginRequest = LoginRequest_init_zero;
-  static LoginResponse loginResponse = LoginResponse_init_zero;
-
-  // Assign necessary request fields
-  loginRequest.client_info.client_id.funcs.encode = &bell::nanopb::encodeString;
-  loginRequest.client_info.client_id.arg = &CLIENT_ID;
-
-  loginRequest.client_info.device_id.funcs.encode = &bell::nanopb::encodeString;
-  loginRequest.client_info.device_id.arg = &ctx->config.deviceId;
-
-  loginRequest.login_method.stored_credential.username.funcs.encode =
-      &bell::nanopb::encodeString;
-  loginRequest.login_method.stored_credential.username.arg =
-      &ctx->config.username;
-
-  // Set login method to stored credential
-  loginRequest.which_login_method = LoginRequest_stored_credential_tag;
-  loginRequest.login_method.stored_credential.data.funcs.encode =
-      &bell::nanopb::encodeVector;
-  loginRequest.login_method.stored_credential.data.arg = &ctx->config.authData;
-
   // Max retry of 3, can receive different hash cat types
   int retryCount = 3;
   bool success = false;
 
   do {
-    auto encodedRequest = pbEncode(LoginRequest_fields, &loginRequest);
-    CSPOT_LOG(info, "Access token expired, fetching new one... %d",
-              encodedRequest.size());
+    CSPOT_LOG(info, "Access token expired, fetching new one...");
 
-    // Perform a login5 request, containing the encoded protobuf data
-    auto response = bell::HTTPClient::post(
-        "https://login5.spotify.com/v3/login",
-        {{"Content-Type", "application/x-protobuf"}}, encodedRequest);
+    auto credentials = "grant_type=client_credentials&client_id=" + ctx->config.clientId + "&client_secret=" + ctx->config.clientSecret;
+    std::vector<uint8_t> body(credentials.begin(), credentials.end());
 
-    auto responseBytes = response->bytes();
+    // FIX: neither branch used to check that the response actually parsed
+    // or that "access_token"/"expires_in" were present before dereferencing
+    // them - a malformed/truncated response (e.g. a proxy error page
+    // instead of the real token response) crashed via a NULL cJSON
+    // ->valuestring deref (cJSON branch) or an uncaught nlohmann exception
+    // (nlohmann branch). This runs on TrackQueue's own task ("CSpotTrackQueue"),
+    // a different task/stack than the one the runSession() try/catch
+    // (finding F17) wraps - so an uncaught failure here escapes straight to
+    // std::terminate()/abort() and reboots the device. See
+    // docs/spotify_component_analysis.md, finding F26.
+    //
+    // The HTTP POST itself can also throw (TLSSocket handshake failure) -
+    // same F26 gap, uncaught here it rebooted the device. See F63.
+    std::unique_ptr<bell::HTTPClient::Response> response;
+    try {
+      response = bell::HTTPClient::post(
+          "https://accounts.spotify.com/api/token",
+          { {"Content-Type", "application/x-www-form-urlencoded"} }, body);
+    } catch (const std::exception& e) {
+      CSPOT_LOG(error, "Failed to reach Spotify token endpoint: %s", e.what());
+      BELL_SLEEP_MS(3000);
+      retryCount--;
+      continue;
+    }
 
-    // Deserialize the response
-    pbDecode(loginResponse, LoginResponse_fields, responseBytes);
-
-    if (loginResponse.which_response == LoginResponse_ok_tag) {
-      // Successfully received an auth token
+#ifdef BELL_ONLY_CJSON
+    cJSON* root = cJSON_Parse(response->body().data());
+    cJSON* tokenItem = root ? cJSON_GetObjectItem(root, "access_token") : nullptr;
+    cJSON* expiresItem = root ? cJSON_GetObjectItem(root, "expires_in") : nullptr;
+    bool hasError = root ? (cJSON_GetObjectItem(root, "error") != nullptr) : true;
+    if (root && !hasError && tokenItem && tokenItem->valuestring && expiresItem) {
+        accessKey = std::string(tokenItem->valuestring);
+        int expiresIn = expiresItem->valueint;
+        cJSON_Delete(root);
+#else
+    std::string tokenValue;
+    int expiresIn = 0;
+    bool parsedOk = false;
+    try {
+      auto root = nlohmann::json::parse(response->bytes());
+      if (!root.contains("error") && root.contains("access_token") &&
+          root.contains("expires_in")) {
+        tokenValue = root["access_token"].get<std::string>();
+        expiresIn = root["expires_in"].get<int>();
+        parsedOk = true;
+      }
+    } catch (const std::exception& e) {
+      CSPOT_LOG(error, "Failed to parse access token response: %s", e.what());
+    }
+    if (parsedOk) {
+        accessKey = tokenValue;
+#endif
+        // Successfully received an auth token
       CSPOT_LOG(info, "Access token sucessfully fetched");
       success = true;
 
-      accessKey = std::string(loginResponse.response.ok.access_token);
-
-      // Expire in ~30 minutes
-      int expiresIn = 3600 / 2;
-
-      if (loginResponse.response.ok.has_access_token_expires_in) {
-        int expiresIn = loginResponse.response.ok.access_token_expires_in / 2;
-      }
-
       this->expiresAt =
-          ctx->timeProvider->getSyncedTimestamp() + (expiresIn * 1000);
-    } else {
-      CSPOT_LOG(error, "Failed to fetch access token");
+            ctx->timeProvider->getSyncedTimestamp() + (expiresIn * 1000);
     }
-
-    // Free up allocated memory for response
-    pb_release(LoginResponse_fields, &loginResponse);
+    else {
+#ifdef BELL_ONLY_CJSON
+      if (root) cJSON_Delete(root);
+#endif
+      CSPOT_LOG(error, "Failed to fetch access token");
+      BELL_SLEEP_MS(3000);
+    }
 
     retryCount--;
   } while (retryCount >= 0 && !success);

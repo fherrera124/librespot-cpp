@@ -1,8 +1,12 @@
+// Fixes a real bug found on real hardware (finding F17,
+// docs/spotify_component_analysis.md) - not related to mbedTLS 4.0/ESP-IDF
+// v6, this affects upstream cspot on any platform. Everything below is
+// unchanged from upstream except connect(), which is marked where it
+// differs.
 #include "PlainConnection.h"
 
 #ifndef _WIN32
 #include <netdb.h>  // for addrinfo, freeaddrinfo, getaddrinfo
-#include <netdb.h>
 #include <netinet/in.h>   // for IPPROTO_IP, IPPROTO_TCP
 #include <netinet/tcp.h>  // for TCP_NODELAY
 #include <sys/errno.h>    // for EAGAIN, EINTR, ETIMEDOUT, errno
@@ -42,7 +46,7 @@ PlainConnection::~PlainConnection() {
 };
 
 void PlainConnection::connect(const std::string& apAddress) {
-  struct addrinfo h, *airoot, *ai;
+  struct addrinfo h, *airoot = nullptr, *ai;
   std::string hostname = apAddress.substr(0, apAddress.find(":"));
   std::string portStr =
       apAddress.substr(apAddress.find(":") + 1, apAddress.size());
@@ -51,12 +55,17 @@ void PlainConnection::connect(const std::string& apAddress) {
   h.ai_socktype = SOCK_STREAM;
   h.ai_protocol = IPPROTO_IP;
 
-  // Lookup host
+  // getaddrinfo() doesn't guarantee touching `airoot` on failure - using or
+  // freeing it afterwards was UB on a DNS/resolution failure. See F28.
   if (getaddrinfo(hostname.c_str(), portStr.c_str(), &h, &airoot)) {
     CSPOT_LOG(error, "getaddrinfo failed");
+    throw std::runtime_error("getaddrinfo failed");
   }
 
-  // find the right ai, connect to server
+  // FIX vs. upstream: try every resolved address before giving up, instead
+  // of throwing on the first candidate that fails to connect - a hostname
+  // resolving to multiple addresses (common for Spotify's AP hosts) used to
+  // get only one attempt. See F17.
   for (ai = airoot; ai; ai = ai->ai_next) {
     if (ai->ai_family != AF_INET && ai->ai_family != AF_INET6)
       continue;
@@ -80,36 +89,65 @@ void PlainConnection::connect(const std::string& apAddress) {
                  sizeof tv);
 
       int flag = 1;
-      setsockopt(this->apSock, /* socket affected */
-                 IPPROTO_TCP,  /* set option at TCP level */
-                 TCP_NODELAY,  /* name of option */
-                 (char*)&flag, /* the cast is historical cruft */
-                 sizeof(int)); /* length of option value */
+      setsockopt(this->apSock, IPPROTO_TCP, TCP_NODELAY, (char*)&flag,
+                 sizeof(int));
+
+      // OS-level TCP keepalive - catches a dead peer independent of the AP
+      // protocol's own ping/pongAck watchdog (~125s). Windows skips the
+      // IDLE/INTVL/CNT tuning (needs WSAIoctl, not plain setsockopt); plain
+      // SO_KEEPALIVE still helps there via the OS's own defaults. See §49.
+      int keepalive = 1;
+      setsockopt(this->apSock, SOL_SOCKET, SO_KEEPALIVE, (char*)&keepalive,
+                 sizeof(keepalive));
+#ifndef _WIN32
+      int keepIdle = 30;
+      setsockopt(this->apSock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle,
+                 sizeof(keepIdle));
+      int keepInterval = 10;
+      setsockopt(this->apSock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval,
+                 sizeof(keepInterval));
+      int keepCount = 3;
+      setsockopt(this->apSock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount,
+                 sizeof(keepCount));
+#endif
       break;
     }
 
+    CSPOT_LOG(error, "connect() failed (errno=%d), trying next address",
+              getErrno());
 #ifdef _WIN32
     closesocket(this->apSock);
 #else
     ::close(this->apSock);
 #endif
     apSock = -1;
-    throw std::runtime_error("Can't connect to spotify servers");
   }
 
   freeaddrinfo(airoot);
+
+  if (this->apSock < 0) {
+    throw std::runtime_error("Can't connect to spotify servers");
+  }
+
   CSPOT_LOG(debug, "Connected to spotify server");
 }
 
 std::vector<uint8_t> PlainConnection::recvPacket() {
-  // Read packet size
   std::vector<uint8_t> packetBuffer(4);
   readBlock(packetBuffer.data(), 4);
   uint32_t packetSize = ntohl(extract<uint32_t>(packetBuffer, 0));
 
-  packetBuffer.resize(packetSize, 0);
+  // packetSize is untrusted network input, read before any encryption
+  // layer kicks in - below 4 underflows `packetSize - 4` below, too large
+  // drives a huge resize(). See F34.
+  constexpr uint32_t kMaxPacketSize = 1 * 1024 * 1024;
+  if (packetSize < 4 || packetSize > kMaxPacketSize) {
+    CSPOT_LOG(error, "recvPacket: implausible packet size %u",
+              (unsigned)packetSize);
+    throw std::runtime_error("recvPacket: implausible packet size");
+  }
 
-  // Read actual data
+  packetBuffer.resize(packetSize, 0);
   readBlock(packetBuffer.data() + 4, packetSize - 4);
 
   return packetBuffer;
@@ -117,15 +155,13 @@ std::vector<uint8_t> PlainConnection::recvPacket() {
 
 std::vector<uint8_t> PlainConnection::sendPrefixPacket(
     const std::vector<uint8_t>& prefix, const std::vector<uint8_t>& data) {
-  // Calculate full packet length
   uint32_t actualSize = prefix.size() + data.size() + sizeof(uint32_t);
 
-  // Packet structure [PREFIX] + [SIZE] +  [DATA]
+  // Packet structure: [PREFIX] + [SIZE] + [DATA]
   auto sizeRaw = pack<uint32_t>(htonl(actualSize));
   sizeRaw.insert(sizeRaw.begin(), prefix.begin(), prefix.end());
   sizeRaw.insert(sizeRaw.end(), data.begin(), data.end());
 
-  // Actually write it to the server
   writeBlock(sizeRaw);
 
   return sizeRaw;
@@ -148,7 +184,7 @@ void PlainConnection::readBlock(const uint8_t* dst, size_t size) {
           }
           goto READ;
         case EINTR:
-          break;
+          goto READ;
         default:
           if (retries++ > 4)
             throw std::runtime_error("Error in read");
@@ -177,7 +213,7 @@ size_t PlainConnection::writeBlock(const std::vector<uint8_t>& data) {
           }
           goto WRITE;
         case EINTR:
-          break;
+          goto WRITE;
         default:
           if (retries++ > 4)
             throw std::runtime_error("Error in write");
@@ -195,6 +231,8 @@ void PlainConnection::close() {
     return;
 
   CSPOT_LOG(info, "Closing socket...");
+  // SO_LINGER{1,0} (abortive RST close) was tried and reverted here - see
+  // TLSSocket.cpp's close() for the real hardware regression. See §23.
   shutdown(this->apSock, SHUT_RDWR);
 #ifdef _WIN32
   closesocket(this->apSock);

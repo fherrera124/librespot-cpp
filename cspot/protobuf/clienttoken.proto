@@ -1,0 +1,68 @@
+// Minimal subset of Spotify's clienttoken schema (full version vendored in
+// devgianlu/go-librespot, proto/spotify/clienttoken/) needed to obtain the
+// Client-Token header required by login5. Trimmed to the request we send
+// (client data + Linux platform info) and the response branch we accept
+// (granted token) - unknown/omitted fields are skipped by nanopb on decode.
+// See docs/dealer_websocket_migration.md, Fase 1b.
+//
+// package gives every generated symbol a clienttoken_ prefix, avoiding
+// collisions with the bare names of the other (package-less) schemas here.
+package clienttoken;
+
+enum ClientTokenRequestType {
+    REQUEST_UNKNOWN = 0;
+    REQUEST_CLIENT_DATA_REQUEST = 1;
+    REQUEST_CHALLENGE_ANSWERS_REQUEST = 2;
+}
+
+enum ClientTokenResponseType {
+    RESPONSE_UNKNOWN = 0;
+    RESPONSE_GRANTED_TOKEN_RESPONSE = 1;
+    RESPONSE_CHALLENGES_RESPONSE = 2;
+}
+
+message NativeDesktopLinuxData {
+    optional string system_name = 1;
+    optional string system_release = 2;
+    optional string system_version = 3;
+    optional string hardware = 4;
+}
+
+message PlatformSpecificData {
+    oneof data {
+        NativeDesktopLinuxData desktop_linux = 5;
+    }
+}
+
+message ConnectivitySdkData {
+    optional PlatformSpecificData platform_specific_data = 1;
+    optional string device_id = 2;
+}
+
+message ClientDataRequest {
+    optional string client_version = 1;
+    optional string client_id = 2;
+    oneof data {
+        ConnectivitySdkData connectivity_sdk_data = 3;
+    }
+}
+
+message ClientTokenRequest {
+    optional ClientTokenRequestType request_type = 1;
+    oneof request {
+        ClientDataRequest client_data = 2;
+    }
+}
+
+message GrantedTokenResponse {
+    optional string token = 1;
+    optional int32 expires_after_seconds = 2;
+    optional int32 refresh_after_seconds = 3;
+}
+
+message ClientTokenResponse {
+    optional ClientTokenResponseType response_type = 1;
+    oneof response {
+        GrantedTokenResponse granted_token = 2;
+    }
+}

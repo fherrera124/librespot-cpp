@@ -2,6 +2,7 @@
 
 #include <limits.h>     // for CHAR_BIT
 #include <cstdint>      // for uint8_t
+#include <exception>    // for exception
 #include <functional>   // for __base
 #include <memory>       // for shared_ptr, unique_ptr, make_unique
 #include <random>       // for default_random_engine, independent_bi...
@@ -33,41 +34,68 @@ Session::Session() {
 Session::~Session() {}
 
 void Session::connect(std::unique_ptr<cspot::PlainConnection> connection) {
-  this->conn = std::move(connection);
-  conn->timeoutHandler = [this]() {
+  // Handshake happens entirely on local variables, not the conn/shanConn
+  // members - the AP handshake + auth is several blocking network
+  // round-trips (seconds, longer on a bad connection), and holding
+  // shanConnMutex for all of that would make any other task's
+  // getShanConn() hang for just as long, instead of failing fast the way
+  // it does today. The members only get swapped in, under the lock, once
+  // the new connection is actually ready. See F93.
+  auto localConn =
+      std::shared_ptr<cspot::PlainConnection>(std::move(connection));
+  localConn->timeoutHandler = [this]() {
     return this->triggerTimeout();
   };
-  auto helloPacket = this->conn->sendPrefixPacket(
+  auto helloPacket = localConn->sendPrefixPacket(
       {0x00, 0x04}, this->challenges->prepareClientHello());
-  auto apResponse = this->conn->recvPacket();
+  auto apResponse = localConn->recvPacket();
   CSPOT_LOG(info, "Received APHello response");
 
   auto solvedHello = this->challenges->solveApHello(helloPacket, apResponse);
 
-  conn->sendPrefixPacket({}, solvedHello);
+  localConn->sendPrefixPacket({}, solvedHello);
   CSPOT_LOG(debug, "Received shannon keys");
 
   // Generates the public and priv key
-  this->shanConn = std::make_shared<ShannonConnection>();
+  auto localShanConn = std::make_shared<ShannonConnection>();
 
   // Init shanno-encrypted connection
-  this->shanConn->wrapConnection(this->conn, challenges->shanSendKey,
-                                 challenges->shanRecvKey);
+  localShanConn->wrapConnection(localConn, challenges->shanSendKey,
+                                challenges->shanRecvKey);
+
+  std::scoped_lock lock(shanConnMutex);
+  this->conn = localConn;
+  this->shanConn = localShanConn;
 }
 
 void Session::connectWithRandomAp() {
   auto apResolver = std::make_unique<ApResolve>("");
-  auto conn = std::make_unique<cspot::PlainConnection>();
-  conn->timeoutHandler = [this]() {
-    return this->triggerTimeout();
-  };
+  auto apAddrs = apResolver->fetchApAddresses();
 
-  auto apAddr = apResolver->fetchFirstApAddress();
+  // Try every candidate before giving up, instead of getting stuck on a
+  // single bad AP - same pattern as PlainConnection::connect()'s own F17
+  // fix one level down (per-hostname address rotation), and
+  // DealerClient::connectOnce()'s dealer address rotation.
+  for (const auto& apAddr : apAddrs) {
+    auto conn = std::make_unique<cspot::PlainConnection>();
+    conn->timeoutHandler = [this]() {
+      return this->triggerTimeout();
+    };
 
-  CSPOT_LOG(debug, "Connecting with AP <%s>", apAddr.c_str());
-  conn->connect(apAddr);
+    CSPOT_LOG(debug, "Connecting with AP <%s>", apAddr.c_str());
+    try {
+      conn->connect(apAddr);
+    } catch (const std::exception& e) {
+      CSPOT_LOG(error, "AP connect to %s failed: %s, trying next",
+               apAddr.c_str(), e.what());
+      continue;
+    }
 
-  this->connect(std::move(conn));
+    this->connect(std::move(conn));
+    return;
+  }
+
+  throw std::runtime_error("Can't connect to any Spotify access point");
 }
 
 std::vector<uint8_t> Session::authenticate(std::shared_ptr<LoginBlob> blob) {
@@ -104,4 +132,9 @@ std::vector<uint8_t> Session::authenticate(std::shared_ptr<LoginBlob> blob) {
 
 void Session::close() {
   this->conn->close();
+}
+
+std::shared_ptr<cspot::ShannonConnection> Session::getShanConn() {
+  std::scoped_lock lock(shanConnMutex);
+  return shanConn;
 }

@@ -35,12 +35,16 @@ class MercurySession : public bell::Task, public cspot::Session {
   typedef std::function<void(Response&)> ResponseCallback;
   typedef std::function<void(bool, const std::vector<uint8_t>&)>
       AudioKeyCallback;
-  typedef std::function<void()> ConnectionEstabilishedCallback;
 
+  // SUB/UNSUB/SUBRES (0xb3-0xb5) and the whole subscription machinery were
+  // removed with SpircHandler (docs/dealer_websocket_migration.md §12) -
+  // the hm://remote pub/sub channel was its only user. What's left of the
+  // Mercury layer is plain request/response, used solely by TrackQueue's
+  // metadata GETs; everything else here is the AP session itself (auth,
+  // audio keys, country code, time sync), which the modern protocol still
+  // needs too (go-librespot keeps the same connection for the same
+  // reasons).
   enum class RequestType : uint8_t {
-    SUB = 0xb3,
-    UNSUB = 0xb4,
-    SUBRES = 0xb5,
     SEND = 0xb2,
     GET = 0xFF,  // Shitty workaround, it's value is actually same as SEND
     PING = 0x04,
@@ -57,30 +61,16 @@ class MercurySession : public bell::Task, public cspot::Session {
   std::unordered_map<RequestType, std::string> RequestTypeMap = {
       {RequestType::GET, "GET"},
       {RequestType::SEND, "SEND"},
-      {RequestType::SUB, "SUB"},
-      {RequestType::UNSUB, "UNSUB"},
   };
 
   void handlePacket();
 
-  uint64_t executeSubscription(RequestType type, const std::string& uri,
-                               ResponseCallback callback,
-                               ResponseCallback subscription, DataParts& parts);
-  uint64_t executeSubscription(RequestType type, const std::string& uri,
-                               ResponseCallback callback,
-                               ResponseCallback subscription) {
-    DataParts parts = {};
-    return this->executeSubscription(type, uri, callback, subscription, parts);
-  }
-
+  uint64_t execute(RequestType type, const std::string& uri,
+                   ResponseCallback callback, DataParts& parts);
   uint64_t execute(RequestType type, const std::string& uri,
                    ResponseCallback callback) {
-    return this->executeSubscription(type, uri, callback, nullptr);
-  }
-
-  uint64_t execute(RequestType type, const std::string& uri,
-                   ResponseCallback callback, DataParts& parts) {
-    return this->executeSubscription(type, uri, callback, nullptr, parts);
+    DataParts parts = {};
+    return this->execute(type, uri, callback, parts);
   }
 
   void unregister(uint64_t sequenceId);
@@ -95,8 +85,6 @@ class MercurySession : public bell::Task, public cspot::Session {
 
   void disconnect();
 
-  void setConnectedHandler(ConnectionEstabilishedCallback callback);
-
   bool triggerTimeout() override;
 
  private:
@@ -104,7 +92,6 @@ class MercurySession : public bell::Task, public cspot::Session {
 
   std::shared_ptr<cspot::TimeProvider> timeProvider;
   Header tempMercuryHeader = {};
-  ConnectionEstabilishedCallback connectionReadyCallback = nullptr;
 
   bell::Queue<cspot::Packet> packetQueue;
 
@@ -112,7 +99,6 @@ class MercurySession : public bell::Task, public cspot::Session {
   void reconnect();
 
   std::unordered_map<uint64_t, ResponseCallback> callbacks;
-  std::unordered_map<std::string, ResponseCallback> subscriptions;
   std::unordered_map<uint32_t, AudioKeyCallback> audioKeyCallbacks;
 
   uint64_t sequenceId = 1;
@@ -125,7 +111,16 @@ class MercurySession : public bell::Task, public cspot::Session {
   std::mutex isRunningMutex;
   std::atomic<bool> isRunning = false;
   std::atomic<bool> isReconnecting = false;
-  std::atomic<bool> executeEstabilishedCallback = false;
+
+  // Guards callbacks/audioKeyCallbacks/sequenceId/audioKeySequence/
+  // tempMercuryHeader/countryCode - all read or written from whatever
+  // task calls execute()/requestAudioKey() (any task in the app, e.g.
+  // TrackQueue's or TrackPlayer's), while handlePacket()/failAllPending()
+  // read/erase the same state from this session's own task. Never held
+  // across a callback invocation or network I/O - see the .cpp for where
+  // it's taken vs. released. See docs/spotify_component_analysis.md,
+  // finding F93.
+  std::mutex sessionMutex;
 
   void failAllPending();
 
