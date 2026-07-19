@@ -266,11 +266,10 @@ if(NOT BELL_DISABLE_SINKS)
         # AC101/ES8311/ES8388/ES9018/TAS5711/SPDIF/InternalAudioSink (and
         # their C codec drivers ac101.c/es8311.c) still use the legacy
         # `driver/i2s.h` API removed in ESP-IDF v5.4+/v6. Only
-        # BufferedAudioSink (the shared I2S base) and PCM5102AudioSink (the
-        # plain-DAC case, no control interface needed) have been ported to
+        # BufferedAudioSink (the shared I2S base) and PlainI2SAudioSink
+        # (no control interface needed) have been ported to
         # `driver/i2s_std.h` so far - exclude the rest instead of letting
-        # them fail to compile. See docs/spotify_component_analysis.md,
-        # finding F51.
+        # them fail to compile.
         list(FILTER SINK_SOURCES EXCLUDE REGEX
             "/(AC101AudioSink|ES8311AudioSink|ES8388AudioSink|ES9018AudioSink|InternalAudioSink|SPDIFAudioSink|TAS5711AudioSink|ac101|es8311)\\.(cpp|c)$")
     endif()
