@@ -74,8 +74,11 @@ void HTTPClient::Response::rawRequest(const std::string& url,
       socketStream << "Accept: */*" << reqEnd;
     }
 
-    // Write content
-    if (content.size() > 0) {
+    // Write content. PUT/POST need Content-Length even when the body is
+    // empty (e.g. ConnectStateHandler's inactive PUT) - some servers
+    // (confirmed against Spotify's spclient) reply 411 Length Required
+    // without it. GET's behavior is left as-is (no header when empty).
+    if (content.size() > 0 || method == "PUT" || method == "POST") {
       socketStream << "Content-Length: " << content.size() << reqEnd;
     }
 
