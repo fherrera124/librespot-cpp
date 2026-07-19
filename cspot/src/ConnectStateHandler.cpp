@@ -3,20 +3,16 @@
 #include <algorithm>  // for min
 #include <chrono>     // for milliseconds, steady_clock
 #include <cstring>    // for strcpy
-#include <exception>  // for exception
 #include <utility>    // for pair
 #include <vector>     // for vector
 
-#include "ApResolve.h"
 #include "BellLogger.h"  // for AbstractLogger
 #include "BellUtils.h"   // for BELL_SLEEP_MS
 #include "CSpotContext.h"  // for Context
 #include "Crypto.h"         // for Crypto::base64Encode
-#include "HTTPClient.h"    // for HTTPClient
-#include "HttpRetry.h"     // for HttpRetry, PermanentHttpFailure
 #include "Login5Client.h"
 #include "Logger.h"        // for CSPOT_LOG
-#include "NanoPBHelper.h"  // for pbEncode, pbDecode
+#include "NanoPBHelper.h"  // for pbDecode
 #include "TimeProvider.h"
 #include "TrackPlayer.h"    // for TrackPlayer
 #include "TrackReference.h"  // for TrackReference (fillProvidedTracks)
@@ -33,29 +29,17 @@ constexpr int PENDING_WAIT_MS = 500;
 // caps how often updatePlayerState() actually reaches the network, however
 // fast SpircHandler's events fire.
 constexpr int PUT_MIN_INTERVAL_MS = 200;
-
-// Spotify always sends Retry-After in delta-seconds, never an HTTP-date
-// (developer.spotify.com/documentation/web-api/concepts/rate-limits) - only
-// that form is parsed. Missing/malformed falls back to a default.
-std::chrono::seconds parseRetryAfter(std::string_view value) {
-  constexpr std::chrono::seconds DEFAULT_RETRY_AFTER{10};
-  if (value.empty()) {
-    return DEFAULT_RETRY_AFTER;
-  }
-  try {
-    int secs = std::stoi(std::string(value));
-    return secs > 0 ? std::chrono::seconds(secs) : DEFAULT_RETRY_AFTER;
-  } catch (const std::exception&) {
-    return DEFAULT_RETRY_AFTER;
-  }
-}
 }  // namespace
 
 ConnectStateHandler::ConnectStateHandler(
     std::shared_ptr<cspot::Context> ctx,
     std::shared_ptr<cspot::Login5Client> login5)
     : bell::Task("cspotConnectState", 32 * 1024, 1, 0), ctx(ctx),
-      login5(login5), contextResolver(ctx, login5) {
+      login5(login5), contextResolver(ctx, login5),
+      putStateClient(PutStateClient::defaultHostResolver,
+                    [this](const std::string& host) {
+                      contextResolver.seedSpclientHost(host);
+                    }) {
   // See the member comment (ConnectStateHandler.h) - go-librespot always
   // sends a non-empty PlayerState.session_id; we never did.
   {
@@ -171,22 +155,6 @@ void ConnectStateHandler::buildDeviceInfo(connectstate_DeviceInfo& info) {
 
 bool ConnectStateHandler::sendPutStateRequest(
     connectstate_PutStateRequest& request) {
-  // TEMP DIAGNOSTIC (playlist-switch flicker investigation, 2026-07-18):
-  // dump exactly what this PUT's PlayerState carries, to rule out stale
-  // track/position data leaving the device. Remove once resolved.
-  CSPOT_LOG(info,
-           "PUT DIAG: reason=%d is_active=%d is_playing=%d is_paused=%d "
-           "is_buffering=%d has_track=%d track.uri=%s pos_as_of_ts=%lld",
-           (int)request.put_state_reason, (int)request.is_active,
-           (int)request.device.player_state.is_playing,
-           (int)request.device.player_state.is_paused,
-           (int)request.device.player_state.is_buffering,
-           (int)request.device.player_state.has_track,
-           request.device.player_state.has_track
-               ? request.device.player_state.track.uri
-               : "-",
-           (long long)request.device.player_state.position_as_of_timestamp);
-
   std::string connId;
   {
     std::lock_guard<std::mutex> lock(connectionIdMutex);
@@ -291,77 +259,8 @@ bool ConnectStateHandler::sendPutStateRequest(
   request.device.has_device_info = true;
   buildDeviceInfo(request.device.device_info);
 
-  std::vector<uint8_t> body;
-  try {
-    body = pbEncode(connectstate_PutStateRequest_fields, &request);
-  } catch (const std::exception& e) {
-    CSPOT_LOG(error, "connect-state encode failed: %s", e.what());
-    return false;
-  }
-
-  std::scoped_lock lock(putMutex);
-
-  // Bounded retry (2 attempts, 1s apart): 4xx is permanent (no retry), a
-  // dropped connection or 5xx is transient. putConnection/spclientHost are
-  // reset only on a genuine transport exception, never on a mere non-200 -
-  // see the member comment (ConnectStateHandler.h).
-  try {
-    return HttpRetry(2, std::chrono::milliseconds(1000), "connect-state PUT")
-        .run([&]() -> bool {
-          if (spclientHost.empty()) {
-            spclientHost = ApResolve("").fetchFirstSpclientAddress();
-            contextResolver.seedSpclientHost(spclientHost);
-          }
-          auto url = "https://" + spclientHost + "/connect-state/v1/devices/" +
-                     ctx->config.deviceId;
-
-          bell::HTTPClient::Headers headers = {
-              {"Authorization", "Bearer " + accessToken},
-              {"Client-Token", clientToken},
-              {"X-Spotify-Connection-Id", connId},
-              {"Content-Type", "application/x-protobuf"}};
-
-          try {
-            if (putConnection == nullptr) {
-              putConnection = bell::HTTPClient::put(url, headers, body);
-            } else {
-              putConnection->put(url, headers, body);
-            }
-          } catch (const std::exception& e) {
-            putConnection.reset();
-            spclientHost.clear();
-            throw std::runtime_error(std::string("request failed: ") +
-                                     e.what());
-          }
-
-          int status = putConnection->statusCode();
-          std::string responseBody(putConnection->body());
-          if (status == 200) {
-            CSPOT_LOG(info, "connect-state PUT ok (reason %d)",
-                     (int)request.put_state_reason);
-            return true;
-          }
-
-          std::string reason =
-              "status " + std::to_string(status) + ": " + responseBody;
-          if (status == 429) {
-            throw RateLimitedError(
-                parseRetryAfter(putConnection->header("retry-after")),
-                reason);
-          }
-          if (status >= 400 && status < 500) {
-            throw PermanentHttpFailure(reason);
-          }
-          throw std::runtime_error(reason);
-        });
-  } catch (const RateLimitedError& e) {
-    rateLimitedUntil = std::chrono::steady_clock::now() + e.retryAfter;
-    CSPOT_LOG(error, "connect-state PUT rate-limited, backing off %llds",
-             (long long)e.retryAfter.count());
-    return false;
-  } catch (const std::exception&) {
-    return false;  // HttpRetry already logged the final giving-up message
-  }
+  return putStateClient.put(request, ctx->config.deviceId, accessToken,
+                            clientToken, connId);
 }
 
 bool ConnectStateHandler::putStateInactive() {
@@ -377,40 +276,8 @@ bool ConnectStateHandler::putStateInactive() {
     return false;
   }
 
-  std::scoped_lock lock(putMutex);
-  try {
-    if (spclientHost.empty()) {
-      spclientHost = ApResolve("").fetchFirstSpclientAddress();
-    }
-    // notify=false, matching what go-librespot's stopPlayback() passes.
-    auto url = "https://" + spclientHost + "/connect-state/v1/devices/" +
-               ctx->config.deviceId + "/inactive?notify=false";
-    bell::HTTPClient::Headers headers = {
-        {"Authorization", "Bearer " + accessToken},
-        {"Client-Token", clientToken},
-        {"X-Spotify-Connection-Id", connId}};
-
-    if (putConnection == nullptr) {
-      putConnection = bell::HTTPClient::put(url, headers, {});
-    } else {
-      putConnection->put(url, headers, {});
-    }
-
-    int status = putConnection->statusCode();
-    (void)putConnection->body();  // drain - see PUT above, never logged here
-    // 204 expected (go-librespot checks exactly that); tolerate any 2xx.
-    if (status >= 200 && status < 300) {
-      CSPOT_LOG(info, "connect-state inactive PUT ok (%d)", status);
-      return true;
-    }
-    CSPOT_LOG(error, "connect-state inactive PUT failed, status %d", status);
-    return false;
-  } catch (const std::exception& e) {
-    putConnection.reset();
-    spclientHost.clear();
-    CSPOT_LOG(error, "connect-state inactive PUT failed: %s", e.what());
-    return false;
-  }
+  return putStateClient.putInactive(ctx->config.deviceId, accessToken,
+                                    clientToken, connId);
 }
 
 void ConnectStateHandler::adoptOrRegenerateSessionId(
@@ -548,15 +415,15 @@ void ConnectStateHandler::runTask() {
     }
 
     // §6.6: at most one PUT every PUT_MIN_INTERVAL_MS, coalescing a burst
-    // of events into the latest pending state - also honors rateLimitedUntil
-    // (set by sendPutStateRequest() from a 429). Re-check for an even
-    // fresher pending update that arrived during the wait.
+    // of events into the latest pending state - also honors
+    // putStateClient's rate-limit tracking (set from a 429). Re-check for
+    // an even fresher pending update that arrived during the wait.
     auto now = std::chrono::steady_clock::now();
     auto minIntervalWait = std::chrono::milliseconds(PUT_MIN_INTERVAL_MS) -
                            std::chrono::duration_cast<std::chrono::milliseconds>(
                                now - lastPutTime);
     auto rateLimitWait = std::chrono::duration_cast<std::chrono::milliseconds>(
-        rateLimitedUntil.load() - now);
+        putStateClient.rateLimitedUntil() - now);
     auto wait = std::max({minIntervalWait, rateLimitWait,
                           std::chrono::milliseconds(0)});
     if (wait > std::chrono::milliseconds(0)) {

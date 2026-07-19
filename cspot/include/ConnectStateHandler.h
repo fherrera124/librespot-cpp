@@ -12,8 +12,8 @@
 
 #include "BellTask.h"    // for Task
 #include "ContextResolver.h"
-#include "HTTPClient.h"  // for HTTPClient::Response
 #include "PlaybackEvent.h"
+#include "PutStateClient.h"
 #include "TrackQueue.h"
 #include "protobuf/connectstate.pb.h"
 
@@ -238,23 +238,12 @@ class ConnectStateHandler : public bell::Task {
 
   uint32_t messageId = 0;
 
-  // Cached spclient host + a kept-alive connection, reused across PUTs.
-  // putMutex serializes sendPutStateRequest() end-to-end: putState() runs
-  // synchronously on DealerClient's task while updatePlayerState()'s
-  // actual send runs on this class's own task - two tasks that can call
-  // in here concurrently. Reset spclientHost/putConnection to force a
-  // fresh resolve+reconnect only on a transport exception, not an
-  // ordinary non-200 (e.g. a 429).
-  std::mutex putMutex;
-  std::string spclientHost;
-  std::unique_ptr<bell::HTTPClient::Response> putConnection;
-
-  // Set from a 429's Retry-After (HttpRetry.h's RateLimitedError) -
-  // runTask()'s PUT coalescing loop reads this alongside
-  // PUT_MIN_INTERVAL_MS. std::atomic, not putMutex: read outside
-  // sendPutStateRequest()'s own lock, must not block on it.
-  std::atomic<std::chrono::steady_clock::time_point> rateLimitedUntil{
-      std::chrono::steady_clock::time_point{}};
+  // Owns spclient host resolution/connection reuse/retry/rate-limit
+  // tracking for put()/putInactive() - see PutStateClient.h. Serializes
+  // its own sends end-to-end: putState() runs synchronously on
+  // DealerClient's task while updatePlayerState()'s actual send runs on
+  // this class's own task - two tasks that can call in concurrently.
+  PutStateClient putStateClient;
 
   // Latest-wins pending player-state update, written by updatePlayerState()
   // (any task), consumed by runTask() (this class's own task).
