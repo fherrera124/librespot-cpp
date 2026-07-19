@@ -45,11 +45,36 @@ if(ESP_PLATFORM)
 
     # Kconfig -> variables CMake que bell/CMakeLists.txt ya entiende
     # (option()), shadow por set() plano antes del add_subdirectory().
-    set(BELL_CODEC_VORBIS ${CONFIG_LIBRESPOT_CODEC_VORBIS})
-    set(BELL_CODEC_MP3 ${CONFIG_LIBRESPOT_CODEC_MP3})
-    set(BELL_CODEC_AAC ${CONFIG_LIBRESPOT_CODEC_AAC})
-    set(BELL_CODEC_OPUS ${CONFIG_LIBRESPOT_CODEC_OPUS})
-    set(BELL_CODEC_ALAC ${CONFIG_LIBRESPOT_CODEC_ALAC})
+    # CONFIG_X no existe como variable en absoluto cuando el Kconfig bool
+    # está en "n" (no es que valga vacío/OFF) - set(VAR ${CONFIG_X}) en ese
+    # caso equivale a set(VAR), que directamente NO define BELL_CODEC_*,
+    # dejando que el option() ON por defecto de bell/CMakeLists.txt gane.
+    # if/else explícito evita ese caso.
+    if(CONFIG_LIBRESPOT_CODEC_VORBIS)
+        set(BELL_CODEC_VORBIS ON)
+    else()
+        set(BELL_CODEC_VORBIS OFF)
+    endif()
+    if(CONFIG_LIBRESPOT_CODEC_MP3)
+        set(BELL_CODEC_MP3 ON)
+    else()
+        set(BELL_CODEC_MP3 OFF)
+    endif()
+    if(CONFIG_LIBRESPOT_CODEC_AAC)
+        set(BELL_CODEC_AAC ON)
+    else()
+        set(BELL_CODEC_AAC OFF)
+    endif()
+    if(CONFIG_LIBRESPOT_CODEC_OPUS)
+        set(BELL_CODEC_OPUS ON)
+    else()
+        set(BELL_CODEC_OPUS OFF)
+    endif()
+    if(CONFIG_LIBRESPOT_CODEC_ALAC)
+        set(BELL_CODEC_ALAC ON)
+    else()
+        set(BELL_CODEC_ALAC OFF)
+    endif()
     if(NOT CONFIG_LIBRESPOT_ENABLE_MQTT)
         set(BELL_DISABLE_MQTT ON)
     endif()
