@@ -473,6 +473,16 @@ bool ConnectStateHandler::handlePlay(cJSON* command) {
 void ConnectStateHandler::setPause(bool pause) {
   playbackController.setPlaybackPlaying(!pause);
   sendEngineEvent(EventType::PLAY_PAUSE, pause);
+
+  // Sent here (F105, docs/spotify_component_analysis.md), not left to the
+  // app layer: this is the single entry point for both a remote
+  // player/command and a local hardware button, so it's the one place
+  // that always has the real, current trackUri/duration - no separate
+  // cache to go stale.
+  std::string trackUri = stateModel.trackUri();
+  if (!trackUri.empty()) {
+    updatePlayerState(!pause, trackUri, getPositionMs(), stateModel.duration());
+  }
 }
 
 bool ConnectStateHandler::nextSong() {

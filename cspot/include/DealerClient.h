@@ -45,14 +45,6 @@ class DealerClient : public bell::Task {
   std::string getConnectionId();
 
   /**
-  * @brief Forwards a real playback-state snapshot to ConnectStateHandler
-  * (bridges SpircHandler's actual play/pause/track events - see
-  * docs/dealer_websocket_migration.md §5.3). No-op if not registered yet.
-  */
-  void updatePlayerState(bool isPlaying, const std::string& trackUri,
-                         uint32_t positionMs, uint32_t durationMs);
-
-  /**
   * @brief The playback engine cspot_connect.cpp drives directly (local
   * play/pause/next/previous/seek button presses, position reads) - the
   * same ConnectStateHandler that also executes remote player/command

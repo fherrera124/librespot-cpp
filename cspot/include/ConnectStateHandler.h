@@ -57,21 +57,6 @@ class ConnectStateHandler : public bell::Task {
   // DealerClient's task (cluster-update path).
   bool putStateInactive();
 
-  // Records a player-state snapshot and wakes the background task to PUT
-  // it. is_active is always true. Non-blocking, safe to call from any
-  // task; only the latest snapshot survives if called again before the
-  // previous one is sent.
-  // trackUri: "spotify:track:..."/"spotify:episode:...", empty if unknown.
-  // reason defaults to PLAYER_STATE_CHANGED.
-  // isBuffering: true for the early "new track, not yet decoding"
-  // announcement.
-  void updatePlayerState(
-      bool isPlaying, const std::string& trackUri, uint32_t positionMs,
-      uint32_t durationMs,
-      connectstate_PutStateReason reason =
-          connectstate_PutStateReason_PLAYER_STATE_CHANGED,
-      bool isBuffering = false);
-
   // Decodes a ClusterUpdate push and stops playback if we thought we were
   // the active device and it now names a different one.
   void handleClusterUpdate(const std::vector<uint8_t>& payload);
@@ -140,6 +125,28 @@ class ConnectStateHandler : public bell::Task {
   // empty is tolerated.
   bool putBufferingState(const std::string& trackUri, uint32_t positionMs,
                          bool paused);
+  // Records a player-state snapshot and wakes the background task to PUT
+  // it. is_active is always true. Non-blocking, safe to call from any
+  // task; only the latest snapshot survives if called again before the
+  // previous one is sent.
+  // trackUri: "spotify:track:..."/"spotify:episode:...", empty if unknown.
+  // reason defaults to PLAYER_STATE_CHANGED.
+  // isBuffering: true for the early "new track, not yet decoding"
+  // announcement.
+  //
+  // Private (F105, docs/spotify_component_analysis.md): every case that
+  // needs a PUT is already covered by this class's own call sites
+  // (trackLoadedCallback/onTrackReached in the constructor, setPause(),
+  // seekMs(), handleSetVolume(), the update_context command), each with
+  // access to the real, current track/position - an external caller
+  // reconstructing the same PUT from its own cached copy is what caused
+  // F105 in the first place.
+  void updatePlayerState(
+      bool isPlaying, const std::string& trackUri, uint32_t positionMs,
+      uint32_t durationMs,
+      connectstate_PutStateReason reason =
+          connectstate_PutStateReason_PLAYER_STATE_CHANGED,
+      bool isBuffering = false);
   void sendEngineEvent(EventType type);
   void sendEngineEvent(EventType type, EventData data);
 

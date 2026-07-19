@@ -43,10 +43,7 @@ ConnectStateHandler::ConnectStateHandler(
             // before the CDN fetch/decode that reachedPlaybackCallback
             // waits on - matches go-librespot's early loadCurrentTrack()
             // PUT. Without this, clients only learn the new track's
-            // identity once decoding actually starts, and any PUT sent in
-            // between (e.g. the PLAY_PAUSE event below, handled by the
-            // app's own currentTrackUri cache) would still carry the
-            // previous track's URI.
+            // identity once decoding actually starts.
             updatePlayerState(!paused, track->ref.uri,
                               track->requestedPosition,
                               (uint32_t)track->trackInfo.duration,
@@ -64,6 +61,16 @@ ConnectStateHandler::ConnectStateHandler(
             stateModel.setPlaybackId(
                 bytesToHexString(crypto.generateVectorWithRandomData(16)));
             sendEngineEvent(EventType::TRACK_INFO, track->trackInfo);
+            // Sent here, not left to the app layer (F105,
+            // docs/spotify_component_analysis.md): this class already
+            // knows the real track/position/play-state the instant this
+            // fires - an external caller reconstructing the same PUT from
+            // its own cached copy is exactly what raced against
+            // trackLoadedCallback's own PUT above and read as
+            // "disconnected" on the client.
+            updatePlayerState(playbackController.isPlaying(), track->ref.uri,
+                              playbackController.getPositionMs(),
+                              (uint32_t)track->trackInfo.duration);
           },
           [this] { sendEngineEvent(EventType::DEPLETED); }),
       putStateClient(PutStateClient::defaultHostResolver,

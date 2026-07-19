@@ -119,16 +119,6 @@ std::string DealerClient::getConnectionId() {
   return connectionId;
 }
 
-void DealerClient::updatePlayerState(bool isPlaying,
-                                     const std::string& trackUri,
-                                     uint32_t positionMs,
-                                     uint32_t durationMs) {
-  if (connectState) {
-    connectState->updatePlayerState(isPlaying, trackUri, positionMs,
-                                    durationMs);
-  }
-}
-
 // Never cache the URL: re-resolves the host and re-fetches the token every
 // attempt (§6.5).
 bool DealerClient::connectOnce() {
