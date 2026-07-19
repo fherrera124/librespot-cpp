@@ -7,10 +7,10 @@
 #include <memory>              // for shared_ptr
 #include <mutex>               // for mutex
 #include <string>              // for string
-#include <utility>             // for pair
 #include <vector>              // for vector
 
 #include "BellTask.h"    // for Task
+#include "ConnectStateModel.h"
 #include "ContextResolver.h"
 #include "PlaybackEvent.h"
 #include "PutStateClient.h"
@@ -173,31 +173,10 @@ class ConnectStateHandler : public bell::Task {
   // this session.
   int64_t currentTrackStartedAtMs = 0;
 
-  // update_context's payload - restrictions/metadata for the currently
-  // active context, applied only when the command's uri matches. Empty
-  // string means "no restriction reported". Guarded by engineMutex, same
-  // as contextUri.
-  std::string restrictionRepeatContext;
-  std::string restrictionRepeatTrack;
-  std::string restrictionShuffle;
-  // Capped at 2 entries (PlayerState.context_metadata max_count) - extras
-  // are dropped, not an error.
-  std::vector<std::pair<std::string, std::string>> contextMetadata;
-
-  // PlayerState.session_id/playback_id/context_uri. sessionId identifies
-  // the current PLAYBACK session: adopted from a transfer's
-  // current_session.original_session_id, regenerated fresh on every
-  // play-command context load. playbackId is regenerated per real track
-  // start (notifyAudioReachedPlayback()). contextUri is set whenever a
-  // transfer/play names a resolvable context. All three guarded by
-  // engineMutex.
-  std::string sessionId;
-  std::string playbackId;
-  std::string contextUri;
-
-  // Adopts the transferred session's id, or mints a fresh random one when
-  // there is none.
-  void adoptOrRegenerateSessionId(const char* transferredId);
+  // Owns PlayerState/session_id/playback_id/context_uri/restrictions/
+  // context_metadata - see ConnectStateModel.h. Has its own internal lock,
+  // independent of engineMutex.
+  ConnectStateModel stateModel;
 
   // Set whenever a PUT with is_active=true is sent - read by
   // handleClusterUpdate() to tell "someone else just took over" apart
@@ -219,19 +198,6 @@ class ConnectStateHandler : public bell::Task {
   bool sendPutStateRequest(connectstate_PutStateRequest& request);
 
   void buildDeviceInfo(connectstate_DeviceInfo& info);
-
-  // Live PlayerState, mutated in place rather than rebuilt from scratch.
-  // Only the mechanical playback fields live here (is_playing/is_paused/
-  // is_buffering/playback_speed/timestamp/position_as_of_timestamp/
-  // duration/track) - session_id/playback_id/context_uri/restrictions/
-  // metadata stay their own members, populated at send time. Guarded by
-  // engineMutex. Reset (resetPlayerState()) on construction and whenever
-  // this device stops being active. Every writer must set every field it
-  // owns unconditionally - a field silently left untouched leaks into
-  // every future PUT.
-  connectstate_PlayerState playerState = connectstate_PlayerState_init_zero;
-
-  void resetPlayerState();
 
   std::mutex connectionIdMutex;
   std::string connectionId;

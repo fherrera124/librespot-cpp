@@ -3,7 +3,8 @@
 #include <algorithm>  // for min
 #include <chrono>     // for milliseconds, steady_clock
 #include <cstring>    // for strcpy
-#include <utility>    // for pair
+#include <optional>   // for nullopt
+#include <utility>    // for move
 #include <vector>     // for vector
 
 #include "BellLogger.h"  // for AbstractLogger
@@ -40,15 +41,6 @@ ConnectStateHandler::ConnectStateHandler(
                     [this](const std::string& host) {
                       contextResolver.seedSpclientHost(host);
                     }) {
-  // See the member comment (ConnectStateHandler.h) - go-librespot always
-  // sends a non-empty PlayerState.session_id; we never did.
-  {
-    Crypto crypto;
-    sessionId = Crypto::base64Encode(crypto.generateVectorWithRandomData(16));
-  }
-
-  resetPlayerState();
-
   trackQueue = std::make_shared<cspot::TrackQueue>(ctx);
 
   auto eofCallback = [this]() {
@@ -207,35 +199,9 @@ bool ConnectStateHandler::sendPutStateRequest(
         (uint64_t)(ctx->timeProvider->getSyncedTimestamp() - trackStartedAt);
   }
 
-  // update_context's payload (§36) - written by handlePlayerCommand()'s
-  // "update_context" case.
-  std::string repeatContextReason, repeatTrackReason, shuffleReason;
-  std::vector<std::pair<std::string, std::string>> metadata;
-  {
-    std::lock_guard<std::mutex> lock(engineMutex);
-    repeatContextReason = restrictionRepeatContext;
-    repeatTrackReason = restrictionRepeatTrack;
-    shuffleReason = restrictionShuffle;
-    metadata = contextMetadata;
-  }
-  if (!repeatContextReason.empty() || !repeatTrackReason.empty() ||
-      !shuffleReason.empty()) {
-    request.device.player_state.has_context_restrictions = true;
-    auto& restrictions = request.device.player_state.context_restrictions;
-    pbPutString(repeatContextReason,
-                restrictions.disallow_toggling_repeat_context_reasons);
-    pbPutString(repeatTrackReason,
-                restrictions.disallow_toggling_repeat_track_reasons);
-    pbPutString(shuffleReason, restrictions.disallow_toggling_shuffle_reasons);
-  }
-  request.device.player_state.context_metadata_count =
-      (pb_size_t)metadata.size();
-  for (size_t i = 0; i < metadata.size(); i++) {
-    pbPutString(metadata[i].first,
-                request.device.player_state.context_metadata[i].key);
-    pbPutString(metadata[i].second,
-                request.device.player_state.context_metadata[i].value);
-  }
+  // PlayerState + session_id/playback_id/context_uri/restrictions/
+  // context_metadata - see ConnectStateModel.h.
+  stateModel.fillIntoRequest(request);
 
   // Queue display ("playing next"/"previously played") - only uri is
   // populated (TrackReference has nothing else ProvidedTrack could use).
@@ -280,25 +246,6 @@ bool ConnectStateHandler::putStateInactive() {
                                     clientToken, connId);
 }
 
-void ConnectStateHandler::adoptOrRegenerateSessionId(
-    const char* transferredId) {
-  std::lock_guard<std::mutex> lock(engineMutex);
-  if (transferredId != nullptr && transferredId[0] != '\0') {
-    sessionId = transferredId;
-  } else {
-    Crypto crypto;
-    sessionId = Crypto::base64Encode(crypto.generateVectorWithRandomData(16));
-  }
-}
-
-void ConnectStateHandler::resetPlayerState() {
-  std::lock_guard<std::mutex> lock(engineMutex);
-  playerState = connectstate_PlayerState_init_zero;
-  playerState.is_system_initiated = true;
-  playerState.has_options = true;
-  playerState.playback_speed = 1.0;
-}
-
 bool ConnectStateHandler::putState(connectstate_PutStateReason reason,
                                    bool isActive) {
   connectstate_PutStateRequest request = connectstate_PutStateRequest_init_zero;
@@ -308,11 +255,6 @@ bool ConnectStateHandler::putState(connectstate_PutStateReason reason,
   // Minimal PlayerState (matches go-librespot's State.reset): enough for a
   // device that isn't playing anything yet.
   request.device.has_player_state = true;
-  {
-    std::lock_guard<std::mutex> lock(engineMutex);
-    request.device.player_state = playerState;
-    pbPutString(sessionId, request.device.player_state.session_id);
-  }
 
   if (isActive) {
     // Only stamp on the false->true transition - re-stamping every PUT
@@ -336,29 +278,12 @@ bool ConnectStateHandler::putBufferingState(const std::string& trackUri,
   }
 
   request.device.has_player_state = true;
-  // playback_id deliberately not set here - not known until the stream
-  // actually opens.
-  {
-    std::lock_guard<std::mutex> lock(engineMutex);
-    playerState.is_playing = true;
-    playerState.is_paused = paused;
-    playerState.is_buffering = true;
-    playerState.playback_speed = 0;  // not progressing while buffering
-    playerState.timestamp = ctx->timeProvider->getSyncedTimestamp();
-    playerState.position_as_of_timestamp = (int64_t)positionMs;
-    // Unconditional either way - a live, reused struct leaks a stale track
-    // forward if this only ever sets the true case. See the member comment.
-    playerState.has_track = !trackUri.empty();
-    if (playerState.has_track) {
-      pbPutString(trackUri, playerState.track.uri);
-    }
-
-    request.device.player_state = playerState;
-    pbPutString(sessionId, request.device.player_state.session_id);
-    if (!contextUri.empty()) {
-      pbPutString(contextUri, request.device.player_state.context_uri);
-    }
-  }
+  // playback_id deliberately not touched here - not known until the
+  // stream actually opens.
+  stateModel.setPlaybackState(true, paused, /*isBuffering=*/true,
+                              ctx->timeProvider->getSyncedTimestamp(),
+                              positionMs, /*durationMs=*/std::nullopt,
+                              trackUri);
 
   return sendPutStateRequest(request);
 }
@@ -451,39 +376,15 @@ void ConnectStateHandler::runTask() {
     }
 
     request.device.has_player_state = true;
-    {
-      std::lock_guard<std::mutex> lock(engineMutex);
-      // is_playing means "session active", NOT !is_paused - getting this
-      // wrong grayed out resume on the real client. See §19.
-      playerState.is_playing = !trackUri.empty();
-      playerState.is_paused = !isPlaying;
-      // isBuffering: true only for the early "new track, not yet decoding"
-      // announcement (trackLoadedCallback) - false everywhere else, since
-      // by the time any other caller fires, TrackPlayer is already
-      // producing frames. See §30.
-      playerState.is_buffering = isBuffering;
-      // Not progressing while buffering, same as while paused.
-      playerState.playback_speed = (isPlaying && !isBuffering) ? 1.0 : 0.0;
-      playerState.timestamp = ctx->timeProvider->getSyncedTimestamp();
-      playerState.position_as_of_timestamp = (int64_t)positionMs;
-      playerState.duration = (int64_t)durationMs;
-      // Unconditional either way - see putBufferingState()'s comment.
-      playerState.has_track = !trackUri.empty();
-      if (playerState.has_track) {
-        pbPutString(trackUri, playerState.track.uri);
-      }
-
-      // session_id/playback_id/context_uri - see the member comment
-      // (ConnectStateHandler.h).
-      request.device.player_state = playerState;
-      pbPutString(sessionId, request.device.player_state.session_id);
-      if (!playbackId.empty()) {
-        pbPutString(playbackId, request.device.player_state.playback_id);
-      }
-      if (!contextUri.empty()) {
-        pbPutString(contextUri, request.device.player_state.context_uri);
-      }
-    }
+    // is_playing means "session active", NOT !is_paused - getting this
+    // wrong grayed out resume on the real client. isBuffering: true only
+    // for the early "new track, not yet decoding" announcement
+    // (trackLoadedCallback) - false everywhere else, since by the time
+    // any other caller fires, TrackPlayer is already producing frames.
+    stateModel.setPlaybackState(/*isPlaying=*/!trackUri.empty(),
+                                /*isPaused=*/!isPlaying, isBuffering,
+                                ctx->timeProvider->getSyncedTimestamp(),
+                                positionMs, durationMs, trackUri);
 
     sendPutStateRequest(request);
     lastPutTime = std::chrono::steady_clock::now();
@@ -520,7 +421,7 @@ void ConnectStateHandler::handleClusterUpdate(
     trackPlayer->stop();
     // go-librespot's stopPlayback() resets its own PlayerState right here
     // too (State.reset(), the only other call site besides initState()).
-    resetPlayerState();
+    stateModel.reset();
     // Tell the server too (/inactive) or the cluster keeps stale state for
     // this device.
     putStateInactive();
@@ -548,13 +449,11 @@ void ConnectStateHandler::handleSetVolume(const std::vector<uint8_t>& payload) {
   // forces is_active=true, which would wrongly announce this device as
   // active from a volume tweak before it's ever played anything.
   if (isActiveDevice) {
-    std::string trackUri;
-    uint32_t durationMs;
+    std::string trackUri = stateModel.trackUri();
+    uint32_t durationMs = stateModel.duration();
     bool playing;
     {
       std::lock_guard<std::mutex> lock(engineMutex);
-      trackUri = std::string(playerState.track.uri);
-      durationMs = (uint32_t)playerState.duration;
       playing = isPlayingState;
     }
     updatePlayerState(playing, trackUri, getPositionMs(), durationMs,
@@ -690,8 +589,7 @@ void ConnectStateHandler::notifyAudioReachedPlayback(
   {
     Crypto crypto;
     auto newPlaybackId = bytesToHexString(crypto.generateVectorWithRandomData(16));
-    std::lock_guard<std::mutex> lock(engineMutex);
-    playbackId = newPlaybackId;
+    stateModel.setPlaybackId(newPlaybackId);
   }
 
   CSPOT_LOG(info,

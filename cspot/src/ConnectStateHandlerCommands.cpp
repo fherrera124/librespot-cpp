@@ -133,14 +133,12 @@ bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
                                   ? uriItem->valuestring
                                   : "";
 
-    std::string currentUri, trackUri;
-    uint32_t durationMs;
+    std::string currentUri = stateModel.contextUri();
+    std::string trackUri = stateModel.trackUri();
+    uint32_t durationMs = stateModel.duration();
     bool playing;
     {
       std::lock_guard<std::mutex> lock(engineMutex);
-      currentUri = contextUri;
-      trackUri = std::string(playerState.track.uri);
-      durationMs = (uint32_t)playerState.duration;
       playing = isPlayingState;
     }
 
@@ -190,13 +188,9 @@ bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
       }
     }
 
-    {
-      std::lock_guard<std::mutex> lock(engineMutex);
-      restrictionRepeatContext = repeatContextReason;
-      restrictionRepeatTrack = repeatTrackReason;
-      restrictionShuffle = shuffleReason;
-      contextMetadata = std::move(metadata);
-    }
+    stateModel.setRestrictions(repeatContextReason, repeatTrackReason,
+                               shuffleReason);
+    stateModel.setContextMetadata(std::move(metadata));
 
     updatePlayerState(playing, trackUri, getPositionMs(), durationMs);
     return true;
@@ -324,7 +318,7 @@ bool ConnectStateHandler::handleTransfer(cJSON* command) {
   // Adopt the transferred session id (or mint a new one), before any
   // branch below and before pb_release (the string is freed with the
   // message). See §24.
-  adoptOrRegenerateSessionId(
+  stateModel.adoptOrRegenerateSessionId(
       transferState.has_current_session
           ? transferState.current_session.original_session_id
           : nullptr);
@@ -346,11 +340,8 @@ bool ConnectStateHandler::handleTransfer(cJSON* command) {
       pb_release(connectstate_TransferState_fields, &transferState);
       return false;
     }
-    // PlayerState.context_uri - see the member comment.
-    {
-      std::lock_guard<std::mutex> lock(engineMutex);
-      contextUri = resolvedContextUri;
-    }
+    // PlayerState.context_uri.
+    stateModel.setContextUri(resolvedContextUri);
   } else if (transferState.has_queue && transferState.queue.tracks_count > 0) {
     for (pb_size_t i = 0; i < transferState.queue.tracks_count; i++) {
       TrackReference ref;
@@ -438,11 +429,8 @@ bool ConnectStateHandler::handlePlay(cJSON* command) {
              resolvedContextUri.c_str());
     return false;
   }
-  // PlayerState.context_uri - see the member comment.
-  {
-    std::lock_guard<std::mutex> lock(engineMutex);
-    contextUri = resolvedContextUri;
-  }
+  // PlayerState.context_uri.
+  stateModel.setContextUri(resolvedContextUri);
 
   // command.options.skip_to.{track_uri,track_index} - track_uid not
   // matched (TrackReference has no uid field, only uri/gid).
@@ -480,7 +468,7 @@ bool ConnectStateHandler::handlePlay(cJSON* command) {
 
   // A new context starts a new playback session - regenerate the session
   // id, like go-librespot. See §24.
-  adoptOrRegenerateSessionId(nullptr);
+  stateModel.adoptOrRegenerateSessionId(nullptr);
 
   // Synchronous, before loadTracks() kicks off the async key/CDN fetch and
   // before DealerClient sends this request's WS reply - see
@@ -516,15 +504,13 @@ bool ConnectStateHandler::previousSong() {
 void ConnectStateHandler::seekMs(uint32_t position) {
   trackPlayer->seekMs(position);
 
-  std::string trackUri;
-  uint32_t durationMs;
+  std::string trackUri = stateModel.trackUri();
+  uint32_t durationMs = stateModel.duration();
   bool playing;
   {
     std::lock_guard<std::mutex> lock(engineMutex);
     positionMs = position;
     positionMeasuredAt = ctx->timeProvider->getSyncedTimestamp();
-    trackUri = std::string(playerState.track.uri);
-    durationMs = (uint32_t)playerState.duration;
     playing = isPlayingState;
   }
   sendEngineEvent(EventType::SEEK, (int)position);
