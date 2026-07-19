@@ -1,16 +1,39 @@
-# ESP32 CSpot integration
+# librespot-cpp — componente ESP-IDF
 
-Integrates CSpot with esp32 platform. To configure WiFi SSID and password use idf.py menuconfig.
+Wrapper de `cspot`/`bell` como componente ESP-IDF instalable vía
+[Component Manager](https://docs.espressif.com/projects/idf-component-manager/en/latest/).
+No trae glue de aplicación (WiFi, zeroconf, pines I2S) — eso le
+corresponde al proyecto consumidor; este componente expone el motor
+(`Session`, `DealerClient`, `ConnectStateHandler`, `TrackPlayer`,
+`TrackQueue`, `AudioSink`) listo para linkear.
 
+## Uso
 
-## Selecting your ESP32
+En el `idf_component.yml` del componente que lo consuma:
 
-Cspot has been tested to be working on AI-Thinker ESP32 Audio kit board: https://www.aliexpress.com/wholesale?SearchText=esp32-a1s
+```yaml
+dependencies:
+  librespot_cpp:
+    git: "https://github.com/fherrera124/librespot-cpp.git"
+    path: "targets/esp32"
+    git_ref: "master"
+```
 
-If you want to use another board, notice that the typical ESP32 RAM size is 160-520kb, which is not enough to run CSpot.
+Luego, en el `CMakeLists.txt` de ese mismo componente:
 
-To run CSpot, select a ESP32 with PSRAM. ESP32-WROVER are confirmed to work.
-CSpot will not run on a ESP32-WROOM unless the board has external PSRAM.
+```cmake
+idf_component_register(
+    SRCS "my_connect.cpp"
+    INCLUDE_DIRS "include"
+)
+```
 
-ref. https://products.espressif.com/#/product-selector
+No hace falta declarar `REQUIRES librespot_cpp` explícito — el Component
+Manager ya agrega las dependencias del manifest como requisito del
+componente.
 
+## Opciones (`idf.py menuconfig` → "librespot-cpp (Spotify Connect engine)")
+
+Codecs (`LIBRESPOT_CODEC_VORBIS`/`MP3`/`AAC`/`OPUS`/`ALAC`), y toggles para
+el MQTT/HTTP-server internos de `bell` y el backend JSON (cJSON vs
+nlohmann_json) — ver `Kconfig` en este directorio para los defaults.
