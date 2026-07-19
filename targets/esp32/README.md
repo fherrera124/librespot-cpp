@@ -16,7 +16,6 @@ dependencies:
   librespot_cpp:
     git: "https://github.com/fherrera124/librespot-cpp.git"
     path: "targets/esp32"
-    git_ref: "master"
 ```
 
 Luego, en el `CMakeLists.txt` de ese mismo componente:
