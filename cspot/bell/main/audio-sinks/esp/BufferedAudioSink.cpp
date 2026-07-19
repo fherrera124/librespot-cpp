@@ -14,39 +14,23 @@ void BufferedAudioSink::initI2sChannel(const Config& config) {
 
   i2s_chan_config_t chanConfig =
       I2S_CHANNEL_DEFAULT_CONFIG(config.port, I2S_ROLE_MASTER);
-  // I2S_CHANNEL_DEFAULT_CONFIG's dma_desc_num=6/dma_frame_num=240 gives
-  // only ~1440 frames of buffering - ~33ms at 44.1kHz mono. Any
-  // producer-side hiccup over that (network jitter, decode timing, Wi-Fi
-  // driver latency) drains it and produces an audible glitch. 10 * 1000 =
-  // 10000 frames (~227ms at 44.1kHz mono, ~113ms stereo) gives real
-  // headroom, on top of the ring buffer feeding this task (see
-  // startI2sFeed()) which adds another layer of cushion. 1000
-  // frames/descriptor stays under the DMA descriptor's ~4092-byte-per-buffer
-  // hardware limit even at 32-bit/stereo (4000 bytes). See
-  // docs/spotify_component_analysis.md, findings F20/F51.
+  // 10 descriptors * 1000 frames each: ~227ms of DMA headroom at 44.1kHz
+  // mono (~113ms stereo). 1000 frames/descriptor stays under the DMA
+  // descriptor's ~4092-byte-per-buffer limit even at 32-bit/stereo.
   chanConfig.dma_desc_num = 10;
   chanConfig.dma_frame_num = 1000;
-  // Without this, an underrun (nothing new written for a while - e.g.
-  // finding F52's pause handling, once the ring buffer/DMA buffers
-  // already in flight drain) makes the I2S peripheral
-  // keep re-transmitting the last DMA buffer's contents on a loop instead
-  // of outputting silence - audible as a "scratched record" stutter
-  // instead of clean silence. auto_clear makes the driver zero a DMA
-  // buffer automatically once nothing new has been written for it. The
-  // legacy driver/i2s.h API this replaced had the same knob
-  // (`tx_desc_auto_clear`, see the pre-port PCM5102AudioSink.cpp) - this
-  // was simply missed when picking dma_desc_num/dma_frame_num above. See
-  // docs/spotify_component_analysis.md, finding F53.
+  // Zeroes a DMA buffer once nothing new has been written to it, instead
+  // of re-transmitting the last buffer's contents on a loop (audible
+  // stutter) during an underrun.
   chanConfig.auto_clear = true;
   ESP_ERROR_CHECK(i2s_new_channel(&chanConfig, &txChannel, nullptr));
   applyStdConfig();
   ESP_ERROR_CHECK(i2s_channel_enable(txChannel));
 }
 
-// The only case feedPCMFrames() actually knows how to downmix is 16-bit
-// stereo (see below) - applyStdConfig() must pick the same slot mode or
-// the I2S peripheral and the data it's fed disagree on shape. See
-// docs/spotify_component_analysis.md, finding F38 (same bug, ported here).
+// feedPCMFrames() only knows how to downmix 16-bit stereo - applyStdConfig()
+// must pick the same slot mode or the I2S peripheral and the data it's fed
+// disagree on shape.
 bool BufferedAudioSink::shouldDownmixToMono() const {
   return bitDepth == 16 && channelCount == 2 && sinkConfig.monoOutput;
 }
@@ -110,10 +94,6 @@ void BufferedAudioSink::flush() {
 }
 
 void BufferedAudioSink::volumeChanged(uint16_t volume) {
-  // AudioSink advertises `softwareVolumeControl` but this used to be the
-  // only place in the whole class hierarchy that didn't implement it (see
-  // docs/spotify_component_analysis.md, finding F6) - now shared by every
-  // sink that inherits BufferedAudioSink.
   volumeScale = static_cast<float>(volume) / static_cast<float>(UINT16_MAX);
 }
 
@@ -122,12 +102,10 @@ void BufferedAudioSink::i2sFeedTask(void* pvParameters) {
   uint8_t chunk[512];
   while (true) {
     if (sink->flushRequested.exchange(false)) {
-      // Discard whatever's queued but not yet written - this is the only
-      // task reading dataBuffer (see F77), so flush() itself can't do this
-      // part directly.
+      // Discard whatever's queued but not yet written.
       sink->dataBuffer->emptyBuffer();
-      // Drops whatever's already queued in the DMA descriptors too - same
-      // disable/enable already used by setParams() for reconfiguration.
+      // Disable/enable also drops whatever's already queued in the DMA
+      // descriptors.
       esp_err_t err = i2s_channel_disable(sink->txChannel);
       if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "flush: i2s_channel_disable failed: %s",
@@ -136,9 +114,8 @@ void BufferedAudioSink::i2sFeedTask(void* pvParameters) {
       ESP_ERROR_CHECK(i2s_channel_enable(sink->txChannel));
     }
 
-    // Bounded (was portMAX_DELAY) so a flush request during an idle
-    // stream still gets picked up within this timeout instead of waiting
-    // for the next real chunk to unblock the receive.
+    // 100ms bound: also caps how long a flush request during an idle
+    // stream waits to be picked up.
     size_t itemSize =
         sink->dataBuffer->readBlocking(chunk, sizeof(chunk), 100);
     if (itemSize > 0) {
@@ -159,11 +136,6 @@ void BufferedAudioSink::i2sFeedTask(void* pvParameters) {
 }
 
 void BufferedAudioSink::startI2sFeed(size_t buf_size) {
-  // PSRAM-backed automatically: CONFIG_SPIRAM_USE_MALLOC +
-  // CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL push any allocation over 512
-  // bytes to PSRAM already, so a 256KB buffer needs no explicit
-  // heap-caps call. See finding F83 (CDN fetch latency spikes measured on
-  // real hardware, up to ~3.5s, motivated growing this from 32KB).
   dataBuffer = std::make_unique<bell::CircularBuffer>(buf_size);
   xTaskCreatePinnedToCore(&BufferedAudioSink::i2sFeedTask, "i2sFeed", 4096,
                           this, 10, NULL, tskNO_AFFINITY);
@@ -179,15 +151,8 @@ void BufferedAudioSink::feedPCMFrames(const uint8_t* buffer, size_t bytes) {
   const uint8_t* out = buffer;
   size_t outBytes = bytes;
 
-  // The I2S peripheral is running in I2S_SLOT_MODE_MONO when
-  // shouldDownmixToMono() is true (see applyStdConfig()), which expects
-  // one flat sample per frame, not interleaved L/R pairs - downmix to
-  // match. When both volume scaling and downmix apply, do them in a
-  // single pass over the buffer instead of writing a full-size scaled
-  // copy just to immediately read it back and average pairs of it -
-  // same per-sample math (scale+clamp each channel to int16_t, then
-  // integer-average the pair) as doing the two steps separately, just
-  // without the redundant intermediate buffer write.
+  // scale+clamp each channel, then integer-average L/R pairs - single pass
+  // when both apply, to avoid a redundant intermediate buffer write.
   if (scale && downmix) {
     size_t frameCount = sampleCount / 2;
     downmixBuffer.resize(frameCount);
