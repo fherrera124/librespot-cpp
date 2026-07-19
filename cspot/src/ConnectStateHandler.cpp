@@ -15,7 +15,6 @@
 #include "Logger.h"        // for CSPOT_LOG
 #include "NanoPBHelper.h"  // for pbDecode
 #include "TimeProvider.h"
-#include "TrackPlayer.h"    // for TrackPlayer
 #include "TrackReference.h"  // for TrackReference (fillProvidedTracks)
 #include "Utils.h"          // for bytesToHexString
 #include "pb_decode.h"  // for pb_release
@@ -37,60 +36,40 @@ ConnectStateHandler::ConnectStateHandler(
     std::shared_ptr<cspot::Login5Client> login5)
     : bell::Task("cspotConnectState", 32 * 1024, 1, 0), ctx(ctx),
       login5(login5), contextResolver(ctx, login5),
+      playbackController(
+          ctx,
+          [this](std::shared_ptr<QueuedTrack> track, bool paused) {
+            // Announce the new track immediately (is_buffering=true),
+            // before the CDN fetch/decode that reachedPlaybackCallback
+            // waits on - matches go-librespot's early loadCurrentTrack()
+            // PUT. Without this, clients only learn the new track's
+            // identity once decoding actually starts, and any PUT sent in
+            // between (e.g. the PLAY_PAUSE event below, handled by the
+            // app's own currentTrackUri cache) would still carry the
+            // previous track's URI.
+            updatePlayerState(!paused, track->ref.uri,
+                              track->requestedPosition,
+                              (uint32_t)track->trackInfo.duration,
+                              connectstate_PutStateReason_PLAYER_STATE_CHANGED,
+                              /*isBuffering=*/true);
+            sendEngineEvent(EventType::PLAYBACK_START,
+                           (int)track->requestedPosition);
+            sendEngineEvent(EventType::PLAY_PAUSE, paused);
+          },
+          [this](std::shared_ptr<QueuedTrack> track) {
+            // Fresh playback id per track start, hex-encoded (not base64,
+            // unlike session_id - a real divergence found against
+            // go-librespot). See §39.
+            Crypto crypto;
+            stateModel.setPlaybackId(
+                bytesToHexString(crypto.generateVectorWithRandomData(16)));
+            sendEngineEvent(EventType::TRACK_INFO, track->trackInfo);
+          },
+          [this] { sendEngineEvent(EventType::DEPLETED); }),
       putStateClient(PutStateClient::defaultHostResolver,
                     [this](const std::string& host) {
                       contextResolver.seedSpclientHost(host);
                     }) {
-  trackQueue = std::make_shared<cspot::TrackQueue>(ctx);
-
-  auto eofCallback = [this]() {
-    if (trackQueue->isFinished()) {
-      // Repeat-context (F92): loop back to the first track instead of
-      // ending. See TrackQueue::restartFromBeginning().
-      if (trackQueue->isRepeatingContext()) {
-        trackQueue->restartFromBeginning();
-      } else {
-        sendEngineEvent(EventType::DEPLETED);
-      }
-    }
-  };
-
-  auto trackLoadedCallback = [this](std::shared_ptr<QueuedTrack> track,
-                                    bool paused = false) {
-    {
-      std::lock_guard<std::mutex> lock(engineMutex);
-      isPlayingState = !paused;
-      positionMs = track->requestedPosition;
-      positionMeasuredAt = this->ctx->timeProvider->getSyncedTimestamp();
-      currentTrackStartedAtMs = positionMeasuredAt;
-    }
-    // Announce the new track immediately (is_buffering=true), before the
-    // CDN fetch/decode that notifyAudioReachedPlayback() waits on -
-    // matches go-librespot's early loadCurrentTrack() PUT. Without this,
-    // clients only learn the new track's identity once decoding actually
-    // starts, and any PUT sent in between (e.g. the PLAY_PAUSE event
-    // below, handled by the app's own currentTrackUri cache) would still
-    // carry the previous track's URI.
-    updatePlayerState(!paused, track->ref.uri, track->requestedPosition,
-                      (uint32_t)track->trackInfo.duration,
-                      connectstate_PutStateReason_PLAYER_STATE_CHANGED,
-                      /*isBuffering=*/true);
-    sendEngineEvent(EventType::PLAYBACK_START, (int)track->requestedPosition);
-    sendEngineEvent(EventType::PLAY_PAUSE, paused);
-  };
-
-  auto reachedPlaybackCallback = [this](std::string_view trackId) {
-    notifyAudioReachedPlayback(std::string(trackId));
-  };
-
-  trackPlayer = std::make_shared<TrackPlayer>(ctx, trackQueue, eofCallback,
-                                              trackLoadedCallback,
-                                              reachedPlaybackCallback);
-  // Unlike SpircHandler (which lazily started this on the first Load
-  // frame), ConnectStateHandler's engine is meant to just be ready - there's
-  // no separate "session established" moment to defer to.
-  trackPlayer->start();
-
   startTask();
 }
 
@@ -187,13 +166,9 @@ bool ConnectStateHandler::sendPutStateRequest(
     request.started_playing_at = activeSince;
   }
 
-  // Set from trackLoadedCallback (constructor) whenever a track loads -
-  // mirrors go-librespot's Player.HasBeenPlayingFor().
-  int64_t trackStartedAt;
-  {
-    std::lock_guard<std::mutex> lock(engineMutex);
-    trackStartedAt = currentTrackStartedAtMs;
-  }
+  // Set from PlaybackController's trackLoadedCallback whenever a track
+  // loads - mirrors go-librespot's Player.HasBeenPlayingFor().
+  int64_t trackStartedAt = playbackController.getCurrentTrackStartedAtMs();
   if (trackStartedAt != 0) {
     request.has_been_playing_for_ms =
         (uint64_t)(ctx->timeProvider->getSyncedTimestamp() - trackStartedAt);
@@ -213,6 +188,7 @@ bool ConnectStateHandler::sendPutStateRequest(
       pbPutString(src[i].uri, dst[i].uri);
     }
   };
+  auto trackQueue = playbackController.getTrackQueue();
   fillProvidedTracks(trackQueue->getPrevTracks(3),
                      request.device.player_state.prev_tracks,
                      request.device.player_state.prev_tracks_count, 3);
@@ -418,7 +394,7 @@ void ConnectStateHandler::handleClusterUpdate(
              update.cluster.active_device_id);
     isActiveDevice = false;
     activeSinceMs = 0;
-    trackPlayer->stop();
+    playbackController.stop();
     // go-librespot's stopPlayback() resets its own PlayerState right here
     // too (State.reset(), the only other call site besides initState()).
     stateModel.reset();
@@ -451,11 +427,7 @@ void ConnectStateHandler::handleSetVolume(const std::vector<uint8_t>& payload) {
   if (isActiveDevice) {
     std::string trackUri = stateModel.trackUri();
     uint32_t durationMs = stateModel.duration();
-    bool playing;
-    {
-      std::lock_guard<std::mutex> lock(engineMutex);
-      playing = isPlayingState;
-    }
+    bool playing = playbackController.isPlaying();
     updatePlayerState(playing, trackUri, getPositionMs(), durationMs,
                       connectstate_PutStateReason_VOLUME_CHANGED);
   }
@@ -493,122 +465,12 @@ void ConnectStateHandler::sendEngineEvent(EventType type, EventData data) {
   engineEventHandler(std::move(event));
 }
 
-void ConnectStateHandler::setPlaybackPlaying(bool playing) {
-  std::lock_guard<std::mutex> lock(engineMutex);
-  if (isPlayingState && !playing) {
-    positionMs += (uint32_t)(ctx->timeProvider->getSyncedTimestamp() -
-                             positionMeasuredAt);
-  }
-  positionMeasuredAt = ctx->timeProvider->getSyncedTimestamp();
-  isPlayingState = playing;
-}
-
 uint32_t ConnectStateHandler::getPositionMs() {
-  // Real decoder position (Vorbis only) beats the wall-clock estimate
-  // below - freezes on its own while paused, see TrackPlayer.h's comment.
-  uint32_t decoderPosition;
-  if (trackPlayer->getDecoderPositionMs(decoderPosition)) {
-    return decoderPosition;
-  }
-
-  std::lock_guard<std::mutex> lock(engineMutex);
-  uint32_t position = positionMs;
-  if (isPlayingState) {
-    position += (uint32_t)(ctx->timeProvider->getSyncedTimestamp() -
-                           positionMeasuredAt);
-  }
-  return position;
-}
-
-void ConnectStateHandler::notifyAudioReachedPlayback(
-    const std::string& trackId) {
-  // TEMP DIAGNOSTIC (track-flicker investigation, 2026-07-18): confirm
-  // whether this fires twice in quick succession with different trackIds -
-  // remove once resolved.
-  CSPOT_LOG(info, "notifyAudioReachedPlayback: called trackId=%s notifyPending=%d",
-           trackId.c_str(), (int)trackQueue->notifyPending);
-
-  int offset = 0;
-
-  // consumeTrack() returns nullptr when the queue is exhausted - see F24,
-  // same null-deref hazard SpircHandler's own copy of this logic guards
-  // against.
-  auto currentTrack = trackQueue->consumeTrack(nullptr, offset);
-  if (currentTrack == nullptr) {
-    CSPOT_LOG(info, "notifyAudioReachedPlayback: queue empty, nothing to report");
-    return;
-  }
-
-  if (trackQueue->notifyPending) {
-    trackQueue->notifyPending = false;
-    std::lock_guard<std::mutex> lock(engineMutex);
-    positionMs = currentTrack->requestedPosition;
-    positionMeasuredAt = ctx->timeProvider->getSyncedTimestamp();
-    currentTrack->requestedPosition = 0;
-  } else {
-    // preloadedTracks' own head can be more than one skip behind trackId:
-    // TrackPlayer.cpp's own failure path (F89) already calls skipTrack()
-    // when a track fails to load, but that pops whatever is CURRENTLY at
-    // the head - which, if this class hasn't caught up from the PREVIOUS
-    // transition yet, is the already-finished track, not the failed one.
-    // Left uncorrected, the failed track stays stuck at the head and this
-    // function can end up never finding trackId at all - silently never
-    // sending TRACK_INFO for whatever's actually playing. Keep skipping
-    // forward (never backward, never guessing) until the head really is
-    // trackId. One skip covers the normal case; bounded generously beyond
-    // that only as a guard against an actual bug elsewhere looping forever.
-    constexpr int MAX_CATCHUP_SKIPS = 16;
-    int skips = 0;
-    while (currentTrack->identifier != trackId) {
-      CSPOT_LOG(info,
-               "notifyAudioReachedPlayback: catch-up skip #%d, head='%s' "
-               "(uri=%s) != want='%s'",
-               skips + 1, currentTrack->identifier.c_str(),
-               currentTrack->ref.uri.c_str(), trackId.c_str());
-      if (++skips > MAX_CATCHUP_SKIPS ||
-          !trackQueue->skipTrack(TrackQueue::SkipDirection::NEXT, 0, false)) {
-        CSPOT_LOG(error,
-                 "notifyAudioReachedPlayback: couldn't catch up to '%s', "
-                 "giving up",
-                 trackId.c_str());
-        return;
-      }
-      currentTrack = trackQueue->consumeTrack(nullptr, offset);
-      if (currentTrack == nullptr) {
-        CSPOT_LOG(info, "notifyAudioReachedPlayback: queue exhausted mid-catch-up");
-        return;
-      }
-    }
-    std::lock_guard<std::mutex> lock(engineMutex);
-    positionMs = 0;
-    positionMeasuredAt = ctx->timeProvider->getSyncedTimestamp();
-  }
-
-  // Fresh playback id per track start, hex-encoded (not base64, unlike
-  // session_id - a real divergence found against go-librespot). See §39.
-  {
-    Crypto crypto;
-    auto newPlaybackId = bytesToHexString(crypto.generateVectorWithRandomData(16));
-    stateModel.setPlaybackId(newPlaybackId);
-  }
-
-  CSPOT_LOG(info,
-           "notifyAudioReachedPlayback: sending TRACK_INFO identifier=%s "
-           "uri=%s name=%s",
-           currentTrack->identifier.c_str(), currentTrack->ref.uri.c_str(),
-           currentTrack->trackInfo.name.c_str());
-
-  sendEngineEvent(EventType::TRACK_INFO, currentTrack->trackInfo);
+  return playbackController.getPositionMs();
 }
 
 void ConnectStateHandler::notifyAudioEnded() {
-  {
-    std::lock_guard<std::mutex> lock(engineMutex);
-    isPlayingState = false;
-    positionMs = 0;
-    positionMeasuredAt = ctx->timeProvider->getSyncedTimestamp();
-  }
-  trackPlayer->resetState(true);
+  playbackController.reportEnded();
 
   // Also covers "gave up after every track failed to load" (same
   // eofCallback as a natural EOF, §30) - tell the app instead of leaving
@@ -617,6 +479,5 @@ void ConnectStateHandler::notifyAudioEnded() {
 }
 
 void ConnectStateHandler::disconnect() {
-  trackQueue->stopTask();
-  trackPlayer->stop();
+  playbackController.disconnect();
 }

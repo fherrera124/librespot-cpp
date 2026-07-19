@@ -17,7 +17,6 @@
 #include "Logger.h"          // for CSPOT_LOG
 #include "NanoPBHelper.h"    // for pbDecode, pbArrayToVector
 #include "TimeProvider.h"
-#include "TrackPlayer.h"     // for TrackPlayer
 #include "TrackReference.h"  // for TrackReference
 #include "pb_decode.h"       // for pb_release
 
@@ -136,11 +135,7 @@ bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
     std::string currentUri = stateModel.contextUri();
     std::string trackUri = stateModel.trackUri();
     uint32_t durationMs = stateModel.duration();
-    bool playing;
-    {
-      std::lock_guard<std::mutex> lock(engineMutex);
-      playing = isPlayingState;
-    }
+    bool playing = playbackController.isPlaying();
 
     if (incomingUri.empty() || incomingUri != currentUri) {
       CSPOT_LOG(info,
@@ -204,7 +199,7 @@ bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
       CSPOT_LOG(error, "add_to_queue: no usable track in command");
       return false;
     }
-    if (!trackQueue->insertNext(ref)) {
+    if (!playbackController.getTrackQueue()->insertNext(ref)) {
       // Nothing playing to queue behind - go-librespot warns and still
       // replies success here (nil-tracks branch of its addToQueue), so
       // mirror that instead of making the app error out.
@@ -235,7 +230,8 @@ bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
         nextTracks.push_back(std::move(ref));
       }
     }
-    if (!trackQueue->replaceUpcoming(prevTracks, nextTracks)) {
+    if (!playbackController.getTrackQueue()->replaceUpcoming(prevTracks,
+                                                              nextTracks)) {
       CSPOT_LOG(info, "set_queue: nothing playing, ignored");
     }
     return true;
@@ -252,16 +248,8 @@ void ConnectStateHandler::loadTracks(const std::vector<TrackReference>& tracks,
                                      int startIndex,
                                      uint32_t requestedPositionMs,
                                      bool startPaused) {
-  {
-    std::lock_guard<std::mutex> lock(engineMutex);
-    positionMs = requestedPositionMs;
-    positionMeasuredAt = ctx->timeProvider->getSyncedTimestamp();
-    // Real play/pause state is only known once trackLoadedCallback fires -
-    // startPaused just seeds resetState() below.
-    isPlayingState = false;
-  }
-  trackQueue->updateTracks(tracks, startIndex, requestedPositionMs, true);
-  trackPlayer->resetState(startPaused);
+  playbackController.loadTracks(tracks, startIndex, requestedPositionMs,
+                                startPaused);
 }
 
 bool ConnectStateHandler::handleTransfer(cJSON* command) {
@@ -483,36 +471,24 @@ bool ConnectStateHandler::handlePlay(cJSON* command) {
 }
 
 void ConnectStateHandler::setPause(bool pause) {
-  setPlaybackPlaying(!pause);
+  playbackController.setPlaybackPlaying(!pause);
   sendEngineEvent(EventType::PLAY_PAUSE, pause);
 }
 
-bool ConnectStateHandler::skipTrack(TrackQueue::SkipDirection dir) {
-  bool skipped = trackQueue->skipTrack(dir, getPositionMs());
-  trackPlayer->resetState(!skipped);
-  return skipped;
-}
-
 bool ConnectStateHandler::nextSong() {
-  return skipTrack(TrackQueue::SkipDirection::NEXT);
+  return playbackController.nextSong();
 }
 
 bool ConnectStateHandler::previousSong() {
-  return skipTrack(TrackQueue::SkipDirection::PREV);
+  return playbackController.previousSong();
 }
 
 void ConnectStateHandler::seekMs(uint32_t position) {
-  trackPlayer->seekMs(position);
+  playbackController.seekMs(position);
 
   std::string trackUri = stateModel.trackUri();
   uint32_t durationMs = stateModel.duration();
-  bool playing;
-  {
-    std::lock_guard<std::mutex> lock(engineMutex);
-    positionMs = position;
-    positionMeasuredAt = ctx->timeProvider->getSyncedTimestamp();
-    playing = isPlayingState;
-  }
+  bool playing = playbackController.isPlaying();
   sendEngineEvent(EventType::SEEK, (int)position);
 
   // A seek while playing (not paused) otherwise never reaches the app at
@@ -527,6 +503,6 @@ void ConnectStateHandler::seekMs(uint32_t position) {
 }
 
 void ConnectStateHandler::setRepeatContext(bool repeat) {
-  trackQueue->setRepeatContext(repeat);
+  playbackController.setRepeatContext(repeat);
   sendEngineEvent(EventType::REPEAT_CONTEXT, repeat);
 }

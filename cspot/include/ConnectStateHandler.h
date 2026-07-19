@@ -12,9 +12,9 @@
 #include "BellTask.h"    // for Task
 #include "ConnectStateModel.h"
 #include "ContextResolver.h"
+#include "PlaybackController.h"
 #include "PlaybackEvent.h"
 #include "PutStateClient.h"
-#include "TrackQueue.h"
 #include "protobuf/connectstate.pb.h"
 
 typedef struct cJSON cJSON;
@@ -93,7 +93,9 @@ class ConnectStateHandler : public bell::Task {
 
   // --- Playback engine ---
 
-  std::shared_ptr<TrackPlayer> getTrackPlayer() { return trackPlayer; }
+  std::shared_ptr<TrackPlayer> getTrackPlayer() {
+    return playbackController.getTrackPlayer();
+  }
 
   // Registers the callback for engine events (PLAY_PAUSE/TRACK_INFO/etc,
   // PlaybackEvent.h).
@@ -101,7 +103,7 @@ class ConnectStateHandler : public bell::Task {
 
   // Loads a fresh track list starting at `startIndex`/`positionMs`,
   // replacing whatever was queued before. Playing state becomes "paused"
-  // until trackLoadedCallback (constructor) fires with the real one.
+  // until the engine's own trackLoadedCallback fires with the real one.
   void loadTracks(const std::vector<TrackReference>& tracks, int startIndex,
                   uint32_t requestedPositionMs, bool startPaused);
 
@@ -112,15 +114,8 @@ class ConnectStateHandler : public bell::Task {
   void setRepeatContext(bool repeat);
   uint32_t getPositionMs();
 
-  // Called from the audio pipeline once a track's audio actually starts
-  // producing PCM - advances the queue/reports track info, resetting to a
-  // clean stopped state if nothing's next.
-  // trackId: identifier of the QueuedTrack that just started - used to
-  // catch the queue head up to it (a normal transition needs one skip; a
-  // run of load failures ahead of it can need more). Never sends a stale
-  // TRACK_INFO: skips forward until the head matches trackId, or gives up
-  // silently if it's not found.
-  void notifyAudioReachedPlayback(const std::string& trackId);
+  // Called from cspot_connect.cpp on EventType::DEPLETED - resets to a
+  // clean stopped state and reports it.
   void notifyAudioEnded();
 
   void disconnect();
@@ -145,37 +140,22 @@ class ConnectStateHandler : public bell::Task {
   // empty is tolerated.
   bool putBufferingState(const std::string& trackUri, uint32_t positionMs,
                          bool paused);
-  bool skipTrack(TrackQueue::SkipDirection dir);
-  // Folds elapsed time into positionMs when going from playing to paused,
-  // so getPositionMs() reflects "now" the instant it freezes. Caller
-  // holds no lock; takes engineMutex itself.
-  void setPlaybackPlaying(bool playing);
   void sendEngineEvent(EventType type);
   void sendEngineEvent(EventType type, EventData data);
 
   std::shared_ptr<cspot::Context> ctx;
   std::shared_ptr<cspot::Login5Client> login5;
 
-  std::shared_ptr<cspot::TrackQueue> trackQueue;
-  std::shared_ptr<cspot::TrackPlayer> trackPlayer;
   cspot::ContextResolver contextResolver;
   EventHandler engineEventHandler = nullptr;
 
-  // Guards positionMs/positionMeasuredAt/isPlayingState only - not
-  // TrackQueue/TrackPlayer's own internal state.
-  std::mutex engineMutex;
-  uint32_t positionMs = 0;
-  int64_t positionMeasuredAt = 0;
-  bool isPlayingState = false;
-
-  // Timestamp of the last real track load, feeds
-  // PutStateRequest.has_been_playing_for_ms. 0 means no track loaded yet
-  // this session.
-  int64_t currentTrackStartedAtMs = 0;
+  // Owns TrackQueue/TrackPlayer, position tracking, and the load/skip/
+  // seek/pause control surface - see PlaybackController.h. Has its own
+  // internal lock.
+  PlaybackController playbackController;
 
   // Owns PlayerState/session_id/playback_id/context_uri/restrictions/
-  // context_metadata - see ConnectStateModel.h. Has its own internal lock,
-  // independent of engineMutex.
+  // context_metadata - see ConnectStateModel.h. Has its own internal lock.
   ConnectStateModel stateModel;
 
   // Set whenever a PUT with is_active=true is sent - read by
