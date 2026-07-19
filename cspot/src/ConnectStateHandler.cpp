@@ -88,6 +88,17 @@ ConnectStateHandler::ConnectStateHandler(
       positionMeasuredAt = this->ctx->timeProvider->getSyncedTimestamp();
       currentTrackStartedAtMs = positionMeasuredAt;
     }
+    // Announce the new track immediately (is_buffering=true), before the
+    // CDN fetch/decode that notifyAudioReachedPlayback() waits on -
+    // matches go-librespot's early loadCurrentTrack() PUT. Without this,
+    // clients only learn the new track's identity once decoding actually
+    // starts, and any PUT sent in between (e.g. the PLAY_PAUSE event
+    // below, handled by the app's own currentTrackUri cache) would still
+    // carry the previous track's URI.
+    updatePlayerState(!paused, track->ref.uri, track->requestedPosition,
+                      (uint32_t)track->trackInfo.duration,
+                      connectstate_PutStateReason_PLAYER_STATE_CHANGED,
+                      /*isBuffering=*/true);
     sendEngineEvent(EventType::PLAYBACK_START, (int)track->requestedPosition);
     sendEngineEvent(EventType::PLAY_PAUSE, paused);
   };
@@ -489,7 +500,8 @@ void ConnectStateHandler::updatePlayerState(bool isPlaying,
                                             const std::string& trackUri,
                                             uint32_t positionMs,
                                             uint32_t durationMs,
-                                            connectstate_PutStateReason reason) {
+                                            connectstate_PutStateReason reason,
+                                            bool isBuffering) {
   // Non-blocking: the actual PUT runs on this class's own task (runTask()),
   // never the caller's - doing it inline overflowed small caller stacks.
   std::lock_guard<std::mutex> lock(pendingMutex);
@@ -499,6 +511,7 @@ void ConnectStateHandler::updatePlayerState(bool isPlaying,
   pendingPositionMs = positionMs;
   pendingDurationMs = durationMs;
   pendingReason = reason;
+  pendingIsBuffering = isBuffering;
   pendingCv.notify_one();
 }
 
@@ -514,6 +527,7 @@ void ConnectStateHandler::runTask() {
     std::string trackUri;
     uint32_t positionMs, durationMs;
     connectstate_PutStateReason reason;
+    bool isBuffering;
     {
       std::unique_lock<std::mutex> lock(pendingMutex);
       pendingCv.wait_for(lock, std::chrono::milliseconds(PENDING_WAIT_MS),
@@ -529,6 +543,7 @@ void ConnectStateHandler::runTask() {
       positionMs = pendingPositionMs;
       durationMs = pendingDurationMs;
       reason = pendingReason;
+      isBuffering = pendingIsBuffering;
       hasPending = false;
     }
 
@@ -554,6 +569,7 @@ void ConnectStateHandler::runTask() {
         positionMs = pendingPositionMs;
         durationMs = pendingDurationMs;
         reason = pendingReason;
+        isBuffering = pendingIsBuffering;
         hasPending = false;
       }
     }
@@ -574,11 +590,13 @@ void ConnectStateHandler::runTask() {
       // wrong grayed out resume on the real client. See §19.
       playerState.is_playing = !trackUri.empty();
       playerState.is_paused = !isPlaying;
-      // Not tied to is_paused: buffering means audio isn't loaded yet,
-      // which is already false by the time this fires (TrackPlayer is
-      // producing frames), independent of pause state. See §30.
-      playerState.is_buffering = false;
-      playerState.playback_speed = isPlaying ? 1.0 : 0.0;
+      // isBuffering: true only for the early "new track, not yet decoding"
+      // announcement (trackLoadedCallback) - false everywhere else, since
+      // by the time any other caller fires, TrackPlayer is already
+      // producing frames. See §30.
+      playerState.is_buffering = isBuffering;
+      // Not progressing while buffering, same as while paused.
+      playerState.playback_speed = (isPlaying && !isBuffering) ? 1.0 : 0.0;
       playerState.timestamp = ctx->timeProvider->getSyncedTimestamp();
       playerState.position_as_of_timestamp = (int64_t)positionMs;
       playerState.duration = (int64_t)durationMs;

@@ -107,7 +107,8 @@ class ConnectStateHandler : public bell::Task {
       bool isPlaying, const std::string& trackUri, uint32_t positionMs,
       uint32_t durationMs,
       connectstate_PutStateReason reason =
-          connectstate_PutStateReason_PLAYER_STATE_CHANGED);
+          connectstate_PutStateReason_PLAYER_STATE_CHANGED,
+      bool isBuffering = false);
 
   /**
   * @brief Decodes a ClusterUpdate push (hm://connect-state/v1/cluster) and,
@@ -414,6 +415,7 @@ class ConnectStateHandler : public bell::Task {
   uint32_t pendingDurationMs = 0;
   connectstate_PutStateReason pendingReason =
       connectstate_PutStateReason_PLAYER_STATE_CHANGED;
+  bool pendingIsBuffering = false;
 
   // Held by runTask() for its whole lifetime; the destructor takes it
   // after stop(), so the object can't be freed under a still-running task
