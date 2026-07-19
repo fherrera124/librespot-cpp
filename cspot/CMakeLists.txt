@@ -2,17 +2,19 @@ cmake_minimum_required(VERSION 2.8.12)
 
 # ESP-IDF (Component Manager) vs plain CMake (CLI target, host tests):
 # idf_component_register() must run before anything touches ${COMPONENT_LIB}.
+# No project() call here in either branch - ESP-IDF's early component-
+# requirements scan runs this file via a restricted include() where
+# project() isn't allowed ("project command is not scriptable"), and the
+# plain-CMake branch is always reached via add_subdirectory() from a
+# caller that already called project() itself (targets/cli/CMakeLists.txt).
+file(GLOB SOURCES "src/*.cpp" "src/*.c")
 if(ESP_PLATFORM)
-    file(GLOB SOURCES "src/*.cpp" "src/*.c")
     idf_component_register(
         SRCS ${SOURCES}
         INCLUDE_DIRS "include"
         REQUIRES esp_driver_i2s
         PRIV_REQUIRES esp_ringbuf
     )
-else()
-    project(cspot)
-    file(GLOB SOURCES "src/*.cpp" "src/*.c")
 endif()
 
 # Configurable options
