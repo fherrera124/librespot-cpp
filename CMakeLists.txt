@@ -9,7 +9,10 @@ if(CSPOT_TARGET_CLI)
     project(cspotcli)
 endif()
 
-# targets/esp32 is a real ESP-IDF component (idf_component_register()),
-# consumed via the Component Manager by a downstream project - it can't be
-# built standalone as a top-level project() the way CSPOT_TARGET_CLI can.
+# ESP-IDF consumption goes through cspot/CMakeLists.txt directly (dual-mode:
+# idf_component_register() under ESP_PLATFORM, plain add_library() here) -
+# see cspot/README.md. No separate esp32 target: Component Manager's `path:`
+# for git dependencies only materializes that one subdirectory, so the
+# wrapper has to live where cspot/bell's own sources already are, not in a
+# sibling directory reaching outside its own subtree.
 
