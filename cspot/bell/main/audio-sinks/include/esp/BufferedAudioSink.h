@@ -3,10 +3,11 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <vector>
 #include "AudioSink.h"
+#include "CircularBuffer.h"
 #include "driver/i2s_std.h"
-#include "freertos/ringbuf.h"
 
 // Shared base for the ESP32 I2S sinks in this directory. Owns the I2S
 // peripheral (driver/i2s_std.h - ported from the legacy driver/i2s.h this
@@ -36,10 +37,8 @@ class BufferedAudioSink : public AudioSink {
   bool setParams(uint32_t sampleRate, uint8_t channelCount,
                  uint8_t bitDepth) override;
   void volumeChanged(uint16_t volume) override;
-  // See finding F77. Just raises a flag - the actual ring buffer/I2S
-  // drain happens on i2sFeedTask()'s own thread, the only one allowed to
-  // Receive from dataBuffer (FreeRTOS ring buffers don't support
-  // concurrent receivers).
+  // See finding F77. Just raises a flag - the actual buffer/I2S drain
+  // happens on i2sFeedTask()'s own thread, the only reader of dataBuffer.
   void flush() override;
 
  protected:
@@ -59,7 +58,7 @@ class BufferedAudioSink : public AudioSink {
 
   Config sinkConfig;
   i2s_chan_handle_t txChannel = nullptr;
-  RingbufHandle_t dataBuffer = nullptr;
+  std::unique_ptr<bell::CircularBuffer> dataBuffer;
   std::atomic<bool> flushRequested{false};
 
   uint32_t sampleRate = 44100;

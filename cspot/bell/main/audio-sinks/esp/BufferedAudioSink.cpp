@@ -119,17 +119,13 @@ void BufferedAudioSink::volumeChanged(uint16_t volume) {
 
 void BufferedAudioSink::i2sFeedTask(void* pvParameters) {
   auto* sink = static_cast<BufferedAudioSink*>(pvParameters);
+  uint8_t chunk[512];
   while (true) {
     if (sink->flushRequested.exchange(false)) {
-      // Drain and discard whatever's queued but not yet written - this is
-      // the only task allowed to Receive from dataBuffer (see F77), so
-      // flush() itself can't do this part directly.
-      void* stale;
-      size_t staleSize;
-      while ((stale = xRingbufferReceiveUpTo(sink->dataBuffer, &staleSize, 0,
-                                             SIZE_MAX)) != nullptr) {
-        vRingbufferReturnItem(sink->dataBuffer, stale);
-      }
+      // Discard whatever's queued but not yet written - this is the only
+      // task reading dataBuffer (see F77), so flush() itself can't do this
+      // part directly.
+      sink->dataBuffer->emptyBuffer();
       // Drops whatever's already queued in the DMA descriptors too - same
       // disable/enable already used by setParams() for reconfiguration.
       esp_err_t err = i2s_channel_disable(sink->txChannel);
@@ -140,18 +136,17 @@ void BufferedAudioSink::i2sFeedTask(void* pvParameters) {
       ESP_ERROR_CHECK(i2s_channel_enable(sink->txChannel));
     }
 
-    size_t itemSize;
     // Bounded (was portMAX_DELAY) so a flush request during an idle
     // stream still gets picked up within this timeout instead of waiting
     // for the next real chunk to unblock the receive.
-    char* item = (char*)xRingbufferReceiveUpTo(sink->dataBuffer, &itemSize,
-                                               pdMS_TO_TICKS(100), 512);
-    if (item != NULL) {
+    size_t itemSize =
+        sink->dataBuffer->readBlocking(chunk, sizeof(chunk), 100);
+    if (itemSize > 0) {
       size_t written = 0;
       while (written < itemSize) {
         size_t chunkWritten = 0;
         esp_err_t err =
-            i2s_channel_write(sink->txChannel, item + written,
+            i2s_channel_write(sink->txChannel, chunk + written,
                               itemSize - written, &chunkWritten, portMAX_DELAY);
         if (err != ESP_OK) {
           ESP_LOGW(TAG, "i2s_channel_write failed: %s", esp_err_to_name(err));
@@ -159,18 +154,17 @@ void BufferedAudioSink::i2sFeedTask(void* pvParameters) {
         }
         written += chunkWritten;
       }
-      vRingbufferReturnItem(sink->dataBuffer, (void*)item);
     }
   }
 }
 
 void BufferedAudioSink::startI2sFeed(size_t buf_size) {
-  // PSRAM-backed explicitly (not the plain xRingbufferCreate() default) -
-  // at 256KB this would eat a large chunk of scarce internal DRAM
-  // otherwise. See finding F83 (CDN fetch latency spikes measured on real
-  // hardware, up to ~3.5s, motivated growing this from 32KB).
-  dataBuffer = xRingbufferCreateWithCaps(buf_size, RINGBUF_TYPE_BYTEBUF,
-                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  // PSRAM-backed automatically: CONFIG_SPIRAM_USE_MALLOC +
+  // CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL push any allocation over 512
+  // bytes to PSRAM already, so a 256KB buffer needs no explicit
+  // heap-caps call. See finding F83 (CDN fetch latency spikes measured on
+  // real hardware, up to ~3.5s, motivated growing this from 32KB).
+  dataBuffer = std::make_unique<bell::CircularBuffer>(buf_size);
   xTaskCreatePinnedToCore(&BufferedAudioSink::i2sFeedTask, "i2sFeed", 4096,
                           this, 10, NULL, tskNO_AFFINITY);
 }
@@ -233,5 +227,11 @@ void BufferedAudioSink::feedPCMFrames(const uint8_t* buffer, size_t bytes) {
 
 void BufferedAudioSink::feedPCMFramesInternal(const void* pvItem,
                                               size_t xItemSize) {
-  xRingbufferSend(dataBuffer, pvItem, xItemSize, portMAX_DELAY);
+  const uint8_t* data = static_cast<const uint8_t*>(pvItem);
+  size_t remaining = xItemSize;
+  while (remaining > 0) {
+    size_t written = dataBuffer->writeBlocking(
+        data + (xItemSize - remaining), remaining, /*timeoutMs=*/50);
+    remaining -= written;
+  }
 }
