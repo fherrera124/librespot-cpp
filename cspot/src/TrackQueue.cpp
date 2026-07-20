@@ -723,13 +723,18 @@ bool TrackQueue::skipTrack(SkipDirection dir, uint32_t currentPositionMs,
 
   if (dir == SkipDirection::PREV) {
     if (currentTracksIndex > 0 && currentPositionMs < 3000) {
-      queueNextTrack(-1);
-
-      if (preloadedTracks.size() > MAX_TRACKS_PRELOAD) {
-        preloadedTracks.pop_back();
-      }
-
       currentTracksIndex--;
+      // Every preloaded entry (current + lookahead) was fetched relative
+      // to the OLD current index - none of it is valid once we move
+      // backward (what used to be "next"/"next-next" no longer follows
+      // the new current track, and the old front is a stale, already-
+      // played QueuedTrack). Same pattern updateTracks(initial=true)
+      // uses for a fresh load: clear and push just the new current
+      // track, let the background prefetch in processTrack()/runTask()
+      // repopulate the lookahead window naturally from here, instead of
+      // trying to hand-patch stale entries into the right positions.
+      preloadedTracks.clear();
+      queueNextTrack(0);
     } else {
       queueNextTrack(0);
     }
