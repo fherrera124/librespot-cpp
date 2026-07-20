@@ -193,6 +193,11 @@ void setClientTimeout(int fd, int timeoutMs) {
 }  // namespace
 
 void SimpleHTTPServer::handleConnection(int clientFd) {
+  // TEMP DIAGNOSTIC (ZeroConf "zombie server" investigation, 2026-07-20):
+  // confirms whether anything ever reaches this server at all during a
+  // "stuck connecting" incident - remove once resolved.
+  BELL_LOG(info, "SimpleHTTPServer", "connection accepted (fd=%d)", clientFd);
+
   constexpr int CLIENT_TIMEOUT_MS = 2000;
   setClientTimeout(clientFd, CLIENT_TIMEOUT_MS);
 
@@ -216,6 +221,11 @@ void SimpleHTTPServer::handleConnection(int clientFd) {
     }
     int n = recv(clientFd, buf.data() + bufLen, (int)(buf.size() - bufLen), 0);
     if (n <= 0) {
+      // TEMP DIAGNOSTIC, see above.
+      BELL_LOG(info, "SimpleHTTPServer",
+              "connection closed before a full request arrived (fd=%d, "
+              "recv=%d)",
+              clientFd, n);
       closeFd(clientFd);  // peer gone/timed out mid-request - nothing to reply to
       return;
     }
@@ -297,6 +307,10 @@ void SimpleHTTPServer::handleConnection(int clientFd) {
       response.body = "Internal Server Error";
     }
   }
+
+  // TEMP DIAGNOSTIC, see handleConnection()'s top.
+  BELL_LOG(info, "SimpleHTTPServer", "request: %s %s -> %d", methodStr.c_str(),
+          routePath.c_str(), response.status);
 
   sendResponse(clientFd, response);
   closeFd(clientFd);
