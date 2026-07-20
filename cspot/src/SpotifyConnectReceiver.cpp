@@ -36,6 +36,10 @@ SpotifyConnectReceiver::SpotifyConnectReceiver(
       connectionStateCallback(std::move(onConnectionStateChanged)),
       audioSink(std::move(audioSink)) {}
 
+// Out-of-line (not defaulted in the header) - see the header's comment on
+// the declaration.
+SpotifyConnectReceiver::~SpotifyConnectReceiver() = default;
+
 void SpotifyConnectReceiver::requestStop() {
   running = false;
   clientConnected.give();

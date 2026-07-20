@@ -52,7 +52,12 @@ class SpotifyConnectReceiver : public bell::Task {
                          SpotifyConnectReceiverConfig config,
                          EventHandler eventHandler,
                          ConnectionStateCallback onConnectionStateChanged);
-  ~SpotifyConnectReceiver() override = default;
+  // Defined in the .cpp, not defaulted here: MDNSService/SimpleHTTPServer/
+  // DealerClient are only forward-declared in this header, and the
+  // implicit unique_ptr deleter needs their complete types to call
+  // delete - a header-inline default would break for any translation
+  // unit that includes this header without also including theirs.
+  ~SpotifyConnectReceiver() override;
 
   // Unblocks the pairing wait so the task notices running=false on its
   // next iteration instead of staying parked forever.
