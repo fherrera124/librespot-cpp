@@ -29,14 +29,6 @@ constexpr int PENDING_WAIT_MS = 500;
 // caps how often updatePlayerState() actually reaches the network, however
 // fast SpircHandler's events fire.
 constexpr int PUT_MIN_INTERVAL_MS = 200;
-// Experimental (docs/aprendizaje.md, "stale PUT while paused" entry,
-// 2026-07-20): re-send the unchanged paused state at this cadence so the
-// client's own freshness check doesn't start showing the device as
-// disconnected during a long pause - comfortably under the ~60s+ the user
-// observed on hardware. No reference implementation does this (checked
-// go-librespot: its own state-put timer is a rate-limit retry, never a
-// heartbeat) - revert if it doesn't actually fix the symptom.
-constexpr int PAUSED_HEARTBEAT_MS = 45000;
 }  // namespace
 
 ConnectStateHandler::ConnectStateHandler(
@@ -327,7 +319,6 @@ void ConnectStateHandler::runTask() {
     uint32_t positionMs, durationMs;
     connectstate_PutStateReason reason;
     bool isBuffering;
-    bool gotPending;
     {
       std::unique_lock<std::mutex> lock(pendingMutex);
       pendingCv.wait_for(lock, std::chrono::milliseconds(PENDING_WAIT_MS),
@@ -335,39 +326,16 @@ void ConnectStateHandler::runTask() {
       if (!running) {
         break;
       }
-      gotPending = hasPending;
-      if (gotPending) {
-        isPlaying = pendingIsPlaying;
-        trackUri = pendingTrackUri;
-        positionMs = pendingPositionMs;
-        durationMs = pendingDurationMs;
-        reason = pendingReason;
-        isBuffering = pendingIsBuffering;
-        hasPending = false;
-      }
-    }
-
-    if (!gotPending) {
-      // Paused heartbeat - see PAUSED_HEARTBEAT_MS above. Only while
-      // still the active device (isActiveDevice goes false the moment
-      // another device takes over, via handleClusterUpdate()) and only
-      // with a real track loaded and genuinely paused - playing already
-      // PUTs on its own via track progress/seeks/etc, nothing to prop up.
-      auto idleMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::steady_clock::now() - lastPutTime)
-                       .count();
-      std::string heartbeatTrackUri = stateModel.trackUri();
-      if (!isActiveDevice || idleMs < PAUSED_HEARTBEAT_MS ||
-          heartbeatTrackUri.empty() || playbackController.isPlaying()) {
+      if (!hasPending) {
         continue;
       }
-
-      isPlaying = false;
-      trackUri = heartbeatTrackUri;
-      positionMs = playbackController.getPositionMs();
-      durationMs = stateModel.duration();
-      reason = connectstate_PutStateReason_PLAYER_STATE_CHANGED;
-      isBuffering = false;
+      isPlaying = pendingIsPlaying;
+      trackUri = pendingTrackUri;
+      positionMs = pendingPositionMs;
+      durationMs = pendingDurationMs;
+      reason = pendingReason;
+      isBuffering = pendingIsBuffering;
+      hasPending = false;
     }
 
     // §6.6: at most one PUT every PUT_MIN_INTERVAL_MS, coalescing a burst
