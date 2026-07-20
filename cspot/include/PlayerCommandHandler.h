@@ -68,6 +68,18 @@ class PlayerCommandHandler {
   void loadTracks(const std::vector<TrackReference>& tracks, int startIndex,
                   uint32_t requestedPositionMs, bool startPaused);
 
+  // "What's playing right now" - shared by every call site that reports
+  // current state without changing it (update_context/setPause()/
+  // seekMs()). Not atomic across stateModel/playbackController's separate
+  // locks, same as reading each getter by hand.
+  struct PlaybackSnapshot {
+    std::string trackUri;
+    uint32_t durationMs;
+    bool isPlaying;
+    uint32_t positionMs;
+  };
+  PlaybackSnapshot currentPlaybackSnapshot() const;
+
   PlaybackController& playbackController;
   ConnectStateModel& stateModel;
   cspot::ContextResolver& contextResolver;

@@ -144,9 +144,7 @@ bool PlayerCommandHandler::handlePlayerCommand(const std::string& endpoint,
                                   : "";
 
     std::string currentUri = stateModel.contextUri();
-    std::string trackUri = stateModel.trackUri();
-    uint32_t durationMs = stateModel.duration();
-    bool playing = playbackController.isPlaying();
+    auto snapshot = currentPlaybackSnapshot();
 
     if (incomingUri.empty() || incomingUri != currentUri) {
       CSPOT_LOG(info,
@@ -198,8 +196,8 @@ bool PlayerCommandHandler::handlePlayerCommand(const std::string& endpoint,
                                shuffleReason);
     stateModel.setContextMetadata(std::move(metadata));
 
-    updatePlayerState(playing, trackUri, playbackController.getPositionMs(),
-                      durationMs,
+    updatePlayerState(snapshot.isPlaying, snapshot.trackUri,
+                      snapshot.positionMs, snapshot.durationMs,
                       connectstate_PutStateReason_PLAYER_STATE_CHANGED,
                       /*isBuffering=*/false);
     return true;
@@ -264,6 +262,12 @@ void PlayerCommandHandler::loadTracks(const std::vector<TrackReference>& tracks,
                                       bool startPaused) {
   playbackController.loadTracks(tracks, startIndex, requestedPositionMs,
                                 startPaused);
+}
+
+PlayerCommandHandler::PlaybackSnapshot
+PlayerCommandHandler::currentPlaybackSnapshot() const {
+  return {stateModel.trackUri(), stateModel.duration(),
+          playbackController.isPlaying(), playbackController.getPositionMs()};
 }
 
 bool PlayerCommandHandler::handleTransfer(cJSON* command) {
@@ -497,10 +501,10 @@ void PlayerCommandHandler::setPause(bool pause) {
   // player/command and a local hardware button, so it's the one place
   // that always has the real, current trackUri/duration - no separate
   // cache to go stale.
-  std::string trackUri = stateModel.trackUri();
-  if (!trackUri.empty()) {
-    updatePlayerState(!pause, trackUri, playbackController.getPositionMs(),
-                      stateModel.duration(),
+  auto snapshot = currentPlaybackSnapshot();
+  if (!snapshot.trackUri.empty()) {
+    updatePlayerState(!pause, snapshot.trackUri, snapshot.positionMs,
+                      snapshot.durationMs,
                       connectstate_PutStateReason_PLAYER_STATE_CHANGED,
                       /*isBuffering=*/false);
   }
@@ -517,9 +521,7 @@ bool PlayerCommandHandler::previousSong() {
 void PlayerCommandHandler::seekMs(uint32_t position) {
   playbackController.seekMs(position);
 
-  std::string trackUri = stateModel.trackUri();
-  uint32_t durationMs = stateModel.duration();
-  bool playing = playbackController.isPlaying();
+  auto snapshot = currentPlaybackSnapshot();
   sendEngineEventData(EventType::SEEK, (int)position);
 
   // A seek while playing (not paused) otherwise never reaches the app at
@@ -530,7 +532,8 @@ void PlayerCommandHandler::seekMs(uint32_t position) {
   // wherever it last heard from us, since it never got told. Matches
   // go-librespot's seek() (controls.go), which always calls updateState()
   // right after SeekMs() too.
-  updatePlayerState(playing, trackUri, position, durationMs,
+  updatePlayerState(snapshot.isPlaying, snapshot.trackUri, position,
+                    snapshot.durationMs,
                     connectstate_PutStateReason_PLAYER_STATE_CHANGED,
                     /*isBuffering=*/false);
 }
