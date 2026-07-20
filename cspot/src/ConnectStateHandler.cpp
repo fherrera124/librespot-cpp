@@ -508,8 +508,8 @@ bool ConnectStateHandler::nextSong() {
   return playerCommandHandler.nextSong();
 }
 
-bool ConnectStateHandler::previousSong() {
-  return playerCommandHandler.previousSong();
+bool ConnectStateHandler::previousSong(bool allowSeeking) {
+  return playerCommandHandler.previousSong(allowSeeking);
 }
 
 void ConnectStateHandler::seekMs(uint32_t position) {

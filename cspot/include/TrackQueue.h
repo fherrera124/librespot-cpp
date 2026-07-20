@@ -131,8 +131,13 @@ class TrackQueue : public bell::Task {
   // one" (<3s in) - see the comment on the definition. Was read from
   // PlaybackState's SPIRC Frame before this class stopped depending on
   // it (docs/dealer_websocket_migration.md, Fase 6 "corte completo").
+  // allowSeeking: from the dealer command's own options.allow_seeking
+  // (PREV only) - false means always go to the real previous track,
+  // ignoring currentPositionMs entirely. Matches go-librespot's
+  // skipPrev(ctx, allowSeeking) - it isn't this class's own policy call,
+  // the client requesting the skip decides it per-command.
   bool skipTrack(SkipDirection dir, uint32_t currentPositionMs,
-                 bool expectNotify = true);
+                 bool expectNotify = true, bool allowSeeking = true);
   // tracks/startIndex: the list to load and which entry to start at -
   // used to come from PlaybackState's remoteTracks/playing_track_index
   // (populated by SpircHandler decoding a SPIRC Load/Replace frame);

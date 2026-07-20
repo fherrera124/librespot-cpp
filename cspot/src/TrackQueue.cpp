@@ -717,12 +717,12 @@ bool TrackQueue::queueNextTrack(int offset, uint32_t positionMs) {
 }
 
 bool TrackQueue::skipTrack(SkipDirection dir, uint32_t currentPositionMs,
-                           bool expectNotify) {
+                           bool expectNotify, bool allowSeeking) {
   bool skipped = true;
   std::scoped_lock lock(tracksMutex);
 
   if (dir == SkipDirection::PREV) {
-    if (currentTracksIndex > 0 && currentPositionMs < 3000) {
+    if (currentTracksIndex > 0 && (!allowSeeking || currentPositionMs < 3000)) {
       currentTracksIndex--;
       // Every preloaded entry (current + lookahead) was fetched relative
       // to the OLD current index - none of it is valid once we move

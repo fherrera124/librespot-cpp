@@ -166,8 +166,10 @@ bool PlaybackController::isPlaying() const {
   return isPlayingState;
 }
 
-bool PlaybackController::skipTrack(TrackQueue::SkipDirection dir) {
-  bool skipped = trackQueue->skipTrack(dir, getPositionMs());
+bool PlaybackController::skipTrack(TrackQueue::SkipDirection dir,
+                                   bool allowSeeking) {
+  bool skipped =
+      trackQueue->skipTrack(dir, getPositionMs(), true, allowSeeking);
   trackPlayer->resetState(!skipped);
   return skipped;
 }
@@ -176,8 +178,8 @@ bool PlaybackController::nextSong() {
   return skipTrack(TrackQueue::SkipDirection::NEXT);
 }
 
-bool PlaybackController::previousSong() {
-  return skipTrack(TrackQueue::SkipDirection::PREV);
+bool PlaybackController::previousSong(bool allowSeeking) {
+  return skipTrack(TrackQueue::SkipDirection::PREV, allowSeeking);
 }
 
 void PlaybackController::seekMs(uint32_t position) {

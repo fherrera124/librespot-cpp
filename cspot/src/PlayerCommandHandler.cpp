@@ -76,7 +76,20 @@ bool PlayerCommandHandler::handlePlayerCommand(const std::string& endpoint,
   } else if (endpoint == "skip_next") {
     return nextSong();
   } else if (endpoint == "skip_prev") {
-    return previousSong();
+    // The client decides this, not us - a swipe gesture and a "hold
+    // previous" press don't mean the same thing. Absent -> true (today's
+    // restart-if-recent behavior); only an explicit false always goes to
+    // the real previous track regardless of position. Matches
+    // go-librespot's skipPrev(ctx, req.Command.Options.AllowSeeking).
+    cJSON* optionsItem =
+        command != nullptr ? cJSON_GetObjectItem(command, "options") : nullptr;
+    cJSON* allowSeekingItem =
+        optionsItem != nullptr
+            ? cJSON_GetObjectItem(optionsItem, "allow_seeking")
+            : nullptr;
+    bool allowSeeking =
+        allowSeekingItem == nullptr || cJSON_IsTrue(allowSeekingItem);
+    return previousSong(allowSeeking);
   } else if (endpoint == "seek_to") {
     // "relative" is misleadingly named - only "current" is relative-to-now;
     // "beginning" and absent are both absolute, just different fields
@@ -514,8 +527,8 @@ bool PlayerCommandHandler::nextSong() {
   return playbackController.nextSong();
 }
 
-bool PlayerCommandHandler::previousSong() {
-  return playbackController.previousSong();
+bool PlayerCommandHandler::previousSong(bool allowSeeking) {
+  return playbackController.previousSong(allowSeeking);
 }
 
 void PlayerCommandHandler::seekMs(uint32_t position) {

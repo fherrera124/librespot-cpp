@@ -88,7 +88,10 @@ class ConnectStateHandler : public bell::Task {
 
   void setPause(bool pause);
   bool nextSong();
-  bool previousSong();
+  // allowSeeking: from the dealer command's own options.allow_seeking -
+  // see PlaybackController::previousSong()'s comment. Local button
+  // presses (no dealer command to read this from) just use the default.
+  bool previousSong(bool allowSeeking = true);
   void seekMs(uint32_t position);
   void setRepeatContext(bool repeat);
   uint32_t getPositionMs();

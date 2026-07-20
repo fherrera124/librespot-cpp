@@ -44,9 +44,11 @@ class PlaybackController {
   uint32_t getPositionMs();
   bool isPlaying() const;
 
-  bool skipTrack(TrackQueue::SkipDirection dir);
+  bool skipTrack(TrackQueue::SkipDirection dir, bool allowSeeking = true);
   bool nextSong();
-  bool previousSong();
+  // allowSeeking: see TrackQueue::skipTrack()'s comment - from the
+  // dealer command's own options.allow_seeking, not this class's policy.
+  bool previousSong(bool allowSeeking = true);
   void seekMs(uint32_t position);
   void setRepeatContext(bool repeat);
 

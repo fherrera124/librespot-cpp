@@ -50,7 +50,9 @@ class PlayerCommandHandler {
 
   void setPause(bool pause);
   bool nextSong();
-  bool previousSong();
+  // allowSeeking: from the dealer command's own options.allow_seeking -
+  // see PlaybackController::previousSong()'s comment.
+  bool previousSong(bool allowSeeking = true);
   void seekMs(uint32_t position);
   void setRepeatContext(bool repeat);
 
