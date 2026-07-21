@@ -108,7 +108,13 @@ class QueuedTrack {
 
 class TrackQueue : public bell::Task {
  public:
-  TrackQueue(std::shared_ptr<cspot::Context> ctx);
+  // accessKeyFetcher: injected rather than constructed internally, so a
+  // test can supply a fake instead of the real one's blocking HTTPS POST
+  // to accounts.spotify.com (see cspot/tests/f104_queuedtrack_state_race_
+  // test.cpp's own comment on why it couldn't drive TrackQueue::runTask()
+  // directly for exactly this reason).
+  TrackQueue(std::shared_ptr<cspot::Context> ctx,
+             std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher);
   ~TrackQueue();
 
   enum class SkipDirection { NEXT, PREV };

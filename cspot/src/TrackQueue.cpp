@@ -498,9 +498,10 @@ void QueuedTrack::stepLoadMetadata(
   state = State::PENDING_META;
 }
 
-TrackQueue::TrackQueue(std::shared_ptr<cspot::Context> ctx)
-    : bell::Task("CSpotTrackQueue", 1024 * 32, 2, 1), ctx(ctx) {
-  accessKeyFetcher = std::make_shared<cspot::AccessKeyFetcher>(ctx);
+TrackQueue::TrackQueue(std::shared_ptr<cspot::Context> ctx,
+                      std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher)
+    : bell::Task("CSpotTrackQueue", 1024 * 32, 2, 1), ctx(ctx),
+      accessKeyFetcher(accessKeyFetcher) {
   processSemaphore = std::make_shared<bell::WrappedSemaphore>();
   playableSemaphore = std::make_shared<bell::WrappedSemaphore>();
 

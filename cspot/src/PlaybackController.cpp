@@ -1,5 +1,6 @@
 #include "PlaybackController.h"
 
+#include "AccessKeyFetcher.h"
 #include "CSpotContext.h"  // for Context
 #include "Logger.h"        // for CSPOT_LOG
 #include "TimeProvider.h"
@@ -12,7 +13,8 @@ PlaybackController::PlaybackController(std::shared_ptr<cspot::Context> ctx,
                                        TrackReachedCallback onTrackReached,
                                        DepletedCallback onDepleted)
     : ctx(ctx), onTrackReached(std::move(onTrackReached)) {
-  trackQueue = std::make_shared<cspot::TrackQueue>(ctx);
+  trackQueue = std::make_shared<cspot::TrackQueue>(
+      ctx, std::make_shared<cspot::AccessKeyFetcher>(ctx));
 
   auto eofCallback = [this, onDepleted = std::move(onDepleted)]() {
     if (trackQueue->isFinished()) {
