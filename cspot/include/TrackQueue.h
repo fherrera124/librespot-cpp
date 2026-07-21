@@ -187,8 +187,8 @@ class TrackQueue : public bell::Task {
  private:
   static const int MAX_TRACKS_PRELOAD = 3;
 
-  std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher;
   std::shared_ptr<cspot::Context> ctx;
+  std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher;
   std::shared_ptr<bell::WrappedSemaphore> processSemaphore;
 
   std::deque<std::shared_ptr<QueuedTrack>> preloadedTracks;
