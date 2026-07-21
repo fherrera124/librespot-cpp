@@ -50,12 +50,14 @@ class QueuedTrack {
 
   std::shared_ptr<bell::WrappedSemaphore> loadedSemaphore;
 
-  // Written from TrackQueue's own task (processTrack()'s step functions -
-  // some under tracksMutex, some not, inconsistently) and read from
-  // TrackPlayer's task (runTask()) with no lock at all - genuinely
-  // cross-thread, so this needs to be atomic rather than relying on
-  // whichever lock happened to be held at each call site.
-  std::atomic<State> state{State::QUEUED};  // Current state of the track
+  // Read from TrackQueue's own task (processTrack()'s step functions) and
+  // TrackPlayer's task (runTask()) - genuinely cross-thread, hence atomic.
+  // Private: every transition goes through setState() instead of letting
+  // any call site assign the field directly, so there's one place that
+  // can enforce "once failed, stay failed" - see setState()'s own comment.
+  State getState() const { return state.load(); }
+  void setState(State newState);
+
   TrackReference ref;           // Holds GID, URI and Context
   TrackInfo trackInfo;  // Full track information fetched from spotify, name etc
 
@@ -90,6 +92,8 @@ class QueuedTrack {
   void expire();
 
  private:
+  std::atomic<State> state{State::QUEUED};
+
   std::shared_ptr<cspot::Context> ctx;
 
   uint64_t pendingMercuryRequest = 0;

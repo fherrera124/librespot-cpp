@@ -145,11 +145,10 @@ QueuedTrack::QueuedTrack(TrackReference& ref,
   this->ref = ref;
 
   loadedSemaphore = std::make_shared<bell::WrappedSemaphore>();
-  state = State::QUEUED;
 }
 
 QueuedTrack::~QueuedTrack() {
-  state = State::FAILED;
+  setState(State::FAILED);
   loadedSemaphore->give();
 
   if (pendingMercuryRequest != 0) {
@@ -159,6 +158,18 @@ QueuedTrack::~QueuedTrack() {
   if (pendingAudioKeyRequest != 0) {
     ctx->session->unregisterAudioKey(pendingAudioKeyRequest);
   }
+}
+
+// Once failed, stay failed: a late-firing retry/success callback from an
+// attempt this object has already given up on (see the catch-up-skip
+// comment in reachedPlaybackCallback, PlaybackController.cpp, for the
+// same class of out-of-order-callback risk) must not resurrect a track
+// past this point.
+void QueuedTrack::setState(State newState) {
+  if (state.load() == State::FAILED) {
+    return;
+  }
+  state = newState;
 }
 
 // CDNAudioFile sizes its CDN range-request buffer off this (see F84) -
@@ -182,7 +193,7 @@ static int audioFormatBitrateKbps(AudioFormat format) {
 
 std::shared_ptr<cspot::CDNAudioFile> QueuedTrack::getAudioFile(
     CDNConnection& connection) {
-  if (state != State::READY) {
+  if (getState() != State::READY) {
     return nullptr;
   }
 
@@ -297,7 +308,7 @@ void QueuedTrack::stepParseMetadata(Track* pbTrack, Episode* pbEpisode) {
     CSPOT_LOG(info, "File not available for playback");
 
     // no alternatives for song
-    state = State::FAILED;
+    setState(State::FAILED);
     loadedSemaphore->give();
     return;
   }
@@ -305,7 +316,7 @@ void QueuedTrack::stepParseMetadata(Track* pbTrack, Episode* pbEpisode) {
   // Assign track identifier
   identifier = bytesToHexString(fileId);
 
-  state = State::KEY_REQUIRED;
+  setState(State::KEY_REQUIRED);
 }
 
 void QueuedTrack::stepLoadAudioFile(
@@ -328,23 +339,23 @@ void QueuedTrack::stepLoadAudioFile(
               std::vector<uint8_t>(audioKey.begin() + 4, audioKey.end());
 
           loadAttempts = 0;  // fresh budget for the CDN URL step
-          state = State::CDN_REQUIRED;
+          setState(State::CDN_REQUIRED);
         } else if (++loadAttempts < MAX_LOAD_ATTEMPTS) {
           CSPOT_LOG(error, "Failed to get audio key, retrying (%d/%d)",
                    loadAttempts, MAX_LOAD_ATTEMPTS - 1);
           retryNotBeforeTime =
               std::chrono::steady_clock::now() + LOAD_RETRY_BACKOFF;
-          state = State::KEY_REQUIRED;  // processTrack() calls this step again
+          setState(State::KEY_REQUIRED);  // processTrack() calls this step again
         } else {
           CSPOT_LOG(error, "Failed to get audio key, giving up after %d attempts",
                    MAX_LOAD_ATTEMPTS);
-          state = State::FAILED;
+          setState(State::FAILED);
           loadedSemaphore->give();
         }
         updateSemaphore->give();
       });
 
-  state = State::PENDING_KEY;
+  setState(State::PENDING_KEY);
 }
 
 void QueuedTrack::stepLoadCDNUrl(const std::string& accessKey) {
@@ -366,11 +377,11 @@ void QueuedTrack::stepLoadCDNUrl(const std::string& accessKey) {
                loadAttempts, MAX_LOAD_ATTEMPTS - 1);
       retryNotBeforeTime =
           std::chrono::steady_clock::now() + LOAD_RETRY_BACKOFF;
-      state = State::CDN_REQUIRED;  // processTrack() calls this step again
+      setState(State::CDN_REQUIRED);  // processTrack() calls this step again
     } else {
       CSPOT_LOG(error, "Cannot fetch CDN URL: %s, giving up after %d attempts",
                reason, MAX_LOAD_ATTEMPTS);
-      state = State::FAILED;
+      setState(State::FAILED);
       loadedSemaphore->give();
     }
   };
@@ -423,7 +434,7 @@ void QueuedTrack::stepLoadCDNUrl(const std::string& accessKey) {
 #endif
 
     CSPOT_LOG(info, "Received CDN URL, %s", cdnUrl.c_str());
-    state = State::READY;
+    setState(State::READY);
     loadedSemaphore->give();
   } catch (const std::exception& e) {
     retryOrFail(e.what());
@@ -433,8 +444,8 @@ void QueuedTrack::stepLoadCDNUrl(const std::string& accessKey) {
 }
 
 void QueuedTrack::expire() {
-  if (state != State::QUEUED) {
-    state = State::FAILED;
+  if (getState() != State::QUEUED) {
+    setState(State::FAILED);
     loadedSemaphore->give();
   }
 }
@@ -462,12 +473,12 @@ void QueuedTrack::stepLoadMetadata(
                  loadAttempts, MAX_LOAD_ATTEMPTS - 1);
         retryNotBeforeTime =
             std::chrono::steady_clock::now() + LOAD_RETRY_BACKOFF;
-        state = State::QUEUED;  // processTrack() calls this step again
+        setState(State::QUEUED);  // processTrack() calls this step again
       } else {
         CSPOT_LOG(error,
                  "Empty metadata response, giving up after %d attempts",
                  MAX_LOAD_ATTEMPTS);
-        state = State::FAILED;
+        setState(State::FAILED);
         loadedSemaphore->give();
       }
       updateSemaphore->give();
@@ -495,7 +506,7 @@ void QueuedTrack::stepLoadMetadata(
       MercurySession::RequestType::GET, requestUrl, responseHandler);
 
   // Set the state to pending
-  state = State::PENDING_META;
+  setState(State::PENDING_META);
 }
 
 TrackQueue::TrackQueue(std::shared_ptr<cspot::Context> ctx,
@@ -628,7 +639,7 @@ std::shared_ptr<QueuedTrack> TrackQueue::consumeTrack(
     // "Track failed to load" + Mercury notify + full state reset every
     // ~5s, indefinitely. Nothing to play until the client sends a new
     // Load with more tracks. See F94.
-    if (preloadedTracks[0]->state == QueuedTrack::State::FAILED) {
+    if (preloadedTracks[0]->getState() == QueuedTrack::State::FAILED) {
       return nullptr;
     }
 
@@ -662,7 +673,7 @@ std::shared_ptr<QueuedTrack> TrackQueue::consumeTrack(
 }
 
 void TrackQueue::processTrack(std::shared_ptr<QueuedTrack> track) {
-  switch (track->state) {
+  switch (track->getState()) {
     case QueuedTrack::State::QUEUED:
       track->stepLoadMetadata(&pbTrack, &pbEpisode, tracksMutex,
                               processSemaphore);
@@ -673,7 +684,7 @@ void TrackQueue::processTrack(std::shared_ptr<QueuedTrack> track) {
     case QueuedTrack::State::CDN_REQUIRED:
       track->stepLoadCDNUrl(accessKey);
 
-      if (track->state == QueuedTrack::State::READY) {
+      if (track->getState() == QueuedTrack::State::READY) {
         // runTask() calls processTrack() outside tracksMutex (it only
         // locks to copy preloadedTracks before iterating) - queueNextTrack()
         // mutates the real preloadedTracks, so it needs its own lock here,
@@ -842,9 +853,9 @@ bool TrackQueue::updateTracks(const std::vector<TrackReference>& tracks,
     // check first was an out-of-bounds deque access driven directly by a
     // remote client's SPIRC frame. See
     // docs/spotify_component_analysis.md, finding F25.
-  } else if (!preloadedTracks.empty() && 
-           preloadedTracks[0]->state != QueuedTrack::State::READY && 
-           preloadedTracks[0]->state != QueuedTrack::State::FAILED) {
+  } else if (!preloadedTracks.empty() &&
+           preloadedTracks[0]->getState() != QueuedTrack::State::READY &&
+           preloadedTracks[0]->getState() != QueuedTrack::State::FAILED) {
     // try to not re-load track if we are still loading it
 
     // remove everything except first track

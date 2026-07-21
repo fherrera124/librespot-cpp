@@ -233,7 +233,7 @@ void TrackPlayer::runTask() {
 
     inFuture = trackOffset > 0;
 
-    if (track->state != QueuedTrack::State::READY) {
+    if (track->getState() != QueuedTrack::State::READY) {
       // Wide enough for TrackQueue's own bounded retry (metadata/audio-key/
       // CDN-url, up to 3 attempts with a 1s backoff each - see
       // TrackQueue.cpp) to actually finish before this gives up; the
@@ -241,7 +241,7 @@ void TrackPlayer::runTask() {
       // attempts exhausted), never on an intermediate attempt.
       track->loadedSemaphore->twait(8000);
 
-      if (track->state != QueuedTrack::State::READY) {
+      if (track->getState() != QueuedTrack::State::READY) {
         CSPOT_LOG(error, "Track failed to load, skipping it");
         // Advance TrackQueue's own head past this failed track too, or it
         // stays one position behind whatever plays next. See F89.
