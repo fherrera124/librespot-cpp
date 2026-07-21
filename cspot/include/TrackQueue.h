@@ -50,7 +50,12 @@ class QueuedTrack {
 
   std::shared_ptr<bell::WrappedSemaphore> loadedSemaphore;
 
-  State state = State::QUEUED;  // Current state of the track
+  // Written from TrackQueue's own task (processTrack()'s step functions -
+  // some under tracksMutex, some not, inconsistently) and read from
+  // TrackPlayer's task (runTask()) with no lock at all - genuinely
+  // cross-thread, so this needs to be atomic rather than relying on
+  // whichever lock happened to be held at each call site.
+  std::atomic<State> state{State::QUEUED};  // Current state of the track
   TrackReference ref;           // Holds GID, URI and Context
   TrackInfo trackInfo;  // Full track information fetched from spotify, name etc
 

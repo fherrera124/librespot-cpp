@@ -260,8 +260,12 @@ void TrackPlayer::runTask() {
     currentSongPlaying = true;
 
     {
-      std::scoped_lock lock(playbackMutex);
-
+      // No lock here (playbackMutex, removed - it was only ever taken by
+      // this one call site, so it never actually excluded anything):
+      // currentTrackStream/vorbisFile/pcmBuffer/mp3 buffers below are only
+      // ever touched from this task - every other TrackPlayer method that
+      // can be called cross-thread (resetState/seekMs/setPaused/etc.) only
+      // reads/writes the std::atomic<> fields declared in TrackPlayer.h.
       currentTrackStream = track->getAudioFile(cdnConnection);
 
       // openStream() can throw (CDN request failure, or a too-short

@@ -118,7 +118,6 @@ class TrackPlayer : bell::Task {
 
   // Playback control
   std::atomic<bool> currentSongPlaying;
-  std::mutex playbackMutex;
   std::mutex dataOutMutex;
 
   // Vorbis related
