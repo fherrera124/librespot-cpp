@@ -1,37 +1,34 @@
-![C/C++ CI](https://github.com/feelfreelinux/cspot/workflows/C/C++%20CI/badge.svg)
-![ESP IDF](https://github.com/feelfreelinux/cspot/workflows/ESP%20IDF/badge.svg)
-[![Certification](https://badgen.net/badge/Stary%20Filipa/certified?color=purple)](https://github.com/feelfreelinux/cspot)
-[![Certification](https://badgen.net/badge/Sasin/stole%2070%20mln%20PLN)](https://github.com/feelfreelinux/cspot)
+[![Build cspot-cli on Ubuntu](https://github.com/fherrera124/librespot-cpp/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/fherrera124/librespot-cpp/actions/workflows/c-cpp.yml)
+[![Run clang-format check](https://github.com/fherrera124/librespot-cpp/actions/workflows/clang-format.yml/badge.svg)](https://github.com/fherrera124/librespot-cpp/actions/workflows/clang-format.yml)
 
 <p align="center">
 <img src=".github/trombka.png" width="32%" />
 </p>
 
-# :trumpet: cspot
+# librespot-cpp
 
-A Spotify Connect player written in CPP targeting, but not limited to embedded devices (ESP32).
+A Spotify Connect player written in C++ targeting, but not limited to, embedded devices (ESP32). Fork of [feelfreelinux/cspot](https://github.com/feelfreelinux/cspot) - the C++ namespace and public API are still named `cspot`.
 
-Currently in state of rapid development.
+Currently in a state of rapid development.
 
-*Only to be used with premium spotify accounts*
+*Only to be used with premium Spotify accounts*
 
 ## Spotify Connect engine
 
-Motor (`Session`, `DealerClient`, `PlayerEngine`, `TrackPlayer`,
-`TrackQueue`, `AudioSink`) sin glue de aplicación (WiFi, zeroconf, pines
-I2S) — eso le corresponde al proyecto consumidor.
+The engine (`Session`, `DealerClient`, `PlayerEngine`, `TrackPlayer`,
+`TrackQueue`, `AudioSink`) has no application glue (WiFi, zeroconf, I2S
+pins) - that's the consuming project's job.
 
-### Consumo en CMake plano (Linux/Apple/Win32, o `extras/cli`)
+### Consuming via plain CMake (Linux/macOS/Win32, or `extras/cli`)
 
-`add_subdirectory()` normal — ver `extras/cli/CMakeLists.txt` como
-referencia.
+A normal `add_subdirectory()` - see `extras/cli/CMakeLists.txt` for
+reference.
 
-### Consumo en ESP-IDF, vía Component Manager
+### Consuming via ESP-IDF, through Component Manager
 
-El `CMakeLists.txt` de la raíz es dual-mode: bajo `ESP_PLATFORM` se
-registra como componente real (`idf_component_register()`) en vez de un
-`add_library()` plano. En el `idf_component.yml` del componente que lo
-consuma:
+The root `CMakeLists.txt` is dual-mode: under `ESP_PLATFORM` it registers
+as a real component (`idf_component_register()`) instead of a plain
+`add_library()`. In the consuming component's `idf_component.yml`:
 
 ```yaml
 dependencies:
@@ -39,10 +36,10 @@ dependencies:
     git: "https://github.com/fherrera124/librespot-cpp.git"
 ```
 
-(sin `path:` — el repo entero es el componente desde el aplanamiento a
-layout Pitchfork; antes apuntaba a `path: "cspot"`.)
+(no `path:` needed - the whole repo is the component, following the
+Pitchfork Layout restructuring; it used to point at `path: "cspot"`.)
 
-Luego, en el `CMakeLists.txt` de ese mismo componente:
+Then, in that same component's `CMakeLists.txt`:
 
 ```cmake
 idf_component_register(
@@ -51,15 +48,15 @@ idf_component_register(
 )
 ```
 
-No hace falta declarar `REQUIRES librespot_cpp` explícito — el Component
-Manager ya agrega las dependencias del manifest como requisito del
-componente.
+No need to declare `REQUIRES librespot_cpp` explicitly - Component
+Manager already adds the manifest's dependencies as a requirement of the
+component.
 
-#### Opciones (`idf.py menuconfig` → "librespot-cpp (Spotify Connect engine)")
+#### Options (`idf.py menuconfig` → "librespot-cpp (Spotify Connect engine)")
 
-Codecs (`LIBRESPOT_CODEC_VORBIS`/`MP3`/`AAC`/`OPUS`/`ALAC`), y toggles para
-el MQTT/HTTP-server internos de `bell` y el backend JSON (cJSON vs
-nlohmann_json) — ver `Kconfig` en la raíz para los defaults.
+Codecs (`LIBRESPOT_CODEC_VORBIS`/`MP3`/`AAC`/`OPUS`/`ALAC`), and toggles
+for `bell`'s internal MQTT/HTTP server and the JSON backend (cJSON vs.
+nlohmann_json) - see `Kconfig` at the repo root for the defaults.
 
 ## Building
 
@@ -67,22 +64,20 @@ nlohmann_json) — ver `Kconfig` en la raíz para los defaults.
 
 Summary:
 
-- cmake (version 3.0 or higher)
+- cmake (version 3.16 or higher)
 - gcc / clang for the CLI target
-- [esp-idf](https://github.com/espressif/esp-idf) for building for the esp32
+- [esp-idf](https://github.com/espressif/esp-idf) for building for the esp32 (consumed via Component Manager - see above)
 - portaudio for playback on MacOS
-- downloaded submodules
-- golang (1.16)
 - protoc
 - on Linux you will additionally need:
     - `libasound` and `libavahi-compat-libdnssd`
 - mbedtls
 
-This project utilizes submodules, please make sure you are cloning with the `--recursive` flag or use `git submodule update --init --recursive`.
+Everything this library vendors (`external/bell`, nanopb, etc.) is committed directly - no git submodules, no `--recursive` clone needed.
 
 MBedTLS is now the sole option, so you can get it from [there](https://github.com/Mbed-TLS/mbedtls) and rebuild it or have it installed system-wide using your favorite package manager. See below how to use a local version.
 
-This library uses nanopb to generate c files from protobuf definitions. Nanopb itself is included via submodules, but it requires a few external python libraries to run the generators.
+This library uses nanopb to generate c files from protobuf definitions. Nanopb itself is vendored under `external/bell/external/nanopb`, but it requires a few external python libraries to run the generators.
 
 To install them you can use pip:
 
@@ -99,12 +94,11 @@ $ sudo apt-get install libavahi-compat-libdnssd-dev libasound2-dev
 ```
 
 
-### Building for macOS
 ### Building for macOS/Linux & Windows
 
-The cli target is used mainly for testing and development purposes, as of now it has the same features as the esp32 target.
+The CLI target is used mainly for testing and development purposes.
 
-As MbedTLS is now use instead of OpenSSL, you need to install it or your system or have a local build. If you have a system-wide install of MbedTLS, ignore what's below
+As MbedTLS is now used instead of OpenSSL, you need to install it on your system or have a local build. If you have a system-wide install of MbedTLS, ignore what's below
 
 To use a local build, you have to specify the BELL_EXTERNAL_MBEDTLS and potentially MBEDTLS_RELEASE. The first one points to the "./cmake" subdir of the MbedTLS's build directory, the second optionally defines the name of the MbedTLS build (it's by default set to 'RELEASE' for Windows and 'NOCONFIG' for others). 
 
@@ -145,7 +139,7 @@ Note that for now, only the Win32 build has been tested, not the x64 version. Un
 
 ### Building for Linux
 
-The cli target is used mainly for testing and development purposes, as of now it has the same features as the esp32 target.
+The CLI target is used mainly for testing and development purposes.
 
 ```shell
 # navigate to the extras/cli directory
@@ -164,62 +158,24 @@ See running the CLI for information on how to run cspot on a desktop computer.
 
 ### Building for ESP32
 
-The ESP32 target is built using the [esp-idf](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html) toolchain
+This repo has no standalone ESP32 example project of its own anymore -
+it's meant to be consumed as an ESP-IDF component by your own
+application, via Component Manager (see "Consuming via ESP-IDF" above).
+Once your app declares the dependency, the usual ESP-IDF flow applies in
+*your* project:
 
 ```shell
-# Follow the instructions for setting up esp-idf for your operating system, up to `. ./export.sh` or equivalent
-# esp-idf has a Python virtualenv, install nanopb's dependencies in it
-$ pip3 install protobuf grpcio-tools
-# update submodules after each code pull to avoid build errors
-$ git submodule update --init --recursive
-# navigate to the targets/esp32 directory
-$ cd targets/esp32
-# run once after pulling the repo
-$ idf.py set-target esp32
-```
-
-Configure CSPOT according to your hardware
-
-```shell
-# run visual config editor, when done press Q to save and exit
-$ idf.py menuconfig
-```
-
-Navigate to `Example Connection Configuration` and provide wifi connection details
-
-![idf-menuconfig](/targets/esp32/doc/img/idf-menuconfig-2.png)
-
-Navigate to `CSPOT Configuration`, you may configure device name, output device and audio quality.
-
-![idf-menuconfig](/targets/esp32/doc/img/idf-menuconfig-1.png)
-
-#### Status LED
-
-By default LED indication is disabled, but you can use either standard GPIO or addressable LED to indicate cspot current status. It will use different blinking patterns (and colors in case of addressable LEDs) to indicate Wifi connectivity and presense of connected Spotify client.
-
-#### Building and flashing
-
-Build and upload the firmware
-
-```shell
-# compile
-$ idf.py build
-
-# upload
-$ idf.py flash
-```
-The ESP32 will restart and begin running cspot. You can monitor it using a serial console.
-
-Optionally run as single command
-
-```shell
-# compile, flash and attach monitor
+$ idf.py set-target esp32   # or esp32s3, etc.
+$ idf.py menuconfig         # configure your app + "librespot-cpp (Spotify Connect engine)"
 $ idf.py build flash monitor
 ```
 
+Status LED indication, GPIO/DAC selection, WiFi credentials, etc. are
+all your consuming app's concern, not this library's.
+
 ## Running
 
-## The CLI version
+### The CLI version
 
 After building the app, the only thing you need to do is to run it through CLI.
 
@@ -237,32 +193,31 @@ Now open a real Spotify app and you should see a cspot device on your local netw
 ## External interface
 
 `cspot` is meant to be used as a lightweight C++ library for playing back Spotify music and receive control notifications from Spotify connect. 
-It exposes an interface for starting the communication with Spotify servers and expects the embedding program to provide an interface for playing back raw audio samples ([`AudioSink`](include/AudioSink.h)).
+It exposes an interface for starting the communication with Spotify servers and expects the embedding program to provide an interface for playing back raw audio samples ([`AudioSink`](external/bell/main/audio-sinks/include/AudioSink.h)).
 
-You can view the [`cspot-cli`]([extras/cli/main.cpp) program for a reference on how to include cspot in your program. It provides a few audio sinks for various platforms and uses:
+You can view the [`cspot-cli`](extras/cli/main.cpp) program for a reference on how to include cspot in your program. It provides a few audio sinks for various platforms and uses:
 
-- [`ALSAAudioSink`](external/bell/src/sinks/unix/ALSAAudioSink.cpp) - Linux, requires `libasound`
-- [`PortAudioSink`](external/bell/src/sinks/unix/PortAudioSink.cpp) - MacOS (PortAudio also supports more platforms, but we currently use it only on MacOS), requires the PortAudio library
-- [`NamedPipeAudioSink`](external/bell/src/sinks/unix/NamedPipeAudioSink.cpp) - all platforms, writes to a file/FIFO pipe called `outputFifo` which can later be played back by FFmpeg. Used mainly for testing and development.
+- [`ALSAAudioSink`](external/bell/main/audio-sinks/unix/ALSAAudioSink.cpp) - Linux, requires `libasound`
+- [`PortAudioSink`](external/bell/main/audio-sinks/unix/PortAudioSink.cpp) - MacOS (PortAudio also supports more platforms, but we currently use it only on MacOS), requires the PortAudio library
+- [`NamedPipeAudioSink`](external/bell/main/audio-sinks/unix/NamedPipeAudioSink.cpp) - all platforms, writes to a file/FIFO pipe called `outputFifo` which can later be played back by FFmpeg. Used mainly for testing and development.
 
-Additionaly the following audio sinks are implemented for the esp32 target:
-- [`ES9018AudioSink`](external/bell/src/sinks/esp/ES9018AudioSink.cpp) - provides playback via a ES9018 DAC connected to the ESP32
-- [`AC101AudioSink`](external/bell/src/sinks/esp/AC101AudioSink.cpp) - provides playback via the AC101 DAC used in cheap ESP32 A1S audiokit boards, commonly found on aliexpress.
-- [`PCM5102AudioSink`](external/bell/src/sinks/esp/PCM5102AudioSink.cpp) - provides playback via a PCM5102 DAC connected to the ESP32, commonly found in the shape of small purple modules at various online retailers. Wiring can be configured in the sink and defaults to:
+Additionally, the following audio sinks are implemented for the ESP32 target (a few more than listed here exist under `external/bell/main/audio-sinks/esp/` - `BufferedAudioSink`, `ES8311AudioSink`, `ES8388AudioSink`, `TAS5711AudioSink`, `SPDIFAudioSink`, `InternalAudioSink`, `PlainI2SAudioSink`):
+- [`ES9018AudioSink`](external/bell/main/audio-sinks/esp/ES9018AudioSink.cpp) - provides playback via a ES9018 DAC connected to the ESP32
+- [`AC101AudioSink`](external/bell/main/audio-sinks/esp/AC101AudioSink.cpp) - provides playback via the AC101 DAC used in cheap ESP32 A1S audiokit boards, commonly found on aliexpress.
+- [`PCM5102AudioSink`](external/bell/main/audio-sinks/esp/PCM5102AudioSink.cpp) - provides playback via a PCM5102 DAC connected to the ESP32, commonly found in the shape of small purple modules at various online retailers. Wiring can be configured in the sink and defaults to:
   - SCK to Ground
   - BCK to PGIO27
   - DIN to GPIO25
   - LCK to GPIO32
   - GND to Ground
   - VIN to 3.3V (but supposedly 5V tolerant)
-- TODO: internal esp32 DAC for crappy quality testing.
 
 You can also easily add support for your own DAC of choice by implementing your own audio sink. Each new audio sink must implement the `void feedPCMFrames(std::vector<uint8_t> &data)` method which should accept stereo PCM audio data at 44100 Hz and 16 bits per sample. Please note that the sink should somehow buffer the data, because playing it back may result in choppy audio.
 
-An audio sink can optionally implement the `void volumeChanged(uint16_t volume)` method which is called everytime the user changes the volume (for example via Spotify Connect). If an audio sink implements it it should set `softwareVolumeControl` to `false` in its consructor to let cspot know to disable the software volume adjustment. Properly implementing external volume control (for example via dedicated hardware) will result in a better playback quality since all the dynamic range is used to encode the samples.
+An audio sink can optionally implement the `void volumeChanged(uint16_t volume)` method which is called every time the user changes the volume (for example via Spotify Connect). If an audio sink implements it, it should set `softwareVolumeControl` to `false` in its constructor to let cspot know to disable the software volume adjustment. Properly implementing external volume control (for example via dedicated hardware) will result in better playback quality since all the dynamic range is used to encode the samples.
 
 The embedding program should also handle caching the authentication data, so that the user does not have to authenticate via the local network (Zeroconf) each time cspot is started. For reference on how to do it please refer to the `cspot-cli` target (It stores the data in `authBlob.json`). 
 
 ## Internal details
 
-The connection with Spotify servers to play music and recieve control information is pretty complex. First of all an access point address must be fetched from Spotify ([`ApResolve`](src/ApResolve.cpp) fetches the list from http://apresolve.spotify.com/). Then a [`PlainConnection`](include/PlainConnection.h) with the selected Spotify access point must be established. It is then upgraded to an encrypted [`ShannonConnection`](include/ShannonConnection.h).
+The connection with Spotify servers to play music and receive control information is pretty complex. First of all an access point address must be fetched from Spotify ([`ApResolve`](src/ApResolve.cpp) fetches the list from http://apresolve.spotify.com/). Then a [`PlainConnection`](include/PlainConnection.h) with the selected Spotify access point must be established. It is then upgraded to an encrypted [`ShannonConnection`](include/ShannonConnection.h).
