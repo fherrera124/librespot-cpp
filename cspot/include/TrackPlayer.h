@@ -127,6 +127,22 @@ class TrackPlayer : bell::Task {
   void feedChunk(const uint8_t* data, size_t bytes, std::string_view trackId,
                 bool& notifiedThisTrack);
 
+  enum class LoadWaitOutcome { READY, FAILED, RESET, TIMED_OUT };
+  // Waits for `track` to leave its preload pipeline (READY/FAILED), for
+  // pendingReset to be raised (RESET - some other thread told us to
+  // abandon whatever we're doing, via resetState()), or for timeoutMs to
+  // elapse (TIMED_OUT). Polls track.getState()/pendingReset every
+  // kLoadWaitPollMs instead of one long twait(), so a reset lands within
+  // one poll interval instead of only being noticed once the track's own
+  // loadedSemaphore fires or the full timeout elapses - see
+  // docs/aprendizaje.md 2026-07-21 for the reasoning (why this doesn't
+  // need a mutex/condition_variable shared with QueuedTrack/TrackQueue:
+  // every cross-thread caller that changes the current track already
+  // pairs it with resetState(), verified against every PlaybackController
+  // call site - the two that don't are self-reentrant from this task's
+  // own thread and don't need the signal).
+  LoadWaitOutcome waitForTrackReady(QueuedTrack& track, uint32_t timeoutMs);
+
   void runTask() override;
 };
 }  // namespace cspot

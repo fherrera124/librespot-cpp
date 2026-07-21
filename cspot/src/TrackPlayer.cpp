@@ -158,6 +158,25 @@ void TrackPlayer::seekMs(size_t ms) {
   }
 }
 
+TrackPlayer::LoadWaitOutcome TrackPlayer::waitForTrackReady(QueuedTrack& track,
+                                                            uint32_t timeoutMs) {
+  constexpr uint32_t kLoadWaitPollMs = 100;
+  for (uint32_t waited = 0; waited < timeoutMs; waited += kLoadWaitPollMs) {
+    if (pendingReset) {
+      return LoadWaitOutcome::RESET;
+    }
+    auto state = track.getState();
+    if (state == QueuedTrack::State::READY) {
+      return LoadWaitOutcome::READY;
+    }
+    if (state == QueuedTrack::State::FAILED) {
+      return LoadWaitOutcome::FAILED;
+    }
+    track.loadedSemaphore->twait(kLoadWaitPollMs);
+  }
+  return LoadWaitOutcome::TIMED_OUT;
+}
+
 void TrackPlayer::runTask() {
   std::scoped_lock lock(runningMutex);
 
@@ -207,14 +226,20 @@ void TrackPlayer::runTask() {
     inFuture = trackOffset > 0;
 
     if (track->getState() != QueuedTrack::State::READY) {
-      // Wide enough for TrackQueue's own bounded retry (metadata/audio-key/
-      // CDN-url, up to 3 attempts with a 1s backoff each - see
+      // 8000: wide enough for TrackQueue's own bounded retry (metadata/
+      // audio-key/CDN-url, up to 3 attempts with a 1s backoff each - see
       // TrackQueue.cpp) to actually finish before this gives up; the
       // semaphore is only given on that retry's final outcome (success or
       // attempts exhausted), never on an intermediate attempt.
-      track->loadedSemaphore->twait(8000);
+      LoadWaitOutcome outcome = waitForTrackReady(*track, 8000);
 
-      if (track->getState() != QueuedTrack::State::READY) {
+      if (outcome == LoadWaitOutcome::RESET) {
+        // pendingReset is still set - the top-of-loop handling above
+        // picks it up properly on the next iteration.
+        continue;
+      }
+
+      if (outcome != LoadWaitOutcome::READY) {
         CSPOT_LOG(error, "Track failed to load, skipping it");
         // Advance TrackQueue's own head past this failed track too, or it
         // stays one position behind whatever plays next. See F89.
