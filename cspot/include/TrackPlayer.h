@@ -7,7 +7,6 @@
 #include <memory>       // for shared_ptr, unique_ptr
 #include <mutex>        // for mutex
 #include <string_view>  // for string_view
-#include <vector>       // for vector
 
 #include "AudioSink.h"  // for AudioSink
 #include "BellTask.h"  // for Task
@@ -17,14 +16,6 @@
 namespace bell {
 class WrappedSemaphore;
 }  // namespace bell
-
-#ifdef BELL_VORBIS_FLOAT
-#include "vorbis/vorbisfile.h"
-#else
-#include "ivorbisfile.h"  // for OggVorbis_File, ov_callbacks
-#endif
-
-#include "MP3Decoder.h"  // for bell::MP3Decoder - podcast episodes (F60)
 
 namespace cspot {
 class TrackProvider;
@@ -74,20 +65,15 @@ class TrackPlayer : bell::Task {
   void seekMs(size_t ms);
   void resetState(bool paused = false);
 
-  // Real decoder position (Vorbis only, via ov_time_tell()) - freezes
-  // naturally while paused (feedPCMFrames() isn't called while `paused`,
-  // see setPaused()). Doesn't correct for BufferedAudioSink's downstream
-  // ring buffer, so it can run ahead of what's actually audible by however
-  // full that buffer is - see docs/aprendizaje.md 2026-07-18. Returns false
-  // (nothing written to outMs) for MP3 (no tell() equivalent - F60) or
+  // Real decoder position, from whatever Decoder is currently playing
+  // (see Decoder::getPositionMs()) - freezes naturally while paused
+  // (feedPCMFrames() isn't called while `paused`, see setPaused()).
+  // Doesn't correct for BufferedAudioSink's downstream ring buffer, so it
+  // can run ahead of what's actually audible by however full that buffer
+  // is - see docs/aprendizaje.md 2026-07-18. Returns false (nothing
+  // written to outMs) for codecs with no position concept (MP3 - F60) or
   // between tracks.
   bool getDecoderPositionMs(uint32_t& outMs) const;
-
-  // Vorbis codec callbacks
-  size_t _vorbisRead(void* ptr, size_t size, size_t nmemb);
-  size_t _vorbisClose();
-  int _vorbisSeek(int64_t offset, int whence);
-  long _vorbisTell();
 
   void stop();
   void start();
@@ -120,27 +106,6 @@ class TrackPlayer : bell::Task {
   std::atomic<bool> currentSongPlaying;
   std::mutex dataOutMutex;
 
-  // Vorbis related
-  OggVorbis_File vorbisFile;
-  ov_callbacks vorbisCallbacks;
-  int currentSection;
-
-  // MP3 related (podcast episodes, see finding F60) - bell::MP3Decoder
-  // (bell/main/audio-codec/MP3Decoder.cpp) wraps libhelix-mp3 directly
-  // with a correctly-sized output buffer (unlike bell::EncodedAudioStream,
-  // whose own output buffer is undersized for a real MP3 frame - not used
-  // here for that reason). mp3InputBuffer/mp3BytesInBuffer hold
-  // compressed bytes read from currentTrackStream until a sync word is
-  // found, mirroring the pattern in EncodedAudioStream::decodeFrameMp3()
-  // but with real bounds checking on the resync path.
-  bell::MP3Decoder mp3Decoder;
-  static const size_t MP3_INPUT_BUFFER_SIZE = 2 * 1024;
-  std::vector<uint8_t> mp3InputBuffer =
-      std::vector<uint8_t>(MP3_INPUT_BUFFER_SIZE);
-  size_t mp3BytesInBuffer = 0;
-
-  std::vector<uint8_t> pcmBuffer = std::vector<uint8_t>(1024);
-
   bool autoStart = false;
 
   std::atomic<bool> isRunning = false;
@@ -155,19 +120,10 @@ class TrackPlayer : bell::Task {
 
   std::mutex runningMutex;
 
-  // Reads/decodes the next MP3 frame from currentTrackStream via
-  // mp3Decoder, resyncing on corrupt/misaligned data. Mirrors
-  // VORBIS_READ's return contract exactly: >0 is decoded PCM byte count
-  // (*pcmOut points into mp3Decoder's own buffer, valid until the next
-  // call - not owned by the caller), 0 is clean EOF, <0 is an
-  // unrecoverable error (failed to resync within a bounded number of
-  // attempts). See finding F60.
-  long _mp3DecodeFrame(uint8_t** pcmOut);
-
-  // Shared by the Vorbis/MP3 branches of runTask(): fires
-  // reachedPlaybackCallback once (via notifiedThisTrack), waits out a
-  // pause without discarding `data`, then feeds it to audioSink. No-op
-  // (data dropped) if a reset/stop landed while waiting.
+  // Fires reachedPlaybackCallback once (via notifiedThisTrack), waits out
+  // a pause without discarding `data`, then feeds it to audioSink. No-op
+  // (data dropped) if a reset/stop landed while waiting. Codec-agnostic -
+  // called with whatever the current Decoder::readChunk() produced.
   void feedChunk(const uint8_t* data, size_t bytes, std::string_view trackId,
                 bool& notifiedThisTrack);
 

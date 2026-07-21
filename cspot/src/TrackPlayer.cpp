@@ -1,32 +1,18 @@
 #include "TrackPlayer.h"
 
-#include <cstring>      // for memmove
-#include <mutex>        // for mutex, scoped_lock
-#include <string>       // for string
-#include <type_traits>  // for remove_extent_t
-#include <vector>       // for vector, vector<>::value_type
+#include <memory>  // for unique_ptr, make_unique
+#include <mutex>   // for mutex, scoped_lock
+#include <string>  // for string
 
 #include "BellLogger.h"        // for AbstractLogger
 #include "BellUtils.h"         // for BELL_SLEEP_MS
+#include "Decoder.h"
 #include "Logger.h"            // for CSPOT_LOG
+#include "Mp3TrackDecoder.h"
 #include "Packet.h"            // for cspot
 #include "TrackQueue.h"        // for CDNTrackStream, CDNTrackStream::TrackInfo
+#include "VorbisTrackDecoder.h"
 #include "WrappedSemaphore.h"  // for WrappedSemaphore
-
-#ifdef BELL_VORBIS_FLOAT
-#define VORBIS_SEEK(file, position) \
-  (ov_time_seek(file, (double)position / 1000))
-#define VORBIS_READ(file, buffer, bufferSize, section) \
-  (ov_read(file, buffer, bufferSize, 0, 2, 1, section))
-// ov_time_tell() returns seconds (double) in the float API, milliseconds
-// (int64) in tremor's - normalized to ms either way.
-#define VORBIS_TIME_TELL_MS(file) ((uint32_t)(ov_time_tell(file) * 1000))
-#else
-#define VORBIS_SEEK(file, position) (ov_time_seek(file, position))
-#define VORBIS_READ(file, buffer, bufferSize, section) \
-  (ov_read(file, buffer, bufferSize, section))
-#define VORBIS_TIME_TELL_MS(file) ((uint32_t)ov_time_tell(file))
-#endif
 
 namespace cspot {
 struct Context;
@@ -35,23 +21,19 @@ struct TrackReference;
 
 using namespace cspot;
 
-static size_t vorbisReadCb(void* ptr, size_t size, size_t nmemb,
-                           TrackPlayer* self) {
-  return self->_vorbisRead(ptr, size, nmemb);
+namespace {
+// "Not Vorbis" reliably means MP3 here - selectedFormat only ever
+// resolves to an OGG_VORBIS_* or MP3_* format (F60).
+std::unique_ptr<Decoder> createDecoder(AudioFormat format) {
+  bool isVorbis = format == AudioFormat_OGG_VORBIS_96 ||
+                 format == AudioFormat_OGG_VORBIS_160 ||
+                 format == AudioFormat_OGG_VORBIS_320;
+  if (isVorbis) {
+    return std::make_unique<VorbisTrackDecoder>();
+  }
+  return std::make_unique<Mp3TrackDecoder>();
 }
-
-static int vorbisCloseCb(TrackPlayer* self) {
-  return self->_vorbisClose();
-}
-
-static int vorbisSeekCb(TrackPlayer* self, int64_t offset, int whence) {
-
-  return self->_vorbisSeek(offset, whence);
-}
-
-static long vorbisTellCb(TrackPlayer* self) {
-  return self->_vorbisTell();
-}
+}  // namespace
 
 TrackPlayer::TrackPlayer(std::shared_ptr<cspot::Context> ctx,
                          std::shared_ptr<cspot::TrackQueue> trackQueue,
@@ -64,15 +46,6 @@ TrackPlayer::TrackPlayer(std::shared_ptr<cspot::Context> ctx,
   this->reachedPlaybackCallback = reachedPlaybackCallback;
   this->trackQueue = trackQueue;
   this->playbackSemaphore = std::make_unique<bell::WrappedSemaphore>(5);
-
-  // Initialize vorbis callbacks
-  vorbisFile = {};
-  vorbisCallbacks = {
-      (decltype(ov_callbacks::read_func))&vorbisReadCb,
-      (decltype(ov_callbacks::seek_func))&vorbisSeekCb,
-      (decltype(ov_callbacks::close_func))&vorbisCloseCb,
-      (decltype(ov_callbacks::tell_func))&vorbisTellCb,
-  };
 }
 
 TrackPlayer::~TrackPlayer() {
@@ -262,9 +235,9 @@ void TrackPlayer::runTask() {
     {
       // No lock here (playbackMutex, removed - it was only ever taken by
       // this one call site, so it never actually excluded anything):
-      // currentTrackStream/vorbisFile/pcmBuffer/mp3 buffers below are only
-      // ever touched from this task - every other TrackPlayer method that
-      // can be called cross-thread (resetState/seekMs/setPaused/etc.) only
+      // currentTrackStream and the local decoder below are only ever
+      // touched from this task - every other TrackPlayer method that can
+      // be called cross-thread (resetState/seekMs/setPaused/etc.) only
       // reads/writes the std::atomic<> fields declared in TrackPlayer.h.
       currentTrackStream = track->getAudioFile(cdnConnection);
 
@@ -291,12 +264,6 @@ void TrackPlayer::runTask() {
         startPaused = false;
       }
 
-      // "Not Vorbis" reliably means MP3 here - selectedFormat only ever
-      // resolves to an OGG_VORBIS_* or MP3_* format (F60).
-      bool isVorbis = track->selectedFormat == AudioFormat_OGG_VORBIS_96 ||
-                      track->selectedFormat == AudioFormat_OGG_VORBIS_160 ||
-                      track->selectedFormat == AudioFormat_OGG_VORBIS_320;
-
       // Fires once, right before the first chunk reaches audioSink - must
       // run even if this track loads straight into a paused state (see
       // the notify call sites below), or the app would never learn a
@@ -304,109 +271,62 @@ void TrackPlayer::runTask() {
       // version of this same requirement).
       bool notifiedThisTrack = false;
 
-      if (isVorbis) {
-        int32_t openResult =
-            ov_open_callbacks(this, &vorbisFile, NULL, 0, vorbisCallbacks);
+      std::unique_ptr<Decoder> decoder = createDecoder(track->selectedFormat);
+      uint32_t posMs;
 
-        if (openResult != 0) {
-          CSPOT_LOG(error, "ov_open_callbacks failed: %d", openResult);
-          // Same fallthrough as a mid-stream decode error below: must
-          // still reach the eofCallback()/isFinished() check, or a bad
-          // track never advances or signals DEPLETED. vorbisFile was
-          // never successfully opened, so ov_clear() is skipped.
-          currentSongPlaying = false;
-          eof = true;
-        } else {
-          if (pendingSeekPositionMs > 0) {
-            track->requestedPosition = pendingSeekPositionMs;
-          }
-
-          if (track->requestedPosition > 0) {
-            VORBIS_SEEK(&vorbisFile, track->requestedPosition);
-          }
-          decoderPositionMs = VORBIS_TIME_TELL_MS(&vorbisFile);
-          hasDecoderPosition = true;
-
-          eof = false;
-
-          CSPOT_LOG(info, "Playing");
-
-          while (!eof && currentSongPlaying) {
-            if (pendingSeekPositionMs > 0) {
-              uint32_t seekPosition = pendingSeekPositionMs;
-              pendingSeekPositionMs = 0;
-              VORBIS_SEEK(&vorbisFile, seekPosition);
-              decoderPositionMs = VORBIS_TIME_TELL_MS(&vorbisFile);
-            }
-
-            long ret = VORBIS_READ(&vorbisFile, (char*)&pcmBuffer[0],
-                                   pcmBuffer.size(), &currentSection);
-            decoderPositionMs = VORBIS_TIME_TELL_MS(&vorbisFile);
-
-            if (ret == 0) {
-              CSPOT_LOG(info, "EOF");
-              eof = true;
-            } else if (ret < 0) {
-              CSPOT_LOG(error, "An error has occured in the stream %d", ret);
-              // eof, not just currentSongPlaying: a mid-stream decode error
-              // must still reach the eofCallback()/isFinished() check below,
-              // same as a clean EOF - otherwise a decode error on the last
-              // queued track never advances or signals DEPLETED.
-              currentSongPlaying = false;
-              eof = true;
-            } else {
-              feedChunk((const uint8_t*)&pcmBuffer[0], (size_t)ret,
-                       track->identifier, notifiedThisTrack);
-            }
-          }
-          ov_clear(&vorbisFile);
-          hasDecoderPosition = false;
-        }
+      if (!decoder->open(currentTrackStream.get())) {
+        // Same fallthrough as a mid-stream decode error below: must
+        // still reach the eofCallback()/isFinished() check, or a bad
+        // track never advances or signals DEPLETED. open() failed, so
+        // close() must not be called on this instance (Decoder.h).
+        currentSongPlaying = false;
+        eof = true;
       } else {
-        // MP3 (podcast episodes). No seek support yet: mid-track seeking
-        // would need bitrate-based position estimation or frame
-        // scanning, neither implemented here - a pending seek is logged
-        // and dropped instead of silently mishandled. See finding F60.
-        mp3BytesInBuffer = 0;
-
         if (pendingSeekPositionMs > 0) {
-          pendingSeekPositionMs = 0;
+          track->requestedPosition = (uint32_t)pendingSeekPositionMs;
         }
+
         if (track->requestedPosition > 0) {
-          CSPOT_LOG(info,
-                    "Seeking isn't supported for MP3 (episodes) yet - "
-                    "starting from the beginning");
+          decoder->seekMs(track->requestedPosition);
         }
+        hasDecoderPosition = decoder->getPositionMs(posMs);
+        if (hasDecoderPosition) decoderPositionMs = posMs;
 
         eof = false;
 
-        CSPOT_LOG(info, "Playing (MP3)");
+        CSPOT_LOG(info, "Playing");
 
         while (!eof && currentSongPlaying) {
           if (pendingSeekPositionMs > 0) {
-            CSPOT_LOG(info,
-                      "Seeking isn't supported for MP3 (episodes) yet - "
-                      "ignoring");
+            uint32_t seekPosition = (uint32_t)pendingSeekPositionMs;
             pendingSeekPositionMs = 0;
+            decoder->seekMs(seekPosition);
+            hasDecoderPosition = decoder->getPositionMs(posMs);
+            if (hasDecoderPosition) decoderPositionMs = posMs;
           }
 
           uint8_t* pcm = nullptr;
-          long ret = _mp3DecodeFrame(&pcm);
+          long ret = decoder->readChunk(&pcm);
+          hasDecoderPosition = decoder->getPositionMs(posMs);
+          if (hasDecoderPosition) decoderPositionMs = posMs;
 
           if (ret == 0) {
             CSPOT_LOG(info, "EOF");
             eof = true;
           } else if (ret < 0) {
-            CSPOT_LOG(error, "An error has occured in the MP3 stream %ld",
-                      ret);
-            // See the matching Vorbis branch above: must set eof too, or
-            // eofCallback() never fires for a decode error.
+            CSPOT_LOG(error, "An error has occured in the stream %ld", ret);
+            // eof, not just currentSongPlaying: a mid-stream decode error
+            // must still reach the eofCallback()/isFinished() check below,
+            // same as a clean EOF - otherwise a decode error on the last
+            // queued track never advances or signals DEPLETED.
             currentSongPlaying = false;
             eof = true;
           } else {
             feedChunk(pcm, (size_t)ret, track->identifier, notifiedThisTrack);
           }
         }
+        decoder->close();
+        hasDecoderPosition = false;
       }
 
       CSPOT_LOG(info, "Playing done");
@@ -422,110 +342,4 @@ void TrackPlayer::runTask() {
       this->eofCallback();
     }
   }
-}
-
-size_t TrackPlayer::_vorbisRead(void* ptr, size_t size, size_t nmemb) {
-  if (this->currentTrackStream == nullptr) {
-    return 0;
-  }
-  return this->currentTrackStream->readBytes((uint8_t*)ptr, nmemb * size);
-}
-
-size_t TrackPlayer::_vorbisClose() {
-  return 0;
-}
-
-int TrackPlayer::_vorbisSeek(int64_t offset, int whence) {
-  if (this->currentTrackStream == nullptr) {
-    return 0;
-  }
-  switch (whence) {
-    case 0:
-      this->currentTrackStream->seek(offset);  // Spotify header offset
-      break;
-    case 1:
-      this->currentTrackStream->seek(this->currentTrackStream->getPosition() +
-                                     offset);
-      break;
-    case 2:
-      this->currentTrackStream->seek(this->currentTrackStream->getSize() +
-                                     offset);
-      break;
-  }
-
-  return 0;
-}
-
-long TrackPlayer::_vorbisTell() {
-  if (this->currentTrackStream == nullptr) {
-    return 0;
-  }
-  return this->currentTrackStream->getPosition();
-}
-
-// Not bell::EncodedAudioStream::decodeFrameMp3(): its output buffer is
-// undersized for a real MP3 frame and its resync subtracts a fixed byte
-// count without checking it's available. Fixed here: a correctly-sized
-// buffer, resync bounded by attempt count instead. See F60.
-long TrackPlayer::_mp3DecodeFrame(uint8_t** pcmOut) {
-  *pcmOut = nullptr;
-
-  if (this->currentTrackStream == nullptr) {
-    return 0;
-  }
-
-  const int MAX_RESYNC_ATTEMPTS = 8;
-  for (int attempt = 0; attempt < MAX_RESYNC_ATTEMPTS; attempt++) {
-    if (mp3BytesInBuffer < mp3InputBuffer.size()) {
-      size_t readBytes = currentTrackStream->readBytes(
-          mp3InputBuffer.data() + mp3BytesInBuffer,
-          mp3InputBuffer.size() - mp3BytesInBuffer);
-      mp3BytesInBuffer += readBytes;
-    }
-
-    if (mp3BytesInBuffer == 0) {
-      return 0;  // Nothing buffered and nothing new to read - clean EOF.
-    }
-
-    int offset = MP3FindSyncWord(mp3InputBuffer.data(),
-                                 static_cast<int>(mp3BytesInBuffer));
-    if (offset < 0) {
-      // No sync word anywhere in what's buffered - discard it and try
-      // reading more on the next attempt.
-      mp3BytesInBuffer = 0;
-      continue;
-    }
-
-    if (offset > 0) {
-      // Discard junk before the sync word.
-      memmove(mp3InputBuffer.data(), mp3InputBuffer.data() + offset,
-             mp3BytesInBuffer - offset);
-      mp3BytesInBuffer -= offset;
-    }
-
-    // decode() takes inData by value, so bytesAvailable (by reference) is
-    // the only way to know what's left unconsumed - libhelix advances its
-    // read position even on a decode error, so consumed = before - after
-    // regardless of success/failure.
-    uint8_t* decodePtr = mp3InputBuffer.data();
-    uint32_t bytesAvailable = static_cast<uint32_t>(mp3BytesInBuffer);
-    uint32_t outLen = 0;
-    uint8_t* pcm = mp3Decoder.decode(decodePtr, bytesAvailable, outLen);
-
-    size_t consumed = mp3BytesInBuffer - bytesAvailable;
-    if (consumed > 0 && bytesAvailable > 0) {
-      memmove(mp3InputBuffer.data(), mp3InputBuffer.data() + consumed,
-             bytesAvailable);
-    }
-    mp3BytesInBuffer = bytesAvailable;
-
-    if (pcm != nullptr) {
-      *pcmOut = pcm;
-      return static_cast<long>(outLen);
-    }
-    // Decode error on this frame - loop and try the next sync word.
-  }
-
-  CSPOT_LOG(error, "MP3 resync failed after %d attempts", MAX_RESYNC_ATTEMPTS);
-  return -1;
 }
