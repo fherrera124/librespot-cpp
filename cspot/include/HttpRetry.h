@@ -24,7 +24,7 @@ class PermanentHttpFailure : public std::runtime_error {
 // A 429 with a server-suggested cooldown - a specialization of
 // PermanentHttpFailure (never retried within HttpRetry's own bounded
 // budget; that would just make the rate limit worse), but a caller that
-// schedules its own next attempt independently (e.g. ConnectStateHandler's
+// schedules its own next attempt independently (e.g. PlayerEngine's
 // PUT coalescing loop) should catch this specifically to read retryAfter
 // and hold off that long before trying again. Mirrors go-librespot's
 // RateLimitedError (spclient.go).

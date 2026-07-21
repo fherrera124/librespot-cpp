@@ -36,13 +36,13 @@ class ContextResolver {
               std::vector<TrackReference>& tracksOut);
 
   // Pre-seeds the cached spclient host so the first resolve() of the
-  // session skips its own apresolve round trip - ConnectStateHandler
+  // session skips its own apresolve round trip - PlayerEngine
   // already resolved the same host for its registration PUT.
   void seedSpclientHost(const std::string& host);
 
   // Parses one ContextTrack (canonical protobuf JSON: uri, base64 gid) into
   // a TrackReference. Shared by resolve()'s page parsing and
-  // ConnectStateHandler's set_queue/add_to_queue handlers, which receive
+  // PlayerEngine's set_queue/add_to_queue handlers, which receive
   // the exact same ContextTrack shape inline on the command object.
   // @returns false if the track has no usable gid/uri
   static bool trackFromJson(cJSON* trackItem, TrackReference& out);
@@ -66,7 +66,7 @@ class ContextResolver {
 
   // Cached across fetchJson() calls, cleared on transport failure. hostMutex
   // only guards spclientHost: seedSpclientHost() can run on
-  // ConnectStateHandler's task while fetchJson() runs on DealerClient's.
+  // PlayerEngine's task while fetchJson() runs on DealerClient's.
   // `connection` stays single-task (only fetchJson() touches it), so it
   // needs no lock of its own.
   std::mutex hostMutex;

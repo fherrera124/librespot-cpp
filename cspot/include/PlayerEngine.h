@@ -10,7 +10,7 @@
 #include <vector>              // for vector
 
 #include "BellTask.h"    // for Task
-#include "ConnectStateModel.h"
+#include "PlayerStateModel.h"
 #include "ContextResolver.h"
 #include "PlaybackController.h"
 #include "PlaybackEvent.h"
@@ -32,11 +32,11 @@ class TrackPlayer;
 // task fired the triggering event, some of them too small for a blocking
 // TLS PUT. It only records the latest pending state and returns
 // immediately; this class's own task does the actual PUT.
-class ConnectStateHandler : public bell::Task {
+class PlayerEngine : public bell::Task {
  public:
-  ConnectStateHandler(std::shared_ptr<cspot::Context> ctx,
+  PlayerEngine(std::shared_ptr<cspot::Context> ctx,
                       std::shared_ptr<cspot::Login5Client> login5);
-  ~ConnectStateHandler();
+  ~PlayerEngine();
 
   // Stops the background publisher task.
   void stop();
@@ -149,8 +149,8 @@ class ConnectStateHandler : public bell::Task {
   PlaybackController playbackController;
 
   // Owns PlayerState/session_id/playback_id/context_uri/restrictions/
-  // context_metadata - see ConnectStateModel.h. Has its own internal lock.
-  ConnectStateModel stateModel;
+  // context_metadata - see PlayerStateModel.h. Has its own internal lock.
+  PlayerStateModel stateModel;
 
   // Decodes/executes hm://connect-state/v1/player/command requests
   // (transfer/play/pause/skip/seek/repeat/queue edits) against

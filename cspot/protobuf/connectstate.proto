@@ -1,6 +1,6 @@
 // Trimmed subset of Spotify's connect-state schema (full version vendored in
 // devgianlu/go-librespot, proto/spotify/connectstate/ - 527 lines) with only
-// what cspot's ConnectStateHandler encodes (PutStateRequest -> spclient) and
+// what cspot's PlayerEngine encodes (PutStateRequest -> spclient) and
 // decodes (ClusterUpdate / SetVolumeCommand <- Dealer). Field numbers match
 // the full schema; omitted fields are simply skipped by nanopb on decode.
 // Deliberately left out for now (see docs/dealer_websocket_migration.md,
@@ -221,7 +221,7 @@ message SetVolumeCommand {
 // field of a hm://connect-state/v1/player/command "transfer" request -
 // confirmed against go-librespot's transfer.proto (proto/spotify/
 // connectstate/transfer.proto in devgianlu/go-librespot). Deliberately
-// minimal: only the fields ConnectStateHandler actually reads (context uri
+// minimal: only the fields PlayerEngine actually reads (context uri
 // to resolve, playback position/pause state, current track to find the
 // start index in the resolved list) - everything else (queue, play_origin,
 // option overrides, suppressions...) is simply skipped by nanopb on decode,

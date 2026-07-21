@@ -31,7 +31,7 @@ class TrackPlayer : bell::Task {
   // Fired once per track (re)start, right before the first PCM for it
   // reaches audioSink - not on every chunk. Replaces the old cross-thread
   // trackId-diffing that used to live in cspot_connect.cpp's pcmWrite()
-  // (see ConnectStateHandler::notifyAudioReachedPlayback(), the callback's
+  // (see PlayerEngine::notifyAudioReachedPlayback(), the callback's
   // real consumer).
   typedef std::function<void(std::string_view)> TrackReachedPlaybackCallback;
   typedef std::function<void()> EOFCallback;
@@ -48,7 +48,7 @@ class TrackPlayer : bell::Task {
   // Non-owning: cspot_connect.cpp constructs the real AudioSink once
   // (it's a long-lived hardware resource - I2S channel, ring buffer) and
   // keeps it alive across reconnects, while TrackPlayer itself is
-  // recreated every session (see ConnectStateHandler's own lifetime). This
+  // recreated every session (see PlayerEngine's own lifetime). This
   // just points TrackPlayer at it so its own decode loop can call
   // feedPCMFrames() directly, instead of routing through a callback into
   // cspot_connect.cpp. Set once, before start().

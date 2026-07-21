@@ -20,11 +20,11 @@ namespace cspot {
 struct Context;
 class Login5Client;
 class ApResolve;
-class ConnectStateHandler;
+class PlayerEngine;
 
 // Dealer WebSocket client (docs/dealer_websocket_migration.md): owns the
 // connection lifecycle and receive loop, parses the JSON envelope, and
-// dispatches by URI/type to this class's own ConnectStateHandler
+// dispatches by URI/type to this class's own PlayerEngine
 // (getConnectState()), which owns the whole playback engine.
 class DealerClient : public bell::Task {
  public:
@@ -47,12 +47,12 @@ class DealerClient : public bell::Task {
   /**
   * @brief The playback engine cspot_connect.cpp drives directly (local
   * play/pause/next/previous/seek button presses, position reads) - the
-  * same ConnectStateHandler that also executes remote player/command
+  * same PlayerEngine that also executes remote player/command
   * requests, so there's exactly one engine either input reaches. Valid for
   * as long as this DealerClient is (constructed in the constructor, never
   * null).
   */
-  ConnectStateHandler* getConnectState() { return connectState.get(); }
+  PlayerEngine* getConnectState() { return connectState.get(); }
 
  protected:
   void runTask() override;
@@ -83,7 +83,7 @@ class DealerClient : public bell::Task {
   // pendingReplies instead.
   class CommandWorker : public bell::Task {
    public:
-    CommandWorker(ConnectStateHandler* connectState,
+    CommandWorker(PlayerEngine* connectState,
                   bell::Queue<PendingCommand>* pendingCommands,
                   bell::Queue<PendingReply>* pendingReplies);
     ~CommandWorker();
@@ -93,7 +93,7 @@ class DealerClient : public bell::Task {
     void runTask() override;
 
    private:
-    ConnectStateHandler* connectState;
+    PlayerEngine* connectState;
     bell::Queue<PendingCommand>* pendingCommands;
     bell::Queue<PendingReply>* pendingReplies;
 
@@ -104,7 +104,7 @@ class DealerClient : public bell::Task {
   std::shared_ptr<cspot::Context> ctx;
   std::shared_ptr<Login5Client> login5;
   std::unique_ptr<bell::WebSocketTransport> transport;
-  std::unique_ptr<ConnectStateHandler> connectState;
+  std::unique_ptr<PlayerEngine> connectState;
 
   bell::Queue<PendingCommand> pendingCommands;
   bell::Queue<PendingReply> pendingReplies;

@@ -75,7 +75,7 @@ void HTTPClient::Response::rawRequest(const std::string& url,
     }
 
     // Write content. PUT/POST need Content-Length even when the body is
-    // empty (e.g. ConnectStateHandler's inactive PUT) - some servers
+    // empty (e.g. PlayerEngine's inactive PUT) - some servers
     // (confirmed against Spotify's spclient) reply 411 Length Required
     // without it. GET's behavior is left as-is (no header when empty).
     if (content.size() > 0 || method == "PUT" || method == "POST") {
@@ -125,7 +125,7 @@ void HTTPClient::Response::readResponseHeaders() {
 
   // readRawBody() only reads when rawBody is still empty - on a Response
   // object reused for a second request (keep-alive, e.g.
-  // ConnectStateHandler's PUT connection), a previous non-empty body
+  // PlayerEngine's PUT connection), a previous non-empty body
   // (error message, etc.) left over here would make readRawBody() skip
   // reading the NEW response entirely and silently keep serving the OLD
   // body to any .body()/.bytes() caller. contentSize also needs resetting

@@ -1,4 +1,4 @@
-#include "ConnectStateModel.h"
+#include "PlayerStateModel.h"
 
 #include "Crypto.h"        // for Crypto::base64Encode
 #include "NanoPBHelper.h"  // for pbPutString
@@ -12,12 +12,12 @@ std::string generateSessionId() {
 }
 }  // namespace
 
-ConnectStateModel::ConnectStateModel() {
+PlayerStateModel::PlayerStateModel() {
   sessionId = generateSessionId();
   reset();
 }
 
-void ConnectStateModel::reset() {
+void PlayerStateModel::reset() {
   std::lock_guard<std::mutex> lock(mutex);
   playerState = connectstate_PlayerState_init_zero;
   playerState.is_system_initiated = true;
@@ -25,7 +25,7 @@ void ConnectStateModel::reset() {
   playerState.playback_speed = 1.0;
 }
 
-void ConnectStateModel::adoptOrRegenerateSessionId(const char* transferredId) {
+void PlayerStateModel::adoptOrRegenerateSessionId(const char* transferredId) {
   std::lock_guard<std::mutex> lock(mutex);
   if (transferredId != nullptr && transferredId[0] != '\0') {
     sessionId = transferredId;
@@ -34,17 +34,17 @@ void ConnectStateModel::adoptOrRegenerateSessionId(const char* transferredId) {
   }
 }
 
-void ConnectStateModel::setContextUri(const std::string& uri) {
+void PlayerStateModel::setContextUri(const std::string& uri) {
   std::lock_guard<std::mutex> lock(mutex);
   contextUriValue = uri;
 }
 
-std::string ConnectStateModel::contextUri() const {
+std::string PlayerStateModel::contextUri() const {
   std::lock_guard<std::mutex> lock(mutex);
   return contextUriValue;
 }
 
-void ConnectStateModel::setRestrictions(std::string repeatContext,
+void PlayerStateModel::setRestrictions(std::string repeatContext,
                                         std::string repeatTrack,
                                         std::string shuffle) {
   std::lock_guard<std::mutex> lock(mutex);
@@ -53,18 +53,18 @@ void ConnectStateModel::setRestrictions(std::string repeatContext,
   restrictionShuffle = std::move(shuffle);
 }
 
-void ConnectStateModel::setContextMetadata(
+void PlayerStateModel::setContextMetadata(
     std::vector<std::pair<std::string, std::string>> metadata) {
   std::lock_guard<std::mutex> lock(mutex);
   contextMetadata = std::move(metadata);
 }
 
-void ConnectStateModel::setPlaybackId(const std::string& id) {
+void PlayerStateModel::setPlaybackId(const std::string& id) {
   std::lock_guard<std::mutex> lock(mutex);
   playbackId = id;
 }
 
-void ConnectStateModel::setPlaybackState(bool isPlaying, bool isPaused,
+void PlayerStateModel::setPlaybackState(bool isPlaying, bool isPaused,
                                          bool isBuffering, int64_t timestampMs,
                                          uint32_t positionMs,
                                          std::optional<uint32_t> durationMs,
@@ -87,17 +87,17 @@ void ConnectStateModel::setPlaybackState(bool isPlaying, bool isPaused,
   }
 }
 
-std::string ConnectStateModel::trackUri() const {
+std::string PlayerStateModel::trackUri() const {
   std::lock_guard<std::mutex> lock(mutex);
   return std::string(playerState.track.uri);
 }
 
-uint32_t ConnectStateModel::duration() const {
+uint32_t PlayerStateModel::duration() const {
   std::lock_guard<std::mutex> lock(mutex);
   return (uint32_t)playerState.duration;
 }
 
-void ConnectStateModel::fillIntoRequest(
+void PlayerStateModel::fillIntoRequest(
     connectstate_PutStateRequest& request) const {
   std::lock_guard<std::mutex> lock(mutex);
   request.device.player_state = playerState;

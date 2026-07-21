@@ -12,15 +12,15 @@ typedef struct cJSON cJSON;
 
 namespace cspot {
 class PlaybackController;
-class ConnectStateModel;
+class PlayerStateModel;
 class ContextResolver;
 struct TrackReference;
 
 // Decodes a hm://connect-state/v1/player/command request and executes it -
-// translates a dealer command into PlaybackController/ConnectStateModel
+// translates a dealer command into PlaybackController/PlayerStateModel
 // calls. Never owns the PUT machinery itself (no sendPutStateRequest()/
 // pending-queue access): the handful of operations still private to
-// ConnectStateHandler (putBufferingState/updatePlayerState/sendEngineEvent)
+// PlayerEngine (putBufferingState/updatePlayerState/sendEngineEvent)
 // come in as constructor callbacks, same DI shape as PutStateClient/
 // PlaybackController use elsewhere.
 class PlayerCommandHandler {
@@ -37,7 +37,7 @@ class PlayerCommandHandler {
       std::function<void(EventType type, EventData data)>;
 
   PlayerCommandHandler(PlaybackController& playbackController,
-                       ConnectStateModel& stateModel,
+                       PlayerStateModel& stateModel,
                        cspot::ContextResolver& contextResolver,
                        PutBufferingStateCallback putBufferingState,
                        UpdatePlayerStateCallback updatePlayerState,
@@ -83,7 +83,7 @@ class PlayerCommandHandler {
   PlaybackSnapshot currentPlaybackSnapshot() const;
 
   PlaybackController& playbackController;
-  ConnectStateModel& stateModel;
+  PlayerStateModel& stateModel;
   cspot::ContextResolver& contextResolver;
   PutBufferingStateCallback putBufferingState;
   UpdatePlayerStateCallback updatePlayerState;

@@ -30,7 +30,7 @@ struct SpotifyConnectReceiverConfig {
 
 // Runs a Spotify Connect device end-to-end: ZeroConf pairing (HTTP server +
 // mDNS advertisement), session connect/auth/retry, and the actual playback
-// engine (via DealerClient/ConnectStateHandler) - everything a consumer on
+// engine (via DealerClient/PlayerEngine) - everything a consumer on
 // any platform needs, given only an AudioSink and config. Platform-specific
 // code (GPIO pins, a concrete AudioSink implementation) stays with the
 // caller; this class never touches hardware directly.

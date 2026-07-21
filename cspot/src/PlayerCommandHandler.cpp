@@ -7,7 +7,7 @@
 
 #include "CSpotContext.h"     // for cJSON
 #include "Crypto.h"          // for Crypto::base64Decode
-#include "ConnectStateModel.h"
+#include "PlayerStateModel.h"
 #include "ContextResolver.h"
 #include "Logger.h"          // for CSPOT_LOG
 #include "NanoPBHelper.h"    // for pbDecode, pbArrayToVector
@@ -47,7 +47,7 @@ bool contextTrackToRef(const connectstate_ContextTrack& t,
 }  // namespace
 
 PlayerCommandHandler::PlayerCommandHandler(
-    PlaybackController& playbackController, ConnectStateModel& stateModel,
+    PlaybackController& playbackController, PlayerStateModel& stateModel,
     cspot::ContextResolver& contextResolver,
     PutBufferingStateCallback putBufferingState,
     UpdatePlayerStateCallback updatePlayerState,

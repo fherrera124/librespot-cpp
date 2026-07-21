@@ -6,7 +6,7 @@
 #include "AudioSink.h"
 #include "BellUtils.h"  // for BELL_SLEEP_MS
 #include "CSpotContext.h"
-#include "ConnectStateHandler.h"
+#include "PlayerEngine.h"
 #include "DealerClient.h"
 #include "LoginBlob.h"
 #include "Logger.h"
@@ -208,12 +208,12 @@ void SpotifyConnectReceiver::runSessionInner() {
     return;
   }
 
-  // Reported in every PUT's DeviceInfo.volume (ConnectStateHandler::
+  // Reported in every PUT's DeviceInfo.volume (PlayerEngine::
   // buildDeviceInfo()) from here on.
   ctx->config.volume = volume;
   linked = true;
 
-  // Dealer connection, publishing state, and (via its ConnectStateHandler)
+  // Dealer connection, publishing state, and (via its PlayerEngine)
   // the actual playback engine - real player/command requests execute
   // directly against it. Connects on its own task, nothing here blocks on
   // it.

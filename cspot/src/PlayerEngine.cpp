@@ -1,4 +1,4 @@
-#include "ConnectStateHandler.h"
+#include "PlayerEngine.h"
 
 #include <algorithm>  // for min
 #include <chrono>     // for milliseconds, steady_clock
@@ -31,7 +31,7 @@ constexpr int PENDING_WAIT_MS = 500;
 constexpr int PUT_MIN_INTERVAL_MS = 200;
 }  // namespace
 
-ConnectStateHandler::ConnectStateHandler(
+PlayerEngine::PlayerEngine(
     std::shared_ptr<cspot::Context> ctx,
     std::shared_ptr<cspot::Login5Client> login5)
     : bell::Task("cspotConnectState", 32 * 1024, 1, 0), ctx(ctx),
@@ -96,24 +96,24 @@ ConnectStateHandler::ConnectStateHandler(
   startTask();
 }
 
-ConnectStateHandler::~ConnectStateHandler() {
+PlayerEngine::~PlayerEngine() {
   stop();
   // Blocks until runTask() releases it - never free this object under a
   // still-running task (F93 pattern, same as DealerClient/MercurySession).
   std::scoped_lock lock(taskLifetimeMutex);
 }
 
-void ConnectStateHandler::stop() {
+void PlayerEngine::stop() {
   running = false;
   pendingCv.notify_all();
 }
 
-void ConnectStateHandler::setConnectionId(const std::string& id) {
+void PlayerEngine::setConnectionId(const std::string& id) {
   std::lock_guard<std::mutex> lock(connectionIdMutex);
   connectionId = id;
 }
 
-void ConnectStateHandler::buildDeviceInfo(connectstate_DeviceInfo& info) {
+void PlayerEngine::buildDeviceInfo(connectstate_DeviceInfo& info) {
   info.can_play = true;
   info.volume = ctx->config.volume;  // cspot volume is 0..65535, same as
                                       // connect-state (player.MaxStateVolume)
@@ -147,7 +147,7 @@ void ConnectStateHandler::buildDeviceInfo(connectstate_DeviceInfo& info) {
   strcpy(caps.supported_types[1], "audio/episode");
 }
 
-bool ConnectStateHandler::sendPutStateRequest(
+bool PlayerEngine::sendPutStateRequest(
     connectstate_PutStateRequest& request) {
   std::string connId;
   {
@@ -198,7 +198,7 @@ bool ConnectStateHandler::sendPutStateRequest(
   }
 
   // PlayerState + session_id/playback_id/context_uri/restrictions/
-  // context_metadata - see ConnectStateModel.h.
+  // context_metadata - see PlayerStateModel.h.
   stateModel.fillIntoRequest(request);
 
   // Queue display ("playing next"/"previously played") - only uri is
@@ -228,7 +228,7 @@ bool ConnectStateHandler::sendPutStateRequest(
                             clientToken, connId);
 }
 
-bool ConnectStateHandler::putStateInactive() {
+bool PlayerEngine::putStateInactive() {
   std::string connId;
   {
     std::lock_guard<std::mutex> lock(connectionIdMutex);
@@ -245,7 +245,7 @@ bool ConnectStateHandler::putStateInactive() {
                                     clientToken, connId);
 }
 
-bool ConnectStateHandler::putState(connectstate_PutStateReason reason,
+bool PlayerEngine::putState(connectstate_PutStateReason reason,
                                    bool isActive) {
   connectstate_PutStateRequest request = connectstate_PutStateRequest_init_zero;
   request.put_state_reason = reason;
@@ -265,7 +265,7 @@ bool ConnectStateHandler::putState(connectstate_PutStateReason reason,
   return sendPutStateRequest(request);
 }
 
-bool ConnectStateHandler::putBufferingState(const std::string& trackUri,
+bool PlayerEngine::putBufferingState(const std::string& trackUri,
                                             uint32_t positionMs,
                                             bool paused) {
   connectstate_PutStateRequest request = connectstate_PutStateRequest_init_zero;
@@ -287,7 +287,7 @@ bool ConnectStateHandler::putBufferingState(const std::string& trackUri,
   return sendPutStateRequest(request);
 }
 
-void ConnectStateHandler::updatePlayerState(bool isPlaying,
+void PlayerEngine::updatePlayerState(bool isPlaying,
                                             const std::string& trackUri,
                                             uint32_t positionMs,
                                             uint32_t durationMs,
@@ -306,7 +306,7 @@ void ConnectStateHandler::updatePlayerState(bool isPlaying,
   pendingCv.notify_one();
 }
 
-void ConnectStateHandler::runTask() {
+void PlayerEngine::runTask() {
   std::scoped_lock lifetimeLock(taskLifetimeMutex);
 
   // §6.6 rate-limiting: default-constructed = epoch, so the very first
@@ -390,7 +390,7 @@ void ConnectStateHandler::runTask() {
   }
 }
 
-void ConnectStateHandler::handleClusterUpdate(
+void PlayerEngine::handleClusterUpdate(
     const std::vector<uint8_t>& payload) {
   // pbDecode() needs a mutable buffer - cluster updates are infrequent, a
   // copy is cheap enough.
@@ -430,7 +430,7 @@ void ConnectStateHandler::handleClusterUpdate(
   pb_release(connectstate_ClusterUpdate_fields, &update);
 }
 
-void ConnectStateHandler::handleSetVolume(const std::vector<uint8_t>& payload) {
+void PlayerEngine::handleSetVolume(const std::vector<uint8_t>& payload) {
   auto payloadCopy = payload;
 
   connectstate_SetVolumeCommand cmd = connectstate_SetVolumeCommand_init_zero;
@@ -456,43 +456,43 @@ void ConnectStateHandler::handleSetVolume(const std::vector<uint8_t>& payload) {
   }
 }
 
-void ConnectStateHandler::setLastCommand(uint32_t messageId,
+void PlayerEngine::setLastCommand(uint32_t messageId,
                                          const std::string& sentByDeviceId) {
   std::lock_guard<std::mutex> lock(lastCommandMutex);
   lastCommandMessageId = messageId;
   lastCommandSentByDeviceId = sentByDeviceId;
 }
 
-bool ConnectStateHandler::handlePlayerCommand(const std::string& endpoint,
+bool PlayerEngine::handlePlayerCommand(const std::string& endpoint,
                                               cJSON* command) {
   return playerCommandHandler.handlePlayerCommand(endpoint, command);
 }
 
-void ConnectStateHandler::setPause(bool pause) {
+void PlayerEngine::setPause(bool pause) {
   playerCommandHandler.setPause(pause);
 }
 
-bool ConnectStateHandler::nextSong() {
+bool PlayerEngine::nextSong() {
   return playerCommandHandler.nextSong();
 }
 
-bool ConnectStateHandler::previousSong(bool allowSeeking) {
+bool PlayerEngine::previousSong(bool allowSeeking) {
   return playerCommandHandler.previousSong(allowSeeking);
 }
 
-void ConnectStateHandler::seekMs(uint32_t position) {
+void PlayerEngine::seekMs(uint32_t position) {
   playerCommandHandler.seekMs(position);
 }
 
-void ConnectStateHandler::setRepeatContext(bool repeat) {
+void PlayerEngine::setRepeatContext(bool repeat) {
   playerCommandHandler.setRepeatContext(repeat);
 }
 
-void ConnectStateHandler::setEventHandler(EventHandler handler) {
+void PlayerEngine::setEventHandler(EventHandler handler) {
   engineEventHandler = handler;
 }
 
-void ConnectStateHandler::sendEngineEvent(EventType type) {
+void PlayerEngine::sendEngineEvent(EventType type) {
   if (!engineEventHandler) return;
   auto event = std::make_unique<Event>();
   event->eventType = type;
@@ -500,7 +500,7 @@ void ConnectStateHandler::sendEngineEvent(EventType type) {
   engineEventHandler(std::move(event));
 }
 
-void ConnectStateHandler::sendEngineEvent(EventType type, EventData data) {
+void PlayerEngine::sendEngineEvent(EventType type, EventData data) {
   if (!engineEventHandler) return;
   auto event = std::make_unique<Event>();
   event->eventType = type;
@@ -508,11 +508,11 @@ void ConnectStateHandler::sendEngineEvent(EventType type, EventData data) {
   engineEventHandler(std::move(event));
 }
 
-uint32_t ConnectStateHandler::getPositionMs() {
+uint32_t PlayerEngine::getPositionMs() {
   return playbackController.getPositionMs();
 }
 
-void ConnectStateHandler::notifyAudioEnded() {
+void PlayerEngine::notifyAudioEnded() {
   playbackController.reportEnded();
 
   // Also covers "gave up after every track failed to load" (same
@@ -521,6 +521,6 @@ void ConnectStateHandler::notifyAudioEnded() {
   updatePlayerState(false, "", 0, 0);
 }
 
-void ConnectStateHandler::disconnect() {
+void PlayerEngine::disconnect() {
   playbackController.disconnect();
 }

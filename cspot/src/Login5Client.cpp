@@ -153,7 +153,7 @@ std::string Login5Client::fetchClientToken() {
   auto body = pbEncode(clienttoken_ClientTokenRequest_fields, &request);
 
   // Bounded retry (3 attempts, 1s apart) - same policy as ContextResolver/
-  // ConnectStateHandler's PUT: a transient failure here (dropped
+  // PlayerEngine's PUT: a transient failure here (dropped
   // connection, 5xx) used to burn one of updateToken()'s own outer
   // attempts (a full 3s sleep) instead of resolving in a couple seconds.
   // A 4xx is thrown as PermanentHttpFailure to skip the retry budget - not

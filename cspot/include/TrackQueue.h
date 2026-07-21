@@ -194,7 +194,7 @@ class TrackQueue {
   // tracks.List.PrevTracks()/NextTracks() (tracks/tracks.go), just against
   // this project's own currentTracks/currentTracksIndex instead of a
   // lazy-fetched context iterator. maxCount is the caller's own encode-time
-  // budget (ConnectStateHandler.cpp), not tied to MAX_TRACKS_PRELOAD (which
+  // budget (PlayerEngine.cpp), not tied to MAX_TRACKS_PRELOAD (which
   // bounds audio buffering, a different concern).
   std::vector<TrackReference> getPrevTracks(size_t maxCount);
   std::vector<TrackReference> getNextTracks(size_t maxCount);

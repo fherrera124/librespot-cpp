@@ -1,6 +1,6 @@
 # cspot/bell — Spotify Connect engine
 
-Motor (`Session`, `DealerClient`, `ConnectStateHandler`, `TrackPlayer`,
+Motor (`Session`, `DealerClient`, `PlayerEngine`, `TrackPlayer`,
 `TrackQueue`, `AudioSink`) sin glue de aplicación (WiFi, zeroconf, pines
 I2S) — eso le corresponde al proyecto consumidor.
 

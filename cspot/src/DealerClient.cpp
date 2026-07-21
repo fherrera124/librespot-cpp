@@ -8,7 +8,7 @@
 #include "ApResolve.h"
 #include "BellLogger.h"    // for AbstractLogger
 #include "BellUtils.h"     // for BELL_SLEEP_MS
-#include "ConnectStateHandler.h"
+#include "PlayerEngine.h"
 #include "CSpotContext.h"  // for Context
 #include "Crypto.h"        // for Crypto::base64Decode
 #include "Login5Client.h"
@@ -42,7 +42,7 @@ constexpr size_t DEALER_MAX_MESSAGE_SIZE = 256 * 1024;
 DealerClient::DealerClient(std::shared_ptr<cspot::Context> ctx)
     : bell::Task("cspotDealer", 32 * 1024, 1, 0), ctx(ctx) {
   login5 = std::make_shared<Login5Client>(ctx);
-  connectState = std::make_unique<ConnectStateHandler>(ctx, login5);
+  connectState = std::make_unique<PlayerEngine>(ctx, login5);
   commandWorker = std::make_unique<CommandWorker>(
       connectState.get(), &pendingCommands, &pendingReplies);
   startTask();
@@ -66,7 +66,7 @@ void DealerClient::stop() {
 }
 
 DealerClient::CommandWorker::CommandWorker(
-    ConnectStateHandler* connectState,
+    PlayerEngine* connectState,
     bell::Queue<PendingCommand>* pendingCommands,
     bell::Queue<PendingReply>* pendingReplies)
     : bell::Task("cspotDealerCmd", 32 * 1024, 1, 0),
@@ -395,7 +395,7 @@ void DealerClient::handleMessage(const std::string& json) {
 
       if (commandRoot != nullptr) {
         // Recorded before executing - echoed back on every subsequent PUT
-        // (ConnectStateHandler::setLastCommand()).
+        // (PlayerEngine::setLastCommand()).
         cJSON* messageIdItem = cJSON_GetObjectItem(commandRoot, "message_id");
         cJSON* sentByItem =
             cJSON_GetObjectItem(commandRoot, "sent_by_device_id");

@@ -11,7 +11,7 @@ namespace cspot {
 // Playback-engine events reported up to cspot_connect.cpp. Originally
 // extracted out of SpircHandler during Fase 6's "corte completo"
 // (docs/dealer_websocket_migration.md) so both engines could share it during
-// the transition; SpircHandler is gone now and ConnectStateHandler is the
+// the transition; SpircHandler is gone now and PlayerEngine is the
 // only producer.
 enum class EventType {
   PLAY_PAUSE,

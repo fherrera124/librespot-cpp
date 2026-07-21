@@ -15,11 +15,11 @@ namespace cspot {
 // playback/context ids, restrictions, and context metadata. Knows nothing
 // about HTTP or the playback engine - callers set what happened, and pull
 // a snapshot to send.
-class ConnectStateModel {
+class PlayerStateModel {
  public:
   // Generates the initial random session id and resets playerState to
   // go-librespot's State.reset() shape.
-  ConnectStateModel();
+  PlayerStateModel();
 
   // Resets playerState (is_system_initiated/options/playback_speed set,
   // everything else zero). Does not touch sessionId/playbackId/contextUri.
