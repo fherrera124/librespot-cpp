@@ -42,10 +42,9 @@ if(USE_ALSA)
 endif(USE_ALSA)
 unset(USE_ALSA CACHE)
 
-# Import cspot library
-add_subdirectory("../../cspot" ${CMAKE_CURRENT_BINARY_DIR}/cspot)
-
-
+# The cspot and bell library targets are already defined by the root CMakeLists.txt by the time
+# it descends into this directory (add_subdirectory(extras/cli)) - no
+# need to reach for them here anymore.
 
 # Configure the target
 add_executable(cspotcli ${SOURCES})

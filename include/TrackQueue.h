@@ -124,7 +124,7 @@ class TrackQueue {
  public:
   // accessKeyFetcher: injected rather than constructed internally, so a
   // test can supply a fake instead of the real one's blocking HTTPS POST
-  // to accounts.spotify.com (see cspot/tests/f104_queuedtrack_state_race_
+  // to accounts.spotify.com (see tests/f104_queuedtrack_state_race_
   // test.cpp's own comment on why it couldn't drive TrackLoader::runTask()
   // directly for exactly this reason). Forwarded straight through to
   // trackLoader's constructor - see TrackLoader.h.

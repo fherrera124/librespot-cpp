@@ -15,6 +15,52 @@ Currently in state of rapid development.
 
 *Only to be used with premium spotify accounts*
 
+## Spotify Connect engine
+
+Motor (`Session`, `DealerClient`, `PlayerEngine`, `TrackPlayer`,
+`TrackQueue`, `AudioSink`) sin glue de aplicación (WiFi, zeroconf, pines
+I2S) — eso le corresponde al proyecto consumidor.
+
+### Consumo en CMake plano (Linux/Apple/Win32, o `extras/cli`)
+
+`add_subdirectory()` normal — ver `extras/cli/CMakeLists.txt` como
+referencia.
+
+### Consumo en ESP-IDF, vía Component Manager
+
+El `CMakeLists.txt` de la raíz es dual-mode: bajo `ESP_PLATFORM` se
+registra como componente real (`idf_component_register()`) en vez de un
+`add_library()` plano. En el `idf_component.yml` del componente que lo
+consuma:
+
+```yaml
+dependencies:
+  librespot_cpp:
+    git: "https://github.com/fherrera124/librespot-cpp.git"
+```
+
+(sin `path:` — el repo entero es el componente desde el aplanamiento a
+layout Pitchfork; antes apuntaba a `path: "cspot"`.)
+
+Luego, en el `CMakeLists.txt` de ese mismo componente:
+
+```cmake
+idf_component_register(
+    SRCS "my_connect.cpp"
+    INCLUDE_DIRS "include"
+)
+```
+
+No hace falta declarar `REQUIRES librespot_cpp` explícito — el Component
+Manager ya agrega las dependencias del manifest como requisito del
+componente.
+
+#### Opciones (`idf.py menuconfig` → "librespot-cpp (Spotify Connect engine)")
+
+Codecs (`LIBRESPOT_CODEC_VORBIS`/`MP3`/`AAC`/`OPUS`/`ALAC`), y toggles para
+el MQTT/HTTP-server internos de `bell` y el backend JSON (cJSON vs
+nlohmann_json) — ver `Kconfig` en la raíz para los defaults.
+
 ## Building
 
 ### Prerequisites
@@ -67,8 +113,8 @@ See running the CLI for information on how to run cspot on a desktop computer.
 #### macOS/Linux
 
 ```shell
-# navigate to the targets/cli directory
-$ cd targets/cli
+# navigate to the extras/cli directory
+$ cd extras/cli
 
 # create a build directory and navigate to it
 $ mkdir -p build && cd build
@@ -83,8 +129,8 @@ $ make
 #### Windows
 
 ```shell
-# navigate to the targets/cli directory
-$ cd targets/cli
+# navigate to the extras/cli directory
+$ cd extras/cli
 
 # create a build directory and navigate to it
 $ mkdir -p build && cd build
@@ -102,8 +148,8 @@ Note that for now, only the Win32 build has been tested, not the x64 version. Un
 The cli target is used mainly for testing and development purposes, as of now it has the same features as the esp32 target.
 
 ```shell
-# navigate to the targets/cli directory
-$ cd targets/cli
+# navigate to the extras/cli directory
+$ cd extras/cli
 
 # create a build directory and navigate to it
 $ mkdir -p build && cd build
@@ -193,16 +239,16 @@ Now open a real Spotify app and you should see a cspot device on your local netw
 `cspot` is meant to be used as a lightweight C++ library for playing back Spotify music and receive control notifications from Spotify connect. 
 It exposes an interface for starting the communication with Spotify servers and expects the embedding program to provide an interface for playing back raw audio samples ([`AudioSink`](include/AudioSink.h)).
 
-You can view the [`cspot-cli`]([targets/cli/main.cpp) program for a reference on how to include cspot in your program. It provides a few audio sinks for various platforms and uses:
+You can view the [`cspot-cli`]([extras/cli/main.cpp) program for a reference on how to include cspot in your program. It provides a few audio sinks for various platforms and uses:
 
-- [`ALSAAudioSink`](cspot/bell/src/sinks/unix/ALSAAudioSink.cpp) - Linux, requires `libasound`
-- [`PortAudioSink`](cspot/bell/src/sinks/unix/PortAudioSink.cpp) - MacOS (PortAudio also supports more platforms, but we currently use it only on MacOS), requires the PortAudio library
-- [`NamedPipeAudioSink`](cspot/bell/src/sinks/unix/NamedPipeAudioSink.cpp) - all platforms, writes to a file/FIFO pipe called `outputFifo` which can later be played back by FFmpeg. Used mainly for testing and development.
+- [`ALSAAudioSink`](external/bell/src/sinks/unix/ALSAAudioSink.cpp) - Linux, requires `libasound`
+- [`PortAudioSink`](external/bell/src/sinks/unix/PortAudioSink.cpp) - MacOS (PortAudio also supports more platforms, but we currently use it only on MacOS), requires the PortAudio library
+- [`NamedPipeAudioSink`](external/bell/src/sinks/unix/NamedPipeAudioSink.cpp) - all platforms, writes to a file/FIFO pipe called `outputFifo` which can later be played back by FFmpeg. Used mainly for testing and development.
 
 Additionaly the following audio sinks are implemented for the esp32 target:
-- [`ES9018AudioSink`](cspot/bell/src/sinks/esp/ES9018AudioSink.cpp) - provides playback via a ES9018 DAC connected to the ESP32
-- [`AC101AudioSink`](cspot/bell/src/sinks/esp/AC101AudioSink.cpp) - provides playback via the AC101 DAC used in cheap ESP32 A1S audiokit boards, commonly found on aliexpress.
-- [`PCM5102AudioSink`](cspot/bell/src/sinks/esp/PCM5102AudioSink.cpp) - provides playback via a PCM5102 DAC connected to the ESP32, commonly found in the shape of small purple modules at various online retailers. Wiring can be configured in the sink and defaults to:
+- [`ES9018AudioSink`](external/bell/src/sinks/esp/ES9018AudioSink.cpp) - provides playback via a ES9018 DAC connected to the ESP32
+- [`AC101AudioSink`](external/bell/src/sinks/esp/AC101AudioSink.cpp) - provides playback via the AC101 DAC used in cheap ESP32 A1S audiokit boards, commonly found on aliexpress.
+- [`PCM5102AudioSink`](external/bell/src/sinks/esp/PCM5102AudioSink.cpp) - provides playback via a PCM5102 DAC connected to the ESP32, commonly found in the shape of small purple modules at various online retailers. Wiring can be configured in the sink and defaults to:
   - SCK to Ground
   - BCK to PGIO27
   - DIN to GPIO25
@@ -219,4 +265,4 @@ The embedding program should also handle caching the authentication data, so tha
 
 ## Internal details
 
-The connection with Spotify servers to play music and recieve control information is pretty complex. First of all an access point address must be fetched from Spotify ([`ApResolve`](cspot/src/ApResolve.cpp) fetches the list from http://apresolve.spotify.com/). Then a [`PlainConnection`](cspot/include/PlainConnection.h) with the selected Spotify access point must be established. It is then upgraded to an encrypted [`ShannonConnection`](cspot/include/ShannonConnection.h).
+The connection with Spotify servers to play music and recieve control information is pretty complex. First of all an access point address must be fetched from Spotify ([`ApResolve`](src/ApResolve.cpp) fetches the list from http://apresolve.spotify.com/). Then a [`PlainConnection`](include/PlainConnection.h) with the selected Spotify access point must be established. It is then upgraded to an encrypted [`ShannonConnection`](include/ShannonConnection.h).

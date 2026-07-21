@@ -10,6 +10,6 @@ config.json
 cspot/protos
 # Host test suite (doctest/TSan) - local dev tooling, not tracked here
 # either (matches the downstream cspot project's own convention).
-cspot/tests/
+tests/
 targets/esp32/sdkconfig.cspot-wrover-b
 *.bak
