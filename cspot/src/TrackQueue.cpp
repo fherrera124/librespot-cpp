@@ -320,7 +320,6 @@ void QueuedTrack::stepParseMetadata(Track* pbTrack, Episode* pbEpisode) {
 }
 
 void QueuedTrack::stepLoadAudioFile(
-    std::mutex& trackListMutex,
     std::shared_ptr<bell::WrappedSemaphore> updateSemaphore) {
   if (std::chrono::steady_clock::now() < retryNotBeforeTime) {
     return;  // still backing off from a previous failed attempt
@@ -329,10 +328,8 @@ void QueuedTrack::stepLoadAudioFile(
   // Request audio key
   this->pendingAudioKeyRequest = ctx->session->requestAudioKey(
       trackId, fileId,
-      [this, &trackListMutex, updateSemaphore](
+      [this, updateSemaphore](
           bool success, const std::vector<uint8_t>& audioKey) {
-        std::scoped_lock lock(trackListMutex);
-
         if (success) {
           CSPOT_LOG(info, "Got audio key");
           this->audioKey =
@@ -451,7 +448,7 @@ void QueuedTrack::expire() {
 }
 
 void QueuedTrack::stepLoadMetadata(
-    Track* pbTrack, Episode* pbEpisode, std::mutex& trackListMutex,
+    Track* pbTrack, Episode* pbEpisode,
     std::shared_ptr<bell::WrappedSemaphore> updateSemaphore) {
   if (std::chrono::steady_clock::now() < retryNotBeforeTime) {
     return;  // still backing off from a previous failed attempt
@@ -463,10 +460,8 @@ void QueuedTrack::stepLoadMetadata(
       ref.type == TrackReference::Type::TRACK ? "track" : "episode",
       bytesToHexString(ref.gid).c_str());
 
-  auto responseHandler = [this, pbTrack, pbEpisode, &trackListMutex,
+  auto responseHandler = [this, pbTrack, pbEpisode,
                           updateSemaphore](MercurySession::Response& res) {
-    std::scoped_lock lock(trackListMutex);
-
     if (res.parts.size() == 0) {
       if (++loadAttempts < MAX_LOAD_ATTEMPTS) {
         CSPOT_LOG(error, "Empty metadata response, retrying (%d/%d)",
@@ -675,11 +670,10 @@ std::shared_ptr<QueuedTrack> TrackQueue::consumeTrack(
 void TrackQueue::processTrack(std::shared_ptr<QueuedTrack> track) {
   switch (track->getState()) {
     case QueuedTrack::State::QUEUED:
-      track->stepLoadMetadata(&pbTrack, &pbEpisode, tracksMutex,
-                              processSemaphore);
+      track->stepLoadMetadata(&pbTrack, &pbEpisode, processSemaphore);
       break;
     case QueuedTrack::State::KEY_REQUIRED:
-      track->stepLoadAudioFile(tracksMutex, processSemaphore);
+      track->stepLoadAudioFile(processSemaphore);
       break;
     case QueuedTrack::State::CDN_REQUIRED:
       track->stepLoadCDNUrl(accessKey);

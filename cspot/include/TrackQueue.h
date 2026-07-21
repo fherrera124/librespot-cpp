@@ -55,6 +55,17 @@ class QueuedTrack {
   // Private: every transition goes through setState() instead of letting
   // any call site assign the field directly, so there's one place that
   // can enforce "once failed, stay failed" - see setState()'s own comment.
+  // This atomic publish (write the other fields below, then setState() as
+  // the last step) / observe (getState(), then read the fields the
+  // observed state promises are valid) pattern is the *only*
+  // synchronization this class's other fields get - there is no mutex
+  // guarding them. Every step function was audited to confirm no field
+  // write happens after its transition's setState() call, and every
+  // reader was audited to confirm it never touches a field without having
+  // just observed the corresponding transition via getState() first (see
+  // the removal of stepLoadMetadata()/stepLoadAudioFile()'s trackListMutex
+  // parameter). Removing this discipline requires re-deriving that
+  // argument from scratch, not just reaching for a mutex out of caution.
   State getState() const { return state.load(); }
   void setState(State newState);
 
@@ -78,13 +89,12 @@ class QueuedTrack {
 
   // --- Steps ---
   void stepLoadMetadata(
-      Track* pbTrack, Episode* pbEpisode, std::mutex& trackListMutex,
+      Track* pbTrack, Episode* pbEpisode,
       std::shared_ptr<bell::WrappedSemaphore> updateSemaphore);
 
   void stepParseMetadata(Track* pbTrack, Episode* pbEpisode);
 
   void stepLoadAudioFile(
-      std::mutex& trackListMutex,
       std::shared_ptr<bell::WrappedSemaphore> updateSemaphore);
 
   void stepLoadCDNUrl(const std::string& accessKey);
