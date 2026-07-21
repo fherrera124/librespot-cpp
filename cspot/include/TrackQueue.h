@@ -8,7 +8,6 @@
 #include <memory>
 #include <mutex>
 
-#include "BellTask.h"
 #include "TrackReference.h"
 
 #include "protobuf/metadata.pb.h"  // for Track, _Track, AudioFile, Episode
@@ -22,6 +21,7 @@ struct Context;
 class AccessKeyFetcher;
 class CDNAudioFile;
 struct CDNConnection;
+class TrackLoader;
 
 // Used in got track info event
 struct TrackInfo {
@@ -50,7 +50,7 @@ class QueuedTrack {
 
   std::shared_ptr<bell::WrappedSemaphore> loadedSemaphore;
 
-  // Read from TrackQueue's own task (processTrack()'s step functions) and
+  // Read from TrackLoader's own task (processTrack()'s step functions) and
   // TrackPlayer's task (runTask()) - genuinely cross-thread, hence atomic.
   // Private: every transition goes through setState() instead of letting
   // any call site assign the field directly, so there's one place that
@@ -120,13 +120,14 @@ class QueuedTrack {
   std::chrono::steady_clock::time_point retryNotBeforeTime{};
 };
 
-class TrackQueue : public bell::Task {
+class TrackQueue {
  public:
   // accessKeyFetcher: injected rather than constructed internally, so a
   // test can supply a fake instead of the real one's blocking HTTPS POST
   // to accounts.spotify.com (see cspot/tests/f104_queuedtrack_state_race_
-  // test.cpp's own comment on why it couldn't drive TrackQueue::runTask()
-  // directly for exactly this reason).
+  // test.cpp's own comment on why it couldn't drive TrackLoader::runTask()
+  // directly for exactly this reason). Forwarded straight through to
+  // trackLoader's constructor - see TrackLoader.h.
   TrackQueue(std::shared_ptr<cspot::Context> ctx,
              std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher);
   ~TrackQueue();
@@ -136,7 +137,10 @@ class TrackQueue : public bell::Task {
   std::shared_ptr<bell::WrappedSemaphore> playableSemaphore;
   std::atomic<bool> notifyPending = false;
 
-  void runTask() override;
+  // Forwards to trackLoader's own stopTask() - TrackQueue itself no
+  // longer runs a background task (that's TrackLoader's job now), but
+  // keeps this method so callers (PlaybackController.cpp) don't need to
+  // know about the split.
   void stopTask();
 
   bool hasTracks();
@@ -202,18 +206,11 @@ class TrackQueue : public bell::Task {
   static const int MAX_TRACKS_PRELOAD = 3;
 
   std::shared_ptr<cspot::Context> ctx;
-  std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher;
   std::shared_ptr<bell::WrappedSemaphore> processSemaphore;
 
   std::deque<std::shared_ptr<QueuedTrack>> preloadedTracks;
   std::vector<TrackReference> currentTracks;
-  std::mutex tracksMutex, runningMutex;
-
-  // PB data
-  Track pbTrack;
-  Episode pbEpisode;
-
-  std::string accessKey;
+  std::mutex tracksMutex;
 
   int16_t currentTracksIndex = -1;
 
@@ -224,10 +221,26 @@ class TrackQueue : public bell::Task {
   // (skipTrack(NEXT)), reset whenever the whole list is replaced.
   int16_t pendingQueuedCount = 0;
 
-  bool isRunning = false;
   bool shouldRepeatContext = false;
 
-  void processTrack(std::shared_ptr<QueuedTrack> track);
   bool queueNextTrack(int offset = 0, uint32_t positionMs = 0);
+
+  // Callback targets for trackLoader (see TrackLoader.h's SnapshotFn/
+  // TopUpFn) - a near-verbatim extraction of what runTask()'s copy-loop
+  // and processTrack()'s CDN_REQUIRED top-up did before the split, just
+  // named methods TrackLoader calls through a callback instead of being
+  // inlined in the same class that owns preloadedTracks/tracksMutex.
+  // Private: not part of TrackQueue's own public API, only ever invoked
+  // via the lambdas handed to trackLoader's constructor.
+  std::deque<std::shared_ptr<QueuedTrack>> snapshotPreloadedTracks();
+  void tryTopUpLookahead();
+
+  // Constructed last, after every member its background task's callbacks
+  // touch (tracksMutex/preloadedTracks/currentTracks/etc. above) - so it's
+  // destroyed FIRST, stopping that task before the state it calls back
+  // into goes away. A prior constructor-init-list ordering mistake in
+  // this project shipped a real -Wreorder build break (commit 2f49294) -
+  // don't reorder this member without re-checking that history.
+  std::unique_ptr<TrackLoader> trackLoader;
 };
 }  // namespace cspot

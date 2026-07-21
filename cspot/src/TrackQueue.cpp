@@ -7,12 +7,12 @@
 #include <mutex>
 
 #include "AccessKeyFetcher.h"
-#include "BellTask.h"
 #include "CDNAudioFile.h"
 #include "CSpotContext.h"
 #include "HTTPClient.h"
 #include "Logger.h"
 #include "NanoPBHelper.h"  // for pbDecode, pbArrayToVector
+#include "TrackLoader.h"
 #include "Utils.h"
 #include "WrappedSemaphore.h"
 #ifdef BELL_ONLY_CJSON
@@ -506,28 +506,24 @@ void QueuedTrack::stepLoadMetadata(
 
 TrackQueue::TrackQueue(std::shared_ptr<cspot::Context> ctx,
                       std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher)
-    : bell::Task("CSpotTrackQueue", 1024 * 32, 2, 1), ctx(ctx),
-      accessKeyFetcher(accessKeyFetcher) {
+    : ctx(ctx) {
   processSemaphore = std::make_shared<bell::WrappedSemaphore>();
   playableSemaphore = std::make_shared<bell::WrappedSemaphore>();
 
-  pbTrack = Track_init_zero;
-  pbEpisode = Episode_init_zero;
-
-  // Start the task
-  startTask();
+  // Constructed last - see trackLoader's own declaration comment
+  // (TrackQueue.h) for why member order matters here.
+  trackLoader = std::make_unique<TrackLoader>(
+      ctx, accessKeyFetcher, processSemaphore,
+      [this] { return snapshotPreloadedTracks(); },
+      [this] { tryTopUpLookahead(); });
 };
 
 TrackQueue::~TrackQueue() {
   stopTask();
-
-  std::scoped_lock lock(tracksMutex);
-
-  pb_release(Track_fields, &pbTrack);
-  pb_release(Episode_fields, &pbEpisode);
 }
 
 TrackInfo TrackQueue::getTrackInfo(std::string_view identifier) {
+  std::scoped_lock lock(tracksMutex);
   for (auto& track : preloadedTracks) {
     if (track->identifier == identifier)
       return track->trackInfo;
@@ -535,44 +531,20 @@ TrackInfo TrackQueue::getTrackInfo(std::string_view identifier) {
   return TrackInfo{};
 }
 
-void TrackQueue::runTask() {
-  isRunning = true;
+std::deque<std::shared_ptr<QueuedTrack>> TrackQueue::snapshotPreloadedTracks() {
+  std::scoped_lock lock(tracksMutex);
+  return preloadedTracks;
+}
 
-  std::scoped_lock lock(runningMutex);
-
-  std::deque<std::shared_ptr<QueuedTrack>> trackQueue;
-
-  while (isRunning) {
-    processSemaphore->twait(100);
-
-    // Make sure we have the newest access key
-    accessKey = accessKeyFetcher->getAccessKey();
-
-    int loadedIndex = currentTracksIndex;
-
-    // No tracks loaded yet
-    if (loadedIndex < 0) {
-      continue;
-    } else {
-      std::scoped_lock lock(tracksMutex);
-
-      trackQueue = preloadedTracks;
-    }
-
-    for (auto& track : trackQueue) {
-      if (track) {
-        this->processTrack(track);
-      }
-    }
+void TrackQueue::tryTopUpLookahead() {
+  std::scoped_lock lock(tracksMutex);
+  if (preloadedTracks.size() < MAX_TRACKS_PRELOAD) {
+    queueNextTrack(preloadedTracks.size());
   }
 }
 
 void TrackQueue::stopTask() {
-  if (isRunning) {
-    isRunning = false;
-    processSemaphore->give();
-    std::scoped_lock lock(runningMutex);
-  }
+  trackLoader->stopTask();
 }
 
 void TrackQueue::setRepeatContext(bool repeat) {
@@ -665,37 +637,6 @@ std::shared_ptr<QueuedTrack> TrackQueue::consumeTrack(
 
   // Return the current track
   return preloadedTracks[offset];
-}
-
-void TrackQueue::processTrack(std::shared_ptr<QueuedTrack> track) {
-  switch (track->getState()) {
-    case QueuedTrack::State::QUEUED:
-      track->stepLoadMetadata(&pbTrack, &pbEpisode, processSemaphore);
-      break;
-    case QueuedTrack::State::KEY_REQUIRED:
-      track->stepLoadAudioFile(processSemaphore);
-      break;
-    case QueuedTrack::State::CDN_REQUIRED:
-      track->stepLoadCDNUrl(accessKey);
-
-      if (track->getState() == QueuedTrack::State::READY) {
-        // runTask() calls processTrack() outside tracksMutex (it only
-        // locks to copy preloadedTracks before iterating) - queueNextTrack()
-        // mutates the real preloadedTracks, so it needs its own lock here,
-        // same as every other caller (consumeTrack/skipTrack/updateTracks).
-        // Scoped to just this, not the whole function, since
-        // stepLoadCDNUrl() above is a blocking network call. See F78.
-        std::scoped_lock lock(tracksMutex);
-        if (preloadedTracks.size() < MAX_TRACKS_PRELOAD) {
-          // Queue a new track to preload
-          queueNextTrack(preloadedTracks.size());
-        }
-      }
-      break;
-    default:
-      // Do not perform any action
-      break;
-  }
 }
 
 bool TrackQueue::queueNextTrack(int offset, uint32_t positionMs) {
