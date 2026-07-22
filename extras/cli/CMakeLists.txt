@@ -2,9 +2,6 @@ cmake_minimum_required(VERSION 3.3)
 
 project(cspotcli)
 
-# Configurable options
-option(USE_ALSA "Enable ALSA" OFF)
-option(USE_PORTAUDIO "Enable PortAudio" OFF)
 set(CMAKE_BUILD_TYPE Debug CACHE STRING "CMake Build Type")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -30,17 +27,19 @@ find_package(portaudio REQUIRED )
 include_directories( ${PORTAUDIO_INCLUDE_DIRS} )
 set(THINGS_TO_LINK ${THINGS_TO_LINK} ${PORTAUDIO_LIBRARIES})
 
-if(USE_PORTAUDIO)
-    add_definitions(-DCSPOT_ENABLE_PORTAUDIO_SINK)
-    set(BELL_SINK_PORTAUDIO ON)
-endif(USE_PORTAUDIO)
-unset(USE_PORTAUDIO CACHE)
-
-if(USE_ALSA)
+# BELL_SINK_ALSA/BELL_SINK_PORTAUDIO are bell/CMakeLists.txt's own options
+# (see external/bell/CMakeLists.txt) - they decide whether
+# ALSAAudioSink.cpp/PortAudioSink.cpp are even compiled into the bell
+# target, and are already resolved by the time this file runs (bell is
+# add_subdirectory()'d from the root CMakeLists.txt before extras/cli).
+# Setting them here would be too late to have any effect - pass
+# -DBELL_SINK_ALSA=ON (or -DBELL_SINK_PORTAUDIO=ON) on the cmake command
+# line instead. This just picks which sink cspotcli's own main.cpp uses.
+if(BELL_SINK_ALSA)
     add_definitions(-DCSPOT_ENABLE_ALSA_SINK)
-    set(BELL_SINK_ALSA ON)
-endif(USE_ALSA)
-unset(USE_ALSA CACHE)
+elseif(BELL_SINK_PORTAUDIO)
+    add_definitions(-DCSPOT_ENABLE_PORTAUDIO_SINK)
+endif()
 
 # The cspot and bell library targets are already defined by the root CMakeLists.txt by the time
 # it descends into this directory (add_subdirectory(extras/cli)) - no

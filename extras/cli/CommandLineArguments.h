@@ -1,48 +1,23 @@
 #ifndef COMMANDLINEARGUMENTS_H
 #define COMMANDLINEARGUMENTS_H
-#include <protobuf/metadata.pb.h>  // for AudioFormat
-#include <memory>                  // for shared_ptr
-#include <string>                  // for string, basic_string
+#include <memory>  // for shared_ptr
+#include <string>  // for string, basic_string
 
-/**
- * Represents the command line arguments passed to the program.
- *
- */
+// Parses cspotcli's command line arguments. SpotifyConnectReceiver only
+// supports ZeroConf pairing (no direct username/password login), so
+// clientId/clientSecret (a Spotify Developer Dashboard app's credentials)
+// are the only required inputs - there's no Kconfig here to supply them
+// like the ESP32 build has.
 class CommandLineArguments {
  public:
-  /**
-     * The username used to log in to spotify without using mDNS.
-     */
-  std::string username;
-  /**
-     * The spotify password.
-    */
-  std::string password;
-  /**
-     * A file to store/read reusable credentials from
-    */
-  std::string credentials;
-  /**
-     * Bitrate setting.
-    */
-  bool setBitrate = false;
-  AudioFormat bitrate;
-  /**
-     * Determines whether the help text should be printed.
-     */
-  bool shouldShowHelp;
-  /**
-     * This is a constructor which initializez all the fields of CommandLineArguments
-     * @param shouldShowHelp determines whether the help text should be printed.
-     */
-  CommandLineArguments(std::string username, std::string password, 
-                       std::string credentials, bool shouldShowHelp);
+  std::string clientId;
+  std::string clientSecret;
+  std::string deviceName = "CSpot CLI";
+  int bitrate = 160;  // 96, 160 or 320 (kbps) - matches SpotifyConnectReceiverConfig::bitrate
+  bool shouldShowHelp = false;
 
-  /**
-     * Parses command line arguments, as they are passed to main().
-     * @param argc the number of arguments, including the executable path
-     * @param argv a pointer to an array of pointers to c strings which are the contents of the arguments
-     */
+  CommandLineArguments() = default;
+
   static std::shared_ptr<CommandLineArguments> parse(int argc, char** argv);
 };
 

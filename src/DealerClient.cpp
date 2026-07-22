@@ -15,9 +15,10 @@
 #include "Logger.h"  // for CSPOT_LOG
 #include "WebSocketTransport.h"  // for bell::WebSocketTransport
 
-// cJSON only (no nlohmann branch, unlike older engine files): this class is
-// new code for this project, which always builds BELL_ONLY_CJSON - see
-// docs/dealer_websocket_migration.md §5.2.
+// cJSON only (no nlohmann branch, unlike older engine files) - bell always
+// compiles cJSON.c regardless of BELL_ONLY_CJSON (nlohmann is only ever
+// additive), so this doesn't need one. See docs/dealer_websocket_migration.md
+// §5.2.
 #include "cJSON.h"
 
 using namespace cspot;

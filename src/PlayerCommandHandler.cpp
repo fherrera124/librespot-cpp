@@ -5,7 +5,13 @@
 #include <utility>  // for pair, move
 #include <vector>   // for vector
 
-#include "CSpotContext.h"     // for cJSON
+// Always the real cJSON.h, not just CSpotContext.h's conditional
+// (BELL_ONLY_CJSON-only) include - this file calls the raw cJSON C API
+// unconditionally regardless of that flag, and bell always compiles
+// cJSON.c in either way (nlohmann is only ever additive, see
+// external/bell/CMakeLists.txt).
+#include "cJSON.h"
+#include "CSpotContext.h"
 #include "Crypto.h"          // for Crypto::base64Decode
 #include "PlayerStateModel.h"
 #include "ContextResolver.h"

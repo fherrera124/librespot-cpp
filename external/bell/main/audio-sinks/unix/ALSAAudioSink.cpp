@@ -62,7 +62,14 @@ ALSAAudioSink::ALSAAudioSink() : Task("", 0, 0, 0) {
 
 ALSAAudioSink::~ALSAAudioSink() {
   stopAndWait();
-  snd_pcm_drain(pcm_handle);
+  // A stream that was opened but never actually started (still
+  // SND_PCM_STATE_PREPARED - e.g. the process shut down before any track
+  // ever played) has nothing to drain. Some ALSA plugins (observed with
+  // PipeWire's ALSA compat shim) hang in snd_pcm_drain() forever when
+  // called on a stream in that state instead of treating it as a no-op.
+  if (snd_pcm_state(pcm_handle) == SND_PCM_STATE_RUNNING) {
+    snd_pcm_drain(pcm_handle);
+  }
   snd_pcm_close(pcm_handle);
 }
 

@@ -12,7 +12,7 @@
 #include <avahi-client/client.h>
 #include <avahi-client/publish.h>
 #include <avahi-common/alternative.h>
-#include <avahi-common/simple-watch.h>
+#include <avahi-common/thread-watch.h>
 #elif !defined(BELL_DISABLE_AVAHI)
 #define BELL_DISABLE_AVAHI
 #endif
@@ -38,7 +38,17 @@ class implMDNSService : public MDNSService {
  public:
 #ifndef BELL_DISABLE_AVAHI
   static AvahiClient* avahiClient;
-  static AvahiSimplePoll* avahiPoll;
+  // AvahiThreadedPoll (not the plain AvahiSimplePoll this used to be) -
+  // it owns and pumps its own background thread for the D-Bus connection
+  // to avahi-daemon. A bare AvahiSimplePoll needs something else to call
+  // avahi_simple_poll_loop()/iterate() on it, which nothing here ever
+  // did - registration could still go out (the initial D-Bus calls write
+  // synchronously), but avahi_client_free() during unregisterService()
+  // hung forever waiting on I/O nothing was pumping. Any avahi_* call
+  // made from outside the poll thread must be bracketed with
+  // avahi_threaded_poll_lock()/unlock() per avahi's own thread-safety
+  // contract (thread-watch.h).
+  static AvahiThreadedPoll* avahiPoll;
 #endif
   static struct mdnsd* mdnsServer;
   static in_addr_t host;
@@ -57,7 +67,7 @@ std::atomic<size_t> implMDNSService::instances = 0;
 static std::mutex registerMutex;
 #ifndef BELL_DISABLE_AVAHI
 AvahiClient* implMDNSService::avahiClient = NULL;
-AvahiSimplePoll* implMDNSService::avahiPoll = NULL;
+AvahiThreadedPoll* implMDNSService::avahiPoll = NULL;
 #endif
 
 /**
@@ -68,10 +78,20 @@ AvahiSimplePoll* implMDNSService::avahiPoll = NULL;
 void implMDNSService::unregisterService() {
 #ifndef BELL_DISABLE_AVAHI
   if (avahiGroup) {
+    if (implMDNSService::avahiPoll) {
+      avahi_threaded_poll_lock(implMDNSService::avahiPoll);
+    }
     avahi_entry_group_free(avahiGroup);
+    if (implMDNSService::avahiPoll) {
+      avahi_threaded_poll_unlock(implMDNSService::avahiPoll);
+    }
     if (!--instances && implMDNSService::avahiClient) {
+      // Stops the poll thread first (its own documented shutdown order) -
+      // safe to free the client/poll without the lock afterwards, since
+      // nothing else touches them once the thread has stopped.
+      avahi_threaded_poll_stop(implMDNSService::avahiPoll);
       avahi_client_free(implMDNSService::avahiClient);
-      avahi_simple_poll_free(implMDNSService::avahiPoll);
+      avahi_threaded_poll_free(implMDNSService::avahiPoll);
       implMDNSService::avahiClient = nullptr;
       implMDNSService::avahiPoll = nullptr;
     }
@@ -94,44 +114,59 @@ std::unique_ptr<MDNSService> MDNSService::registerService(
 #ifndef BELL_DISABLE_AVAHI
   // try avahi first if available
   if (!implMDNSService::avahiPoll) {
-    implMDNSService::avahiPoll = avahi_simple_poll_new();
+    implMDNSService::avahiPoll = avahi_threaded_poll_new();
+    if (implMDNSService::avahiPoll &&
+        avahi_threaded_poll_start(implMDNSService::avahiPoll) < 0) {
+      avahi_threaded_poll_free(implMDNSService::avahiPoll);
+      implMDNSService::avahiPoll = nullptr;
+    }
   }
 
-  if (implMDNSService::avahiPoll && !implMDNSService::avahiClient) {
-    implMDNSService::avahiClient =
-        avahi_client_new(avahi_simple_poll_get(implMDNSService::avahiPoll),
-                         AvahiClientFlags(0), NULL, NULL, NULL);
-  }
   AvahiEntryGroup* avahiGroup = NULL;
+  if (implMDNSService::avahiPoll) {
+    avahi_threaded_poll_lock(implMDNSService::avahiPoll);
 
-  if (implMDNSService::avahiClient &&
-      (avahiGroup = avahi_entry_group_new(implMDNSService::avahiClient,
-                                          groupHandler, NULL)) == NULL) {
-    BELL_LOG(error, "MDNS", "cannot create service %s", serviceName.c_str());
-  }
-
-  if (avahiGroup != NULL) {
-    AvahiStringList* avahiTxt = NULL;
-
-    for (auto& [key, value] : txtData) {
-      avahiTxt =
-          avahi_string_list_add_pair(avahiTxt, key.c_str(), value.c_str());
+    if (!implMDNSService::avahiClient) {
+      implMDNSService::avahiClient = avahi_client_new(
+          avahi_threaded_poll_get(implMDNSService::avahiPoll),
+          AvahiClientFlags(0), NULL, NULL, NULL);
     }
 
-    std::string type(serviceType + "." + serviceProto);
-    int ret = avahi_entry_group_add_service_strlst(
-        avahiGroup, AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, (AvahiPublishFlags)0,
-        serviceName.c_str(), type.c_str(), NULL, NULL, servicePort, avahiTxt);
-    avahi_string_list_free(avahiTxt);
-
-    if (ret >= 0) {
-      ret = avahi_entry_group_commit(avahiGroup);
+    if (implMDNSService::avahiClient &&
+        (avahiGroup = avahi_entry_group_new(implMDNSService::avahiClient,
+                                            groupHandler, NULL)) == NULL) {
+      BELL_LOG(error, "MDNS", "cannot create service %s", serviceName.c_str());
     }
 
-    if (ret < 0) {
-      BELL_LOG(error, "MDNS", "cannot run service %s", serviceName.c_str());
-      avahi_entry_group_free(avahiGroup);
-    } else {
+    if (avahiGroup != NULL) {
+      AvahiStringList* avahiTxt = NULL;
+
+      for (auto& [key, value] : txtData) {
+        avahiTxt =
+            avahi_string_list_add_pair(avahiTxt, key.c_str(), value.c_str());
+      }
+
+      std::string type(serviceType + "." + serviceProto);
+      int ret = avahi_entry_group_add_service_strlst(
+          avahiGroup, AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC,
+          (AvahiPublishFlags)0, serviceName.c_str(), type.c_str(), NULL, NULL,
+          servicePort, avahiTxt);
+      avahi_string_list_free(avahiTxt);
+
+      if (ret >= 0) {
+        ret = avahi_entry_group_commit(avahiGroup);
+      }
+
+      if (ret < 0) {
+        BELL_LOG(error, "MDNS", "cannot run service %s", serviceName.c_str());
+        avahi_entry_group_free(avahiGroup);
+        avahiGroup = NULL;
+      }
+    }
+
+    avahi_threaded_poll_unlock(implMDNSService::avahiPoll);
+
+    if (avahiGroup != NULL) {
       BELL_LOG(info, "MDNS", "using avahi for %s", serviceName.c_str());
       return std::make_unique<implMDNSService>(avahiGroup);
     }

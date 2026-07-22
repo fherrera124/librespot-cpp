@@ -11,9 +11,10 @@
 #include "Login5Client.h"
 #include "Logger.h"  // for CSPOT_LOG
 
-// cJSON only, matching DealerClient - this project always builds
-// BELL_ONLY_CJSON, and the context-resolve response is protobuf's
-// canonical JSON mapping, not nanopb-decodable.
+// cJSON only, matching DealerClient - the context-resolve response is
+// protobuf's canonical JSON mapping, not nanopb-decodable. bell always
+// compiles cJSON.c regardless of BELL_ONLY_CJSON (nlohmann is only ever
+// additive), so this doesn't need that flag either.
 #include "cJSON.h"
 
 using namespace cspot;
