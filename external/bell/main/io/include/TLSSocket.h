@@ -21,13 +21,17 @@
 // mbedtls_entropy_context entirely, so randomness for those (DH key
 // generation, etc.) now comes from the PSA subsystem instead. That does
 // NOT extend to mbedtls_ssl_config's own f_rng field on mbedTLS 3.x,
-// though - confirmed genuinely different per platform: ESP_PLATFORM's
-// real mbedTLS 4.0 (~/.espressif/v6.0.1/esp-idf) doesn't even declare
+// though - confirmed genuinely different per mbedtls version, not
+// platform (gated on MBEDTLS_VERSION_NUMBER in TLSSocket.cpp, not
+// ESP_PLATFORM, so an older ESP-IDF still on 3.x or a future host
+// mbedtls on 4.x both take the right branch automatically): the real
+// mbedTLS 4.0 on this project's actual ESP-IDF target
+// (~/.espressif/v6.0.1/esp-idf) doesn't even declare
 // mbedtls_ssl_conf_rng() anymore, while Ubuntu's mbedtls 3.6.2 still
 // requires it explicitly ("RNG function (mandatory)") - skipping it
 // there made every real handshake fail immediately with
 // MBEDTLS_ERR_SSL_BAD_INPUT_DATA. TLSSocket.cpp calls it with a small
-// PSA-backed adapter, but only for !ESP_PLATFORM.
+// PSA-backed adapter, but only below mbedTLS 4.0.
 namespace bell {
 class TLSSocket : public bell::Socket {
  private:

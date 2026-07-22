@@ -5,6 +5,8 @@
 #include <sys/socket.h>   // for setsockopt, select
 #include <sys/time.h>     // for struct timeval (SO_SNDTIMEO)
 #include <sys/select.h>   // for fd_set, select
+#include <mbedtls/build_info.h>  // for MBEDTLS_VERSION_NUMBER, included first and
+                                 // explicitly - the version check below depends on it
 #include <mbedtls/net_sockets.h>  // for mbedtls_net_connect, mbedtls_net_free
 #include <mbedtls/ssl.h>          // for mbedtls_ssl_conf_authmode, mbedtls_...
 #include <cstddef>                // for NULL
@@ -14,18 +16,23 @@
 #include "X509Bundle.h"  // for shouldVerify, attach
 #include "psa_init.h"
 
-// mbedtls_ssl_conf_rng() genuinely doesn't exist in mbedTLS 4.0's public
-// API (confirmed against the real ESP-IDF toolchain,
-// ~/.espressif/v6.0.1/esp-idf, mbedtls component exactly 4.0.0 - zero
-// matches for the symbol anywhere in its include tree) - the SSL layer
-// really does draw its randomness from PSA unconditionally there, same
-// as this file's own long-standing comment says. mbedTLS 3.x (Ubuntu's
-// 3.6.2-3ubuntu1, this repo's own extras/cli host target) is different:
-// that field is still mandatory there ("RNG function (mandatory)" per
-// mbedtls_ssl_conf_rng()'s own doc comment) - skipping it left every
-// real TLS handshake failing instantly with MBEDTLS_ERR_SSL_BAD_INPUT_DATA,
-// confirmed live against a real Spotify AP connection.
-#ifndef ESP_PLATFORM
+// Gated on the actual mbedtls version, not ESP_PLATFORM - what matters is
+// which API mbedtls itself exposes. mbedtls_ssl_conf_rng() genuinely
+// doesn't exist in mbedTLS 4.0's public API (confirmed against the real
+// ESP-IDF toolchain, ~/.espressif/v6.0.1/esp-idf, mbedtls component
+// exactly 4.0.0 - zero matches for the symbol anywhere in its include
+// tree) - the SSL layer really does draw its randomness from PSA
+// unconditionally there, same as this file's own long-standing comment
+// says. mbedTLS 3.x (Ubuntu's 3.6.2-3ubuntu1, this repo's own extras/cli
+// host target) is different: that field is still mandatory there ("RNG
+// function (mandatory)" per mbedtls_ssl_conf_rng()'s own doc comment) -
+// skipping it left every real TLS handshake failing instantly with
+// MBEDTLS_ERR_SSL_BAD_INPUT_DATA, confirmed live against a real Spotify
+// AP connection. A version check (rather than an ESP_PLATFORM check)
+// keeps this correct regardless of platform - an older ESP-IDF still on
+// mbedtls 3.x, or any future host mbedtls that jumps to 4.x, both take
+// the right branch automatically.
+#if MBEDTLS_VERSION_NUMBER < 0x04000000
 #include <mbedtls/entropy.h>  // for MBEDTLS_ERR_ENTROPY_SOURCE_FAILED
 
 namespace {
@@ -115,8 +122,8 @@ void bell::TLSSocket::open(const std::string& hostUrl, uint16_t port) {
   }
 
   // mbedTLS 3.x only - see the top-of-file comment. Not needed (and not
-  // even declared) on ESP_PLATFORM's mbedTLS 4.0.
-#ifndef ESP_PLATFORM
+  // even declared) on mbedTLS 4.0.
+#if MBEDTLS_VERSION_NUMBER < 0x04000000
   mbedtls_ssl_conf_rng(&conf, psaRandomForMbedtls, nullptr);
 #endif
 

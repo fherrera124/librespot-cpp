@@ -1,15 +1,20 @@
 #include "Crypto.h"
 
+#include <mbedtls/build_info.h>  // for MBEDTLS_VERSION_NUMBER, included first and
+                                 // explicitly - every real branch below depends on it
 #include <mbedtls/base64.h>  // for mbedtls_base64_encode, mbedtls_base64_decode
 
-// Only public on a host build (non-ESP_PLATFORM) - same "moved private
-// under mbedTLS 4.0" situation as bignum.h just below, confirmed against
-// the real ESP-IDF toolchain (~/.espressif/v6.0.1's mbedtls component is
-// exactly 4.0.0): this header lives under tf-psa-crypto/drivers/builtin/
-// include/mbedtls/private/pkcs5.h there, not on the public include path.
-// See pbkdf2HmacSha1()'s own comment for why ESP_PLATFORM needs a
+// Gated on the actual mbedtls version, not ESP_PLATFORM - what matters is
+// which API mbedtls itself exposes, not which platform this is. Confirmed
+// against the real ESP-IDF toolchain (~/.espressif/v6.0.1, mbedtls
+// component exactly 4.0.0): this header lives under
+// tf-psa-crypto/drivers/builtin/include/mbedtls/private/pkcs5.h there, not
+// on the public include path - a version check catches this correctly
+// regardless of platform (an older ESP-IDF still on mbedtls 3.x, or any
+// future host mbedtls that jumps to 4.x, both take the right branch
+// automatically). See pbkdf2HmacSha1()'s own comment for why 4.0 needs a
 // different implementation entirely, not just a different include.
-#ifndef ESP_PLATFORM
+#if MBEDTLS_VERSION_NUMBER < 0x04000000
 #include <mbedtls/pkcs5.h>  // for mbedtls_pkcs5_pbkdf2_hmac_ext
 #endif
 
@@ -465,7 +470,7 @@ void CryptoMbedTLS::aesECBdecrypt(const std::vector<uint8_t>& key,
 //   mbedtls_pkcs5_pbkdf2_hmac_ext() (non-deprecated, still public in 3.x)
 //   has no such gate - verified against the RFC 6070 PBKDF2-HMAC-SHA1
 //   test vector on that same system.
-#ifdef ESP_PLATFORM
+#if MBEDTLS_VERSION_NUMBER >= 0x04000000
 std::vector<uint8_t> CryptoMbedTLS::pbkdf2HmacSha1(
     const std::vector<uint8_t>& password, const std::vector<uint8_t>& salt,
     int iterations, int digestSize) {
