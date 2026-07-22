@@ -119,6 +119,17 @@ void BufferedAudioSink::i2sFeedTask(void* pvParameters) {
     size_t itemSize =
         sink->dataBuffer->readBlocking(chunk, sizeof(chunk), 100);
     if (itemSize > 0) {
+      // TEMP DIAGNOSTIC (occasional audible click investigation,
+      // 2026-07-22): remove once resolved. Only logs the *first* empty
+      // poll after a run of real data, not every 100ms an idle/paused
+      // stream sits here - a real underrun mid-playback is what would
+      // explain a click (auto_clear zeroing the DMA output mid-waveform,
+      // not at a zero crossing).
+      if (sink->starvedLogged) {
+        ESP_LOGW(TAG, "buffer recovered after underrun");
+        sink->starvedLogged = false;
+      }
+
       size_t written = 0;
       while (written < itemSize) {
         size_t chunkWritten = 0;
@@ -131,6 +142,9 @@ void BufferedAudioSink::i2sFeedTask(void* pvParameters) {
         }
         written += chunkWritten;
       }
+    } else if (!sink->starvedLogged) {
+      ESP_LOGW(TAG, "buffer underrun: no PCM data for >100ms");
+      sink->starvedLogged = true;
     }
   }
 }
