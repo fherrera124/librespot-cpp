@@ -5,6 +5,7 @@
 #include <sys/socket.h>   // for setsockopt, select
 #include <sys/time.h>     // for struct timeval (SO_SNDTIMEO)
 #include <sys/select.h>   // for fd_set, select
+#include <mbedtls/entropy.h>      // for MBEDTLS_ERR_ENTROPY_SOURCE_FAILED
 #include <mbedtls/net_sockets.h>  // for mbedtls_net_connect, mbedtls_net_free
 #include <mbedtls/ssl.h>          // for mbedtls_ssl_conf_authmode, mbedtls_...
 #include <cstddef>                // for NULL
@@ -13,6 +14,17 @@
 #include "BellLogger.h"  // for AbstractLogger, BELL_LOG
 #include "X509Bundle.h"  // for shouldVerify, attach
 #include "psa_init.h"
+
+namespace {
+// mbedtls_ssl_conf_rng()'s callback signature - adapts the PSA random
+// generator this codebase already uses elsewhere (Crypto.cpp's
+// generateVectorWithRandomData()) to it.
+int psaRandomForMbedtls(void*, unsigned char* output, size_t len) {
+  return psa_generate_random(output, len) == PSA_SUCCESS
+             ? 0
+             : MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+}
+}  // namespace
 
 /**
  * Platform TLSSocket implementation for the mbedtls, ported for mbedTLS 4.0.
@@ -88,15 +100,26 @@ void bell::TLSSocket::open(const std::string& hostUrl, uint16_t port) {
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
   }
 
-  // mbedtls_ssl_conf_rng() was removed in mbedTLS 4.0 - PSA random
-  // generator is used unconditionally (see ensurePsaCryptoInit()).
-  //
+  // mandatory per mbedtls_ssl_conf_rng()'s own doc comment ("RNG function
+  // (mandatory)") - without it, conf.f_rng stays NULL and
+  // mbedtls_ssl_handshake() fails immediately with
+  // MBEDTLS_ERR_SSL_BAD_INPUT_DATA before any bytes go on the wire (real,
+  // pre-existing bug: this call used to be missing entirely, on the theory
+  // that PSA's RNG applies unconditionally - true for the entropy/DRBG
+  // subsystem itself, but the SSL layer's own f_rng callback is a separate,
+  // still-mandatory field mbedTLS never fills in on its own). Reuses the
+  // same PSA generator Crypto.cpp's generateVectorWithRandomData() does.
+  mbedtls_ssl_conf_rng(&conf, psaRandomForMbedtls, nullptr);
+
   // Without this, mbedtls_ssl_read() can block forever on a connection an
   // intermediate NAT/carrier silently dropped without a FIN/RST. Default is
   // F58's 15000ms; overridable per-instance via setReadTimeout() before
   // open() - Dealer WebSocket needs a longer value (§22).
   mbedtls_ssl_conf_read_timeout(&conf, readTimeoutMs);
-  mbedtls_ssl_setup(&ssl, &conf);
+
+  if ((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0) {
+    throw std::runtime_error("mbedtls_ssl_setup failed");
+  }
 
   if ((ret = mbedtls_ssl_set_hostname(&ssl, hostUrl.c_str())) != 0) {
     throw std::runtime_error("mbedtls_ssl_set_hostname failed");
