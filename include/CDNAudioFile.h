@@ -1,10 +1,12 @@
 #pragma once
 
-#include <cstddef>  // for size_t
-#include <cstdint>  // for uint8_t
-#include <memory>   // for shared_ptr, unique_ptr
-#include <string>   // for string
-#include <vector>   // for vector
+#include <atomic>     // for atomic
+#include <cstddef>    // for size_t
+#include <cstdint>    // for uint8_t
+#include <functional> // for function
+#include <memory>     // for shared_ptr, unique_ptr
+#include <string>     // for string
+#include <vector>     // for vector
 
 #include "Crypto.h"      // for Crypto
 #include "HTTPClient.h"  // for HTTPClient
@@ -32,6 +34,22 @@ struct CDNConnection {
   // edge, but that's not guaranteed (CDN failover), so CDNAudioFile checks
   // this explicitly before ever trusting a reuse instead of assuming it.
   std::string host;
+
+  // Set once by the owner (TrackPlayer) to a slot it keeps around across
+  // tracks - fetchRange() updates *activeFd with the connection's current
+  // fd right before returning, once a body read is the only thing left
+  // to block on. Lets the owner's resetState() (called cross-thread, on
+  // a stop or a rapid skip) shutdown() the fd to unblock a reader thread
+  // stuck in a body read - the same use case SocketStream.h's getFd()
+  // doc comment already anticipated. Null for any caller that doesn't
+  // need this (there's currently only one).
+  std::atomic<int>* activeFd = nullptr;
+  // Set once by the owner - true while a stop/reset is in progress.
+  // fetchRange() checks this after a reuse attempt fails, before trying
+  // a fresh reconnect: without it, an activeFd-triggered shutdown() would
+  // just get transparently retried on a brand new connection, defeating
+  // the interruption.
+  std::function<bool()> shouldAbort;
 };
 
 class CDNAudioFile {

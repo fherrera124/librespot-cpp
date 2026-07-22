@@ -4,6 +4,12 @@
 #include <mutex>   // for mutex, scoped_lock
 #include <string>  // for string
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <sys/socket.h>  // for ::shutdown, SHUT_RDWR
+#endif
+
 #include "BellLogger.h"        // for AbstractLogger
 #include "BellUtils.h"         // for BELL_SLEEP_MS
 #include "Decoder.h"
@@ -46,6 +52,9 @@ TrackPlayer::TrackPlayer(std::shared_ptr<cspot::Context> ctx,
   this->reachedPlaybackCallback = reachedPlaybackCallback;
   this->trackQueue = trackQueue;
   this->playbackSemaphore = std::make_unique<bell::WrappedSemaphore>(5);
+
+  cdnConnection.activeFd = &activeCdnFd;
+  cdnConnection.shouldAbort = [this] { return pendingReset.load() || shouldStop(); };
 }
 
 TrackPlayer::~TrackPlayer() {
@@ -71,6 +80,22 @@ void TrackPlayer::resetState(bool paused) {
   std::scoped_lock lock(dataOutMutex);
 
   CSPOT_LOG(info, "Resetting state");
+
+  // Unblocks runTask() if it's currently stuck in a CDN body read
+  // (CDNAudioFile::openStream()/readBytes()) - those have no shouldStop()
+  // awareness of their own. Safe to call unconditionally: -1 (no live
+  // connection yet) is a no-op, and shutdown()ing an idle-but-open
+  // connection just costs one extra reconnect next time it's used
+  // (fetchRange() already handles that as a normal case). See
+  // CDNConnection's own comment on activeFd/shouldAbort, CDNAudioFile.h.
+  int fd = activeCdnFd.load();
+  if (fd >= 0) {
+#ifdef _WIN32
+    shutdown(fd, SD_BOTH);
+#else
+    ::shutdown(fd, SHUT_RDWR);
+#endif
+  }
 }
 
 bool TrackPlayer::getDecoderPositionMs(uint32_t& outMs) const {

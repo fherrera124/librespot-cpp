@@ -68,6 +68,15 @@ void CDNAudioFile::openStream() {
   }
 
   this->connection.response->stream().read((char*)header.data(), OPUS_HEADER_SIZE);
+  // std::istream::read() doesn't throw on a short read by default - it
+  // just leaves fewer bytes than requested and sets failbit, silently.
+  // Without this check, a truncated read (network hiccup, or the
+  // connection being shutdown() out from under it - see TrackPlayer::
+  // resetState()) would continue on with a partially-filled header
+  // buffer instead of raising a catchable error.
+  if (this->connection.response->stream().gcount() != OPUS_HEADER_SIZE) {
+    throw std::runtime_error("CDN header read truncated");
+  }
 
   // A short/truncated HTTP response (declared Content-Length smaller than
   // the Spotify Opus header) would underflow this size_t subtraction into
@@ -100,6 +109,10 @@ void CDNAudioFile::openStream() {
 
   this->connection.response->stream().read((char*)footer.data(),
                                             this->footer.size());
+  if (static_cast<size_t>(this->connection.response->stream().gcount()) !=
+      this->footer.size()) {
+    throw std::runtime_error("CDN footer read truncated");
+  }
 
   this->decrypt(footer.data(), footer.size(), footerStartLocation);
   // headerReused=1 here is the direct signal that this track's connection
@@ -209,6 +222,12 @@ size_t CDNAudioFile::readBytes(uint8_t* dst, size_t bytes) {
     try {
       this->connection.response->stream().read((char*)this->httpBuffer.data(),
                                                 lastRequestCapacity);
+      // See openStream()'s header/footer reads for why this check exists -
+      // a short read here doesn't throw on its own by default.
+      if (static_cast<size_t>(this->connection.response->stream().gcount()) !=
+          lastRequestCapacity) {
+        throw std::runtime_error("CDN range read truncated");
+      }
     } catch (const std::exception& e) {
       CSPOT_LOG(error, "CDN read failed after reconnect: %s", e.what());
       return 0;
@@ -250,6 +269,13 @@ bool CDNAudioFile::fetchRange(const std::string& url,
       connection.response->get(url, headers);
       reused = true;
     } catch (const std::exception& e) {
+      // A stop/reset in progress (TrackPlayer::resetState()) is why this
+      // connection just failed in the first place - shutdown()'d out from
+      // under this exact call. Reconnecting fresh here would silently
+      // retry the same request and defeat that interruption entirely.
+      if (connection.shouldAbort && connection.shouldAbort()) {
+        throw;
+      }
       CSPOT_LOG(info,
                "CDN request failed on existing connection (%s), reconnecting...",
                e.what());
@@ -271,5 +297,13 @@ bool CDNAudioFile::fetchRange(const std::string& url,
     connection.response = bell::HTTPClient::get(url, headers);
     connection.host = host;
   }
+
+  // Only the body reads remain from here - record the fd now so the
+  // owner (TrackPlayer::resetState(), called cross-thread) can
+  // shutdown() it if a stop/reset arrives while one of those blocks.
+  if (connection.activeFd) {
+    connection.activeFd->store(connection.response->stream().getFd());
+  }
+
   return reused;
 }

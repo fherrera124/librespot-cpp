@@ -93,6 +93,10 @@ class TrackPlayer : bell::Task {
   // time, so there's never a concurrency conflict over it) - see
   // CDNConnection's own comment, CDNAudioFile.h.
   cspot::CDNConnection cdnConnection;
+  // Wired to cdnConnection.activeFd in the constructor - see
+  // CDNConnection's own comment on activeFd for why this exists
+  // (resetState() shutdown()s it to interrupt an in-flight CDN read).
+  std::atomic<int> activeCdnFd{-1};
 
   std::unique_ptr<bell::WrappedSemaphore> playbackSemaphore;
 
