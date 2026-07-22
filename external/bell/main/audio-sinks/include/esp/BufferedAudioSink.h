@@ -53,10 +53,6 @@ class BufferedAudioSink : public AudioSink {
   i2s_chan_handle_t txChannel = nullptr;
   std::unique_ptr<bell::CircularBuffer> dataBuffer;
   std::atomic<bool> flushRequested{false};
-  // TEMP DIAGNOSTIC (occasional audible click investigation, 2026-07-22):
-  // remove once resolved. Logs once per underrun episode instead of every
-  // 100ms poll - i2sFeedTask()'s own comment.
-  bool starvedLogged = false;
 
   uint32_t sampleRate = 44100;
   uint8_t channelCount = 2;
