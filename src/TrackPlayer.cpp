@@ -1,8 +1,10 @@
 #include "TrackPlayer.h"
 
-#include <memory>  // for unique_ptr, make_unique
-#include <mutex>   // for mutex, scoped_lock
-#include <string>  // for string
+#include <algorithm>  // for clamp
+#include <cstdint>    // for int16_t
+#include <memory>     // for unique_ptr, make_unique
+#include <mutex>      // for mutex, scoped_lock
+#include <string>     // for string
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -12,7 +14,9 @@
 
 #include "BellLogger.h"        // for AbstractLogger
 #include "BellUtils.h"         // for BELL_SLEEP_MS
+#include "CSpotContext.h"      // for Context (ctx->config.normalisationPregainDb)
 #include "Decoder.h"
+#include "LoudnessNormalisation.h"  // for computeNormalizationGain
 #include "Logger.h"            // for CSPOT_LOG
 #include "Mp3TrackDecoder.h"
 #include "Packet.h"            // for cspot
@@ -38,6 +42,19 @@ std::unique_ptr<Decoder> createDecoder(AudioFormat format) {
     return std::make_unique<VorbisTrackDecoder>();
   }
   return std::make_unique<Mp3TrackDecoder>();
+}
+
+// Interleaved 16-bit PCM throughout this pipeline (ALSAAudioSink/
+// BufferedAudioSink both hardcode S16_LE) - scale each sample, clamp so a
+// pregain>0 or a track_peak this container underestimates can't wrap around.
+void applyGain(uint8_t* data, size_t bytes, float gain) {
+  auto* samples = reinterpret_cast<int16_t*>(data);
+  size_t sampleCount = bytes / sizeof(int16_t);
+  for (size_t i = 0; i < sampleCount; i++) {
+    float scaled = samples[i] * gain;
+    samples[i] = static_cast<int16_t>(
+        std::clamp(scaled, -32768.0f, 32767.0f));
+  }
 }
 }  // namespace
 
@@ -142,7 +159,7 @@ bool TrackPlayer::setAudioParams(uint32_t sampleRate, uint8_t channelCount,
                    : false;
 }
 
-void TrackPlayer::feedChunk(const uint8_t* data, size_t bytes,
+void TrackPlayer::feedChunk(uint8_t* data, size_t bytes,
                             std::string_view trackId,
                             bool& notifiedThisTrack) {
   if (!notifiedThisTrack && reachedPlaybackCallback) {
@@ -152,6 +169,10 @@ void TrackPlayer::feedChunk(const uint8_t* data, size_t bytes,
              (int)trackId.size(), trackId.data());
     reachedPlaybackCallback(trackId);
     notifiedThisTrack = true;
+  }
+
+  if (normalizationGain != 1.0f) {
+    applyGain(data, bytes, normalizationGain);
   }
 
   // Retries this same already-decoded chunk while paused instead of
@@ -309,6 +330,15 @@ void TrackPlayer::runTask() {
         this->eofCallback();
         continue;
       }
+
+      auto normData = currentTrackStream->getNormalizationData();
+      normalizationGain = computeNormalizationGain(
+          normData.trackGainDb, normData.trackPeak,
+          ctx->config.normalisationPregainDb);
+      CSPOT_LOG(info,
+               "Loudness: track_gain=%.2fdB track_peak=%.3f pregain=%.2fdB -> factor=%.3f",
+               normData.trackGainDb, normData.trackPeak,
+               ctx->config.normalisationPregainDb, normalizationGain);
 
       if (pendingReset || !currentSongPlaying) {
         continue;

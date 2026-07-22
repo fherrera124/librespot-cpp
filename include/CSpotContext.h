@@ -29,6 +29,11 @@ struct Context {
     std::vector<uint8_t> authData;
     int volume;
 
+    // Added to Spotify's own per-track gain before applying it
+    // (TrackPlayer::feedChunk() - see LoudnessNormalisation.h). 0 = play
+    // back at Spotify's standard -14 LUFS target as-is.
+    float normalisationPregainDb = 0.0f;
+
     std::string username;
     std::string countryCode;
   };

@@ -52,6 +52,14 @@ struct CDNConnection {
   std::function<bool()> shouldAbort;
 };
 
+// Spotify-computed loudness data (ITU-R BS.1770), embedded by the encoder in
+// every CDN file's own proprietary header - not something we measure
+// ourselves. track_peak is linear (0-1], not dB.
+struct NormalizationData {
+  float trackGainDb;
+  float trackPeak;
+};
+
 class CDNAudioFile {
 
  public:
@@ -62,6 +70,11 @@ class CDNAudioFile {
   * @brief Opens connection to the provided cdn url, and fetches track metadata.
   */
   void openStream();
+
+  // Valid only after openStream() returns - the floats live at fixed offsets
+  // inside the header it already fetches/decrypts in full (see
+  // SPOTIFY_NORMALIZATION_GAIN_OFFSET below).
+  NormalizationData getNormalizationData() const;
 
   /**
   * @brief Read and decrypt part of the cdn stream
@@ -93,6 +106,13 @@ class CDNAudioFile {
   const int OPUS_HEADER_SIZE = 8 * 1024;
   const int OPUS_FOOTER_PREFFERED = 1024 * 12;  // 12K should be safe
   const int SEEK_MARGIN_SIZE = 1024 * 4;
+
+  // Byte offsets within `header` of the two little-endian f32 fields we use
+  // (track_gain_db, track_peak) - verified against librespot's own
+  // NormalisationData::parse_from_ogg. album_gain_db/album_peak follow
+  // immediately after (offsets 152/156) - unused for now, track-only gain.
+  static constexpr size_t SPOTIFY_NORMALIZATION_GAIN_OFFSET = 144;
+  static constexpr size_t SPOTIFY_NORMALIZATION_PEAK_OFFSET = 148;
 
   // Target seconds of audio per CDN range-request, independent of
   // bitrate. Retune by changing only this constant - see F83/F84.

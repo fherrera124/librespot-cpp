@@ -127,6 +127,15 @@ void CDNAudioFile::openStream() {
   this->lastRequestCapacity = 0;
 }
 
+NormalizationData CDNAudioFile::getNormalizationData() const {
+  NormalizationData data{};
+  memcpy(&data.trackGainDb, header.data() + SPOTIFY_NORMALIZATION_GAIN_OFFSET,
+        sizeof(float));
+  memcpy(&data.trackPeak, header.data() + SPOTIFY_NORMALIZATION_PEAK_OFFSET,
+        sizeof(float));
+  return data;
+}
+
 size_t CDNAudioFile::readBytes(uint8_t* dst, size_t bytes) {
   size_t offsetPosition = position + SPOTIFY_OPUS_HEADER;
   size_t actualFileSize = this->totalFileSize + SPOTIFY_OPUS_HEADER;

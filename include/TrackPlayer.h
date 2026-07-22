@@ -131,11 +131,19 @@ class TrackPlayer : bell::Task {
   std::atomic<bool> hasDecoderPosition = false;
   std::atomic<uint32_t> decoderPositionMs = 0;
 
+  // Recomputed once per track (runTask(), right after openStream()) from
+  // its own CDN-embedded gain/peak - see LoudnessNormalisation.h. Only ever
+  // touched from this task's own thread, same as currentTrackStream/decoder.
+  float normalizationGain = 1.0f;
+
   // Fires reachedPlaybackCallback once (via notifiedThisTrack), waits out
   // a pause without discarding `data`, then feeds it to audioSink. No-op
   // (data dropped) if a reset/stop landed while waiting. Codec-agnostic -
   // called with whatever the current Decoder::readChunk() produced.
-  void feedChunk(const uint8_t* data, size_t bytes, std::string_view trackId,
+  // Non-const: applies normalizationGain to `data` in place before it's
+  // handed onward - safe, `data` points into the decoder's own scratch
+  // buffer, about to be overwritten by the next readChunk() anyway.
+  void feedChunk(uint8_t* data, size_t bytes, std::string_view trackId,
                 bool& notifiedThisTrack);
 
   enum class LoadWaitOutcome { READY, FAILED, RESET, TIMED_OUT };
