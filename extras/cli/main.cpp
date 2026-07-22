@@ -81,6 +81,8 @@ void printUsage() {
                "clients (default: \"CSpot CLI\")\n";
   std::cout << "-b, --bitrate <kbps>      Streaming bitrate: 96, 160 or "
                "320\n";
+  std::cout << "--normalisation-pregain-db <db>  Added to Spotify's own "
+               "per-track gain (default: 0 = standard -14 LUFS)\n";
   std::cout << "-h, --help                Show this help\n";
 }
 
@@ -124,6 +126,7 @@ int main(int argc, char** argv) {
   receiverConfig.bitrate = args->bitrate;
   receiverConfig.clientId = args->clientId;
   receiverConfig.clientSecret = args->clientSecret;
+  receiverConfig.normalisationPregainDb = args->normalisationPregainDb;
 
   auto receiver = std::make_unique<cspot::SpotifyConnectReceiver>(
       std::move(audioSink), receiverConfig, handleEngineEvent,

@@ -36,6 +36,12 @@ std::shared_ptr<CommandLineArguments> CommandLineArguments::parse(int argc,
         throw std::invalid_argument("invalid bitrate argument");
       }
       result->bitrate = std::stoi(bitrateStr);
+    } else if (stringVal == "--normalisation-pregain-db") {
+      if (i >= argc - 1) {
+        throw std::invalid_argument(
+            "expected value after --normalisation-pregain-db");
+      }
+      result->normalisationPregainDb = std::stof(std::string(argv[++i]));
     } else {
       throw std::invalid_argument(("unknown flag '" + stringVal + "'").c_str());
     }

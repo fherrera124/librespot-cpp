@@ -14,6 +14,7 @@ class CommandLineArguments {
   std::string clientSecret;
   std::string deviceName = "CSpot CLI";
   int bitrate = 160;  // 96, 160 or 320 (kbps) - matches SpotifyConnectReceiverConfig::bitrate
+  float normalisationPregainDb = 0.0f;
   bool shouldShowHelp = false;
 
   CommandLineArguments() = default;

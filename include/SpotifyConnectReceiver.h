@@ -26,6 +26,9 @@ struct SpotifyConnectReceiverConfig {
   std::string clientId;
   std::string clientSecret;
   uint16_t zeroconfHttpPort = 8090;
+  // See Context::ConfigState's own field (CSpotContext.h) - just
+  // forwarded there in runSessionInner().
+  float normalisationPregainDb = 0.0f;
 };
 
 // Runs a Spotify Connect device end-to-end: ZeroConf pairing (HTTP server +
@@ -87,6 +90,7 @@ class SpotifyConnectReceiver : public bell::Task {
   uint16_t zeroconfHttpPort;
   std::string clientId;
   std::string clientSecret;
+  float normalisationPregainDb;
   EventHandler eventHandler;
   ConnectionStateCallback connectionStateCallback;
 

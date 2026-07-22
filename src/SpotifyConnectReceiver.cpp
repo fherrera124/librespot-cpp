@@ -32,6 +32,7 @@ SpotifyConnectReceiver::SpotifyConnectReceiver(
       zeroconfHttpPort(config.zeroconfHttpPort),
       clientId(config.clientId),
       clientSecret(config.clientSecret),
+      normalisationPregainDb(config.normalisationPregainDb),
       eventHandler(std::move(eventHandler)),
       connectionStateCallback(std::move(onConnectionStateChanged)),
       audioSink(std::move(audioSink)) {}
@@ -196,6 +197,8 @@ void SpotifyConnectReceiver::runSessionInner() {
     ctx->config.audioFormat = AudioFormat_OGG_VORBIS_96;
   else
     ctx->config.audioFormat = AudioFormat_OGG_VORBIS_160;
+
+  ctx->config.normalisationPregainDb = normalisationPregainDb;
 
   ctx->session->connectWithRandomAp();
   ctx->config.authData = ctx->session->authenticate(blob);
