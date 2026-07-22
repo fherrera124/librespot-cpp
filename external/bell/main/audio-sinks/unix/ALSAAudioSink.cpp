@@ -31,7 +31,15 @@ ALSAAudioSink::ALSAAudioSink() : Task("", 0, 0, 0) {
   pcm = snd_pcm_hw_params_set_rate_near(pcm_handle, params, &rate, 0);
   if (pcm < 0)
     printf("ERROR: Can't set rate. %s\n", snd_strerror(pcm));
-  unsigned int periodTime = 800;
+  // Microseconds, not milliseconds - this was 800 (0.8ms), giving a
+  // ~2.4ms total ring buffer (3 slots) that real playback on this host
+  // (Ubuntu + PipeWire's ALSA compat shim, which adds its own per-call
+  // IPC overhead) couldn't keep up with: the ring buffer fills solid
+  // within a couple of seconds of any track starting and never recovers,
+  // silently stalling feedPCMFrames() forever with no ALSA error at all
+  // (confirmed live - runTask() just stops draining, no -EPIPE/exit
+  // logged). 20ms is a normal desktop period size with real headroom.
+  unsigned int periodTime = 20000;
   int dir = -1;
   snd_pcm_hw_params_set_period_time_near(pcm_handle, params, &periodTime, &dir);
   /* Write parameters */

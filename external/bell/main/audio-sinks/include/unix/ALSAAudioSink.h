@@ -96,7 +96,11 @@ class ALSAAudioSink : public AudioSink, public bell::Task {
   void runTask();
 
  private:
-  RingbufferPointer<std::vector<uint8_t>, 3> ringbuffer;
+  // 8 slots at the ~20ms period size ALSAAudioSink.cpp's constructor now
+  // requests gives ~160ms of headroom against scheduling/IPC jitter
+  // (was 3 slots at a ~0.8ms period - ~2.4ms total, nowhere near enough
+  // through PipeWire's ALSA compat shim - see that constructor's comment).
+  RingbufferPointer<std::vector<uint8_t>, 8> ringbuffer;
   // ALSA return codes are negative on error (e.g. -EPIPE) - was unsigned,
   // silently making every "< 0"/"== -EPIPE" check below impossible to
   // ever be true regardless of the operator-precedence fix.
