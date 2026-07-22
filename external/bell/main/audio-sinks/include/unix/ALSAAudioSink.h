@@ -4,6 +4,7 @@
 #include <alsa/asoundlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <atomic>
 #include <fstream>
 #include <memory>
 #include <mutex>
@@ -93,21 +94,22 @@ class ALSAAudioSink : public AudioSink, public bell::Task {
   ALSAAudioSink();
   ~ALSAAudioSink();
   void feedPCMFrames(const uint8_t* buffer, size_t bytes);
+  // Discards anything queued (ring buffer, buff accumulator) and whatever
+  // ALSA itself is still holding. Callable from any thread - only sets
+  // flushRequested and clears the buffers this class owns; the actual
+  // snd_pcm_drop()/prepare() calls happen on runTask()'s own thread.
+  void flush() override;
   void runTask();
 
  private:
-  // 8 slots at the ~20ms period size ALSAAudioSink.cpp's constructor now
-  // requests gives ~160ms of headroom against scheduling/IPC jitter
-  // (was 3 slots at a ~0.8ms period - ~2.4ms total, nowhere near enough
-  // through PipeWire's ALSA compat shim - see that constructor's comment).
+  // 8 slots * ~20ms period = ~160ms headroom against scheduling/IPC jitter.
   RingbufferPointer<std::vector<uint8_t>, 8> ringbuffer;
-  // ALSA return codes are negative on error (e.g. -EPIPE) - was unsigned,
-  // silently making every "< 0"/"== -EPIPE" check below impossible to
-  // ever be true regardless of the operator-precedence fix.
-  int pcm;
+  int pcm;  // signed: ALSA return codes are negative on error (e.g. -EPIPE)
   snd_pcm_t* pcm_handle;
   snd_pcm_hw_params_t* params;
   snd_pcm_uframes_t frames;
   int buff_size;
+  std::mutex buffMutex;
   std::vector<uint8_t> buff;
+  std::atomic<bool> flushRequested{false};
 };

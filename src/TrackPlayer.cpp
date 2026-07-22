@@ -81,6 +81,17 @@ void TrackPlayer::resetState(bool paused) {
 
   CSPOT_LOG(info, "Resetting state");
 
+  // Discards whatever's already been handed to the sink but not played
+  // yet - without this, a track skip kept playing the old track's
+  // already-buffered audio for however deep the sink's own buffering
+  // goes (observed live: ALSAAudioSink's ring buffer, deepened earlier
+  // this session to fix an underrun stall, made this clearly audible).
+  // setPaused() already did this for a plain pause; resetState() never
+  // did, for skip/next/prev or loading a new track outright.
+  if (audioSink) {
+    audioSink->flush();
+  }
+
   // Unblocks runTask() if it's currently stuck in a CDN body read
   // (CDNAudioFile::openStream()/readBytes()) - those have no shouldStop()
   // awareness of their own. Safe to call unconditionally: -1 (no live
