@@ -1,6 +1,7 @@
 #include "Crypto.h"
 
 #include <mbedtls/base64.h>  // for mbedtls_base64_encode, mbedtls_base64_decode
+#include <mbedtls/pkcs5.h>   // for mbedtls_pkcs5_pbkdf2_hmac_ext
 
 // mbedtls/bignum.h is only guaranteed public via ESP-IDF's own mbedTLS
 // port (components/mbedtls/port/include/mbedtls/bignum.h) - a "stock"
@@ -436,38 +437,25 @@ void CryptoMbedTLS::aesECBdecrypt(const std::vector<uint8_t>& key,
 
 // PBKDF2
 //
-// mbedtls/pkcs5.h was removed in mbedTLS 4.0; PSA has native PBKDF2-HMAC
-// support as a key-derivation algorithm instead.
+// Real ZeroConf pairing against this exact PSA-based implementation
+// failed on a real, currently-supported build (Ubuntu's mbedtls
+// 3.6.2-3ubuntu1, this repo's own extras/cli host target):
+// psa_key_derivation_setup(PSA_ALG_PBKDF2_HMAC(PSA_ALG_SHA_1)) returns
+// PSA_ERROR_NOT_SUPPORTED there - PBKDF2-HMAC as a PSA key-derivation
+// algorithm isn't compiled into every mbedtls build, distro-packaged or
+// otherwise. mbedtls_pkcs5_pbkdf2_hmac_ext() (non-deprecated, still
+// public in 3.x) has no such gate and is verified against the RFC 6070
+// PBKDF2-HMAC-SHA1 test vector on that same system.
 std::vector<uint8_t> CryptoMbedTLS::pbkdf2HmacSha1(
     const std::vector<uint8_t>& password, const std::vector<uint8_t>& salt,
     int iterations, int digestSize) {
-  ensurePsaCryptoInit();
-
   auto digest = std::vector<uint8_t>(digestSize);
 
-  psa_key_derivation_operation_t op = PSA_KEY_DERIVATION_OPERATION_INIT;
-  psa_status_t status =
-      psa_key_derivation_setup(&op, PSA_ALG_PBKDF2_HMAC(PSA_ALG_SHA_1));
-  // Order is mandated by PSA_ALG_PBKDF2_HMAC: cost, then salt, then password.
-  if (status == PSA_SUCCESS) {
-    status = psa_key_derivation_input_integer(
-        &op, PSA_KEY_DERIVATION_INPUT_COST, iterations);
-  }
-  if (status == PSA_SUCCESS) {
-    status = psa_key_derivation_input_bytes(
-        &op, PSA_KEY_DERIVATION_INPUT_SALT, salt.data(), salt.size());
-  }
-  if (status == PSA_SUCCESS) {
-    status = psa_key_derivation_input_bytes(
-        &op, PSA_KEY_DERIVATION_INPUT_PASSWORD, password.data(),
-        password.size());
-  }
-  if (status == PSA_SUCCESS) {
-    status = psa_key_derivation_output_bytes(&op, digest.data(), digestSize);
-  }
-  psa_key_derivation_abort(&op);
+  int ret = mbedtls_pkcs5_pbkdf2_hmac_ext(
+      MBEDTLS_MD_SHA1, password.data(), password.size(), salt.data(),
+      salt.size(), iterations, digestSize, digest.data());
 
-  if (status != PSA_SUCCESS) {
+  if (ret != 0) {
     throw std::runtime_error("pbkdf2HmacSha1 failed");
   }
 
