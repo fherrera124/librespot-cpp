@@ -328,26 +328,34 @@ void QueuedTrack::stepLoadAudioFile(
   // Request audio key
   this->pendingAudioKeyRequest = ctx->session->requestAudioKey(
       trackId, fileId,
-      [this, updateSemaphore](
+      [weakSelf = weak_from_this(), updateSemaphore](
           bool success, const std::vector<uint8_t>& audioKey) {
+        auto self = weakSelf.lock();
+        if (!self) {
+          // See the class comment - destroyed while this request was
+          // still in flight.
+          updateSemaphore->give();
+          return;
+        }
+
         if (success) {
           CSPOT_LOG(info, "Got audio key");
-          this->audioKey =
+          self->audioKey =
               std::vector<uint8_t>(audioKey.begin() + 4, audioKey.end());
 
-          loadAttempts = 0;  // fresh budget for the CDN URL step
-          setState(State::CDN_REQUIRED);
-        } else if (++loadAttempts < MAX_LOAD_ATTEMPTS) {
+          self->loadAttempts = 0;  // fresh budget for the CDN URL step
+          self->setState(State::CDN_REQUIRED);
+        } else if (++self->loadAttempts < MAX_LOAD_ATTEMPTS) {
           CSPOT_LOG(error, "Failed to get audio key, retrying (%d/%d)",
-                   loadAttempts, MAX_LOAD_ATTEMPTS - 1);
-          retryNotBeforeTime =
+                   self->loadAttempts, MAX_LOAD_ATTEMPTS - 1);
+          self->retryNotBeforeTime =
               std::chrono::steady_clock::now() + LOAD_RETRY_BACKOFF;
-          setState(State::KEY_REQUIRED);  // processTrack() calls this step again
+          self->setState(State::KEY_REQUIRED);  // processTrack() calls this step again
         } else {
           CSPOT_LOG(error, "Failed to get audio key, giving up after %d attempts",
                    MAX_LOAD_ATTEMPTS);
-          setState(State::FAILED);
-          loadedSemaphore->give();
+          self->setState(State::FAILED);
+          self->loadedSemaphore->give();
         }
         updateSemaphore->give();
       });
@@ -460,28 +468,36 @@ void QueuedTrack::stepLoadMetadata(
       ref.type == TrackReference::Type::TRACK ? "track" : "episode",
       bytesToHexString(ref.gid).c_str());
 
-  auto responseHandler = [this, pbTrack, pbEpisode,
+  auto responseHandler = [weakSelf = weak_from_this(), pbTrack, pbEpisode,
                           updateSemaphore](MercurySession::Response& res) {
+    auto self = weakSelf.lock();
+    if (!self) {
+      // This QueuedTrack was destroyed while the request was in flight
+      // (see the class comment) - nothing left to update.
+      updateSemaphore->give();
+      return;
+    }
+
     if (res.parts.size() == 0) {
-      if (++loadAttempts < MAX_LOAD_ATTEMPTS) {
+      if (++self->loadAttempts < MAX_LOAD_ATTEMPTS) {
         CSPOT_LOG(error, "Empty metadata response, retrying (%d/%d)",
-                 loadAttempts, MAX_LOAD_ATTEMPTS - 1);
-        retryNotBeforeTime =
+                 self->loadAttempts, MAX_LOAD_ATTEMPTS - 1);
+        self->retryNotBeforeTime =
             std::chrono::steady_clock::now() + LOAD_RETRY_BACKOFF;
-        setState(State::QUEUED);  // processTrack() calls this step again
+        self->setState(State::QUEUED);  // processTrack() calls this step again
       } else {
         CSPOT_LOG(error,
                  "Empty metadata response, giving up after %d attempts",
                  MAX_LOAD_ATTEMPTS);
-        setState(State::FAILED);
-        loadedSemaphore->give();
+        self->setState(State::FAILED);
+        self->loadedSemaphore->give();
       }
       updateSemaphore->give();
       return;
     }
 
     // Parse the metadata
-    if (ref.type == TrackReference::Type::TRACK) {
+    if (self->ref.type == TrackReference::Type::TRACK) {
       pb_release(Track_fields, pbTrack);
       pbDecode(*pbTrack, Track_fields, res.parts[0]);
     } else {
@@ -489,10 +505,10 @@ void QueuedTrack::stepLoadMetadata(
       pbDecode(*pbEpisode, Episode_fields, res.parts[0]);
     }
 
-    loadAttempts = 0;  // fresh budget for the next step
+    self->loadAttempts = 0;  // fresh budget for the next step
 
     // Parse received metadata
-    stepParseMetadata(pbTrack, pbEpisode);
+    self->stepParseMetadata(pbTrack, pbEpisode);
 
     updateSemaphore->give();
   };

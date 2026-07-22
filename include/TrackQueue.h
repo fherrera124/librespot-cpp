@@ -32,7 +32,23 @@ struct TrackInfo {
   void loadPbEpisode(Episode* pbEpisode, const std::vector<uint8_t>& gid);
 };
 
-class QueuedTrack {
+// enable_shared_from_this: stepLoadMetadata()/stepLoadAudioFile() register
+// async callbacks (Mercury metadata/audio-key responses) that can fire on
+// a different thread an arbitrary time later. A rapid skipTrack(PREV) (or
+// any other preloadedTracks.clear()) can destroy this object while one of
+// those is still in flight - real crash, found on hardware: the response
+// arrives after the object's already gone, the callback's captured `this`
+// is dangling, use-after-free. weak_from_this() (captured instead of
+// `this`) + locking it back to a shared_ptr at the top of each callback is
+// what closes that window - either the lock fails (object already gone,
+// safely no-op) or it succeeds and keeps the object alive for the rest of
+// that callback's execution, even if the last external owner
+// (preloadedTracks) drops its reference concurrently. The destructor's
+// own ctx->session->unregister() calls are necessary but not sufficient
+// by themselves - they only stop a callback that hasn't started running
+// yet (MercurySession::handlePacket() runs callbacks unlocked, after
+// already erasing them from its own registry).
+class QueuedTrack : public std::enable_shared_from_this<QueuedTrack> {
  public:
   QueuedTrack(TrackReference& ref, std::shared_ptr<cspot::Context> ctx,
               uint32_t requestedPosition = 0);
