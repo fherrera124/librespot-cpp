@@ -28,9 +28,7 @@ BufferedStream::~BufferedStream() {
 }
 
 void BufferedStream::close() {
-  this->terminate = true;
-  this->readSem.give();  // force a read operation
-  const std::lock_guard lock(runningMutex);
+  stopAndWait();
   if (this->source)
     this->source->close();
   this->source = nullptr;
@@ -129,7 +127,6 @@ size_t BufferedStream::read(uint8_t* dst, size_t len) {
 }
 
 void BufferedStream::runTask() {
-  const std::lock_guard lock(runningMutex);
   running = true;
   if (!source && reader) {
     // get the initial request on the task's thread

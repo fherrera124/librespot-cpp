@@ -1,9 +1,7 @@
 #pragma once
 
-#include <atomic>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -46,6 +44,9 @@ class SimpleHTTPServer : public bell::Task {
 
  protected:
   void runTask() override;
+  // Unblocks acceptWithTimeout() so runTask()'s loop notices shouldStop()
+  // promptly instead of waiting out its own 500ms poll.
+  void onStopRequested() override { serverSocket.close(); }
 
  private:
   // Same trie-with-params (":name") and catch-all ("*") matching as
@@ -72,12 +73,6 @@ class SimpleHTTPServer : public bell::Task {
 
   TCPServerSocket serverSocket;
   Router getRouter, postRouter;
-
-  std::atomic<bool> running{true};
-  // F93 pattern (see TrackPlayer.h/DealerClient.h) - held by runTask() for
-  // its whole life, taken by the destructor after stop() so the object
-  // can't be freed under a still-running task.
-  std::mutex taskLifetimeMutex;
 };
 
 }  // namespace bell

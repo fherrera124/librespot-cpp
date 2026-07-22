@@ -96,6 +96,11 @@ class MercurySession : public bell::Task, public cspot::Session {
   bell::Queue<cspot::Packet> packetQueue;
 
   void runTask() override;
+  // Closes the connection so a blocked recvPacket() fails and runTask()'s
+  // own catch block notices shouldStop() instead of trying to reconnect.
+  // Defined in the .cpp: conn is PlainConnection, only forward-declared
+  // in Session.h - calling close() on it needs the complete type.
+  void onStopRequested() override;
   void reconnect();
 
   std::unordered_map<uint64_t, ResponseCallback> callbacks;
@@ -108,8 +113,6 @@ class MercurySession : public bell::Task, public cspot::Session {
   unsigned long long lastPingTimestamp = -1;
   std::string countryCode = "";
 
-  std::mutex isRunningMutex;
-  std::atomic<bool> isRunning = false;
   std::atomic<bool> isReconnecting = false;
 
   // Guards callbacks/audioKeyCallbacks/sequenceId/audioKeySequence/

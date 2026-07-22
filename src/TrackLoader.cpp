@@ -29,11 +29,7 @@ TrackLoader::~TrackLoader() {
 }
 
 void TrackLoader::runTask() {
-  isRunning = true;
-
-  std::scoped_lock lock(runningMutex);
-
-  while (isRunning) {
+  while (!shouldStop()) {
     processSemaphore->twait(100);
 
     // Make sure we have the newest access key
@@ -50,11 +46,11 @@ void TrackLoader::runTask() {
 }
 
 void TrackLoader::stopTask() {
-  if (isRunning) {
-    isRunning = false;
-    processSemaphore->give();
-    std::scoped_lock lock(runningMutex);
-  }
+  stopAndWait();
+}
+
+void TrackLoader::onStopRequested() {
+  processSemaphore->give();
 }
 
 void TrackLoader::processTrack(std::shared_ptr<QueuedTrack> track) {

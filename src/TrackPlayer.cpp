@@ -49,22 +49,18 @@ TrackPlayer::TrackPlayer(std::shared_ptr<cspot::Context> ctx,
 }
 
 TrackPlayer::~TrackPlayer() {
-  isRunning = false;
-  resetState();
-  std::scoped_lock lock(runningMutex);
+  stopAndWait();
 }
 
 void TrackPlayer::start() {
-  if (!isRunning) {
-    isRunning = true;
+  if (!started) {
+    started = true;
     startTask();
   }
 }
 
 void TrackPlayer::stop() {
-  isRunning = false;
-  resetState();
-  std::scoped_lock lock(runningMutex);
+  stopAndWait();
 }
 
 void TrackPlayer::resetState(bool paused) {
@@ -178,15 +174,13 @@ TrackPlayer::LoadWaitOutcome TrackPlayer::waitForTrackReady(QueuedTrack& track,
 }
 
 void TrackPlayer::runTask() {
-  std::scoped_lock lock(runningMutex);
-
   std::shared_ptr<QueuedTrack> track, newTrack = nullptr;
 
   int trackOffset = 0;
   bool eof = false;
   bool endOfQueueReached = false;
 
-  while (isRunning) {
+  while (!shouldStop()) {
     if (!this->trackQueue->hasTracks() ||
         (!pendingReset && endOfQueueReached && trackQueue->isFinished())) {
       this->trackQueue->playableSemaphore->twait(300);

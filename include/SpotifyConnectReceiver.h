@@ -52,15 +52,16 @@ class SpotifyConnectReceiver : public bell::Task {
                          SpotifyConnectReceiverConfig config,
                          EventHandler eventHandler,
                          ConnectionStateCallback onConnectionStateChanged);
-  // Defined in the .cpp, not defaulted here: MDNSService/SimpleHTTPServer/
+  // Defined in the .cpp, not inlined here: MDNSService/SimpleHTTPServer/
   // DealerClient are only forward-declared in this header, and the
   // implicit unique_ptr deleter needs their complete types to call
-  // delete - a header-inline default would break for any translation
-  // unit that includes this header without also including theirs.
+  // delete - an inline definition would break for any translation unit
+  // that includes this header without also including theirs.
   ~SpotifyConnectReceiver() override;
 
-  // Unblocks the pairing wait so the task notices running=false on its
-  // next iteration instead of staying parked forever.
+  // Signals the task to stop and blocks until it actually has (inherited
+  // stopAndWait(), via onStopRequested() below) - safe to call from any
+  // task.
   void requestStop();
 
   // Local playback control (e.g. on-device buttons) - safe to call from
@@ -74,6 +75,10 @@ class SpotifyConnectReceiver : public bell::Task {
 
  protected:
   void runTask() override;
+  // Wakes clientConnected.wait() so runTask()'s outer loop notices
+  // shouldStop() instead of staying parked forever - the same semaphore
+  // a completed ZeroConf pairing gives() to start a session.
+  void onStopRequested() override { clientConnected.give(); }
 
  private:
   std::string deviceName;
@@ -89,7 +94,6 @@ class SpotifyConnectReceiver : public bell::Task {
   std::unique_ptr<bell::MDNSService> mdns;
 
   bell::WrappedSemaphore clientConnected{1};
-  std::atomic<bool> running{true};
   std::atomic<bool> linked{false};
 
   std::shared_ptr<cspot::LoginBlob> blob;

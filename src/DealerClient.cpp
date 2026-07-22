@@ -50,19 +50,19 @@ DealerClient::DealerClient(std::shared_ptr<cspot::Context> ctx)
 
 DealerClient::~DealerClient() {
   stop();
-  std::scoped_lock lock(taskLifetimeMutex);  // F93 pattern
 }
 
 void DealerClient::stop() {
   // Never touches transport directly - not thread-safe, only runTask()'s
-  // own thread may. running=false is enough; the receive loop notices.
-  running = false;
+  // own thread may. Its 1000ms receiveMessage() poll notices shouldStop()
+  // on its own, no explicit wake needed.
   if (commandWorker) {
     commandWorker->stop();
   }
   if (connectState) {
     connectState->stop();
   }
+  stopAndWait();
 }
 
 DealerClient::CommandWorker::CommandWorker(
@@ -78,21 +78,17 @@ DealerClient::CommandWorker::CommandWorker(
 
 DealerClient::CommandWorker::~CommandWorker() {
   stop();
-  std::scoped_lock lock(taskLifetimeMutex);
 }
 
 void DealerClient::CommandWorker::stop() {
-  running = false;
-  pendingCommands->clear();  // wakes a blocked wtpop() immediately
+  stopAndWait();
 }
 
 void DealerClient::CommandWorker::runTask() {
-  std::scoped_lock lifetimeLock(taskLifetimeMutex);
-
   PendingCommand cmd;
-  while (running) {
+  while (!shouldStop()) {
     if (!pendingCommands->wtpop(cmd, 1000)) {
-      continue;  // timeout or stop()-forced exit - re-check `running`
+      continue;  // timeout or stop()-forced exit - re-check shouldStop()
     }
 
     bool success = connectState->handlePlayerCommand(cmd.endpoint, cmd.command);
@@ -156,16 +152,14 @@ bool DealerClient::connectOnce() {
 }
 
 void DealerClient::runTask() {
-  std::scoped_lock lock(taskLifetimeMutex);
-
   int backoffMs = RECONNECT_BACKOFF_BASE_MS;
   bool everConnected = false;
 
-  while (running) {
+  while (!shouldStop()) {
     if (!connectOnce()) {
       CSPOT_LOG(info, "Dealer: retrying in %dms", backoffMs);
       // Segmented so stop() doesn't have to wait out the full backoff.
-      for (int slept = 0; running && slept < backoffMs; slept += 250) {
+      for (int slept = 0; !shouldStop() && slept < backoffMs; slept += 250) {
         BELL_SLEEP_MS(250);
       }
       backoffMs = std::min(backoffMs * 2, RECONNECT_BACKOFF_MAX_MS);
@@ -187,7 +181,7 @@ void DealerClient::runTask() {
     lastPongTime = std::chrono::steady_clock::now();
 
     std::string message;
-    while (running && transport->isConnected()) {
+    while (!shouldStop() && transport->isConnected()) {
       if (transport->receiveMessage(message, RECEIVE_POLL_MS)) {
         handleMessage(message);
         idleMs = 0;
@@ -238,7 +232,7 @@ void DealerClient::runTask() {
       connectionId.clear();
     }
 
-    if (running) {
+    if (!shouldStop()) {
       CSPOT_LOG(info, "Dealer: connection lost, reconnecting");
     }
   }

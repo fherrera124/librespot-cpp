@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>      // for atomic
 #include <chrono>      // for steady_clock::time_point
 #include <functional>  // for function
 #include <memory>      // for unique_ptr, shared_ptr
@@ -91,14 +90,14 @@ class DealerClient : public bell::Task {
 
    protected:
     void runTask() override;
+    // Wakes a blocked wtpop() immediately, instead of waiting out its 1000ms
+    // poll.
+    void onStopRequested() override { pendingCommands->clear(); }
 
    private:
     PlayerEngine* connectState;
     bell::Queue<PendingCommand>* pendingCommands;
     bell::Queue<PendingReply>* pendingReplies;
-
-    std::mutex taskLifetimeMutex;  // F93 pattern
-    std::atomic<bool> running{true};
   };
 
   std::shared_ptr<cspot::Context> ctx;
@@ -115,9 +114,5 @@ class DealerClient : public bell::Task {
   std::string connectionId;
 
   std::chrono::time_point<std::chrono::steady_clock> lastPongTime;
-
-  std::mutex taskLifetimeMutex;  // F93 pattern
-
-  std::atomic<bool> running{true};
 };
 }  // namespace cspot

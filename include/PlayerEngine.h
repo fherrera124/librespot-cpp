@@ -104,6 +104,9 @@ class PlayerEngine : public bell::Task {
 
  protected:
   void runTask() override;
+  // Wakes the pendingCv wait immediately instead of waiting out its own
+  // poll interval.
+  void onStopRequested() override { pendingCv.notify_all(); }
 
  private:
   // Synchronous PUT (is_buffering=true, is_playing=true), sent from
@@ -204,12 +207,5 @@ class PlayerEngine : public bell::Task {
   connectstate_PutStateReason pendingReason =
       connectstate_PutStateReason_PLAYER_STATE_CHANGED;
   bool pendingIsBuffering = false;
-
-  // Held by runTask() for its whole lifetime; the destructor takes it
-  // after stop(), so the object can't be freed under a still-running
-  // task.
-  std::mutex taskLifetimeMutex;
-
-  std::atomic<bool> running{true};
 };
 }  // namespace cspot

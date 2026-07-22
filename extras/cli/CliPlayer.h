@@ -22,6 +22,7 @@ class CliPlayer : public bell::Task {
  public:
   CliPlayer(std::unique_ptr<AudioSink> sink,
             std::shared_ptr<cspot::SpircHandler> spircHandler);
+  ~CliPlayer() override;
   void disconnect();
 
  private:
@@ -35,8 +36,6 @@ class CliPlayer : public bell::Task {
 
   std::atomic<bool> pauseRequested = false;
   std::atomic<bool> isPaused = true;
-  std::atomic<bool> isRunning = true;
-  std::mutex runningMutex;
   std::atomic<bool> playlistEnd = false;
 
   void runTask() override;

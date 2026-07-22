@@ -103,9 +103,7 @@ SimpleHTTPServer::SimpleHTTPServer(uint16_t port)
 }
 
 SimpleHTTPServer::~SimpleHTTPServer() {
-  running = false;
-  serverSocket.close();
-  std::scoped_lock lock(taskLifetimeMutex);
+  stopAndWait();
 }
 
 void SimpleHTTPServer::registerGet(const std::string& route,
@@ -119,9 +117,7 @@ void SimpleHTTPServer::registerPost(const std::string& route,
 }
 
 void SimpleHTTPServer::runTask() {
-  std::scoped_lock lifetimeLock(taskLifetimeMutex);
-
-  while (running) {
+  while (!shouldStop()) {
     int clientFd = serverSocket.acceptWithTimeout(500);
     if (clientFd < 0) {
       continue;

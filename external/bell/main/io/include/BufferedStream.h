@@ -54,6 +54,14 @@ class BufferedStream : public bell::ByteStream, bell::Task {
   bool open(const StreamReader& newReader, uint32_t initialOffset = 0);
   void close() override;
 
+ protected:
+  // Wakes readSem.wait() so runTask() notices terminate promptly instead
+  // of waiting on a read that may never come.
+  void onStopRequested() override {
+    terminate = true;
+    readSem.give();
+  }
+
   // inherited methods
  public:
   /**
@@ -102,9 +110,16 @@ class BufferedStream : public bell::ByteStream, bell::Task {
   bell::WrappedSemaphore readySem;
 
  private:
-  std::mutex runningMutex;
-  bool running = false;
-  bool terminate = false;
+  // BufferedStream is reused across multiple open()/close() cycles on the
+  // same instance (unlike every other bell::Task in this codebase, which
+  // starts once and is destroyed) - restarting after a stopAndWait() only
+  // works because runTask()'s own loop condition is this member, not the
+  // base class's one-way shouldStop(). Both cross thread boundaries
+  // (runTask()'s own thread vs. open()/read()/close() callers), hence
+  // atomic - previously plain bool, a real (if likely benign in
+  // practice) data race.
+  std::atomic<bool> running = false;
+  std::atomic<bool> terminate = false;
   bell::WrappedSemaphore
       readSem;  // signal to start writing to buffer after reading from it
   std::mutex

@@ -98,14 +98,10 @@ PlayerEngine::PlayerEngine(
 
 PlayerEngine::~PlayerEngine() {
   stop();
-  // Blocks until runTask() releases it - never free this object under a
-  // still-running task (F93 pattern, same as DealerClient/MercurySession).
-  std::scoped_lock lock(taskLifetimeMutex);
 }
 
 void PlayerEngine::stop() {
-  running = false;
-  pendingCv.notify_all();
+  stopAndWait();
 }
 
 void PlayerEngine::setConnectionId(const std::string& id) {
@@ -307,13 +303,11 @@ void PlayerEngine::updatePlayerState(bool isPlaying,
 }
 
 void PlayerEngine::runTask() {
-  std::scoped_lock lifetimeLock(taskLifetimeMutex);
-
   // §6.6 rate-limiting: default-constructed = epoch, so the very first
   // update is never held back.
   auto lastPutTime = std::chrono::steady_clock::time_point{};
 
-  while (running) {
+  while (!shouldStop()) {
     bool isPlaying;
     std::string trackUri;
     uint32_t positionMs, durationMs;
@@ -322,8 +316,8 @@ void PlayerEngine::runTask() {
     {
       std::unique_lock<std::mutex> lock(pendingMutex);
       pendingCv.wait_for(lock, std::chrono::milliseconds(PENDING_WAIT_MS),
-                        [this] { return hasPending || !running; });
-      if (!running) {
+                        [this] { return hasPending || shouldStop(); });
+      if (shouldStop()) {
         break;
       }
       if (!hasPending) {

@@ -85,15 +85,18 @@ CliPlayer::CliPlayer(std::unique_ptr<AudioSink> sink,
 
 void CliPlayer::feedData(uint8_t* data, size_t len) {}
 
+CliPlayer::~CliPlayer() {
+  disconnect();
+}
+
 void CliPlayer::runTask() {
   std::vector<uint8_t> outBuf = std::vector<uint8_t>(1024);
 
-  std::scoped_lock lock(runningMutex);
   bell::CentralAudioBuffer::AudioChunk* chunk;
 
   size_t lastHash = 0;
 
-  while (isRunning) {
+  while (!shouldStop()) {
     if (!this->isPaused) {
       chunk = this->centralAudioBuffer->readChunk();
 
@@ -137,6 +140,5 @@ void CliPlayer::runTask() {
 }
 
 void CliPlayer::disconnect() {
-  isRunning = false;
-  std::scoped_lock lock(runningMutex);
+  stopAndWait();
 }

@@ -1,6 +1,8 @@
 #ifndef BELL_TASK_H
 #define BELL_TASK_H
 
+#include <atomic>
+#include <mutex>
 #include <string>
 
 #ifdef ESP_PLATFORM
@@ -15,8 +17,7 @@
 #include <pthread.h>
 #endif
 
-#include <iostream>
-#include <string>
+#include "BellLogger.h"
 
 namespace bell {
 class Task {
@@ -38,6 +39,12 @@ class Task {
     if (runOnPSRAM) {
       this->xStack = (StackType_t*)heap_caps_malloc(
           this->stackSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      if (this->xStack == nullptr) {
+        BELL_LOG(error, "Task",
+                 "heap_caps_malloc failed allocating %d PSRAM bytes for "
+                 "task '%s' stack",
+                 this->stackSize, this->TASK.c_str());
+      }
     }
 #endif
   }
@@ -51,13 +58,24 @@ class Task {
   bool startTask() {
 #ifdef ESP_PLATFORM
     if (runOnPSRAM) {
+      if (xStack == nullptr) {
+        // Constructor's allocation already failed and logged - nothing
+        // to create the task with.
+        return false;
+      }
       xTaskBuffer = (StaticTask_t*)heap_caps_malloc(
           sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      if (xTaskBuffer == nullptr) {
+        BELL_LOG(error, "Task",
+                 "heap_caps_malloc failed allocating the TCB for task '%s'",
+                 this->TASK.c_str());
+        return false;
+      }
       return (xTaskCreateStaticPinnedToCore(
                   taskEntryFuncPSRAM, this->TASK.c_str(), this->stackSize, this,
                   this->priority, xStack, xTaskBuffer, this->core) != NULL);
     } else {
-      printf("task on internal %s", this->TASK.c_str());
+      BELL_LOG(info, "Task", "task on internal %s", this->TASK.c_str());
       esp_pthread_cfg_t cfg = esp_pthread_get_default_config();
       cfg.stack_size = stackSize;
       cfg.inherit_cfg = true;
@@ -80,8 +98,37 @@ class Task {
 #endif
   }
 
+  // Signals the task to stop and BLOCKS until its runTask() override has
+  // actually returned - safe (and required) to call from a derived
+  // destructor. Must be the FIRST thing that destructor does, before any
+  // of the derived class's own members start being torn down: C++
+  // destroys a derived object's members (and runs the rest of its
+  // destructor body) before ~Task() ever runs, so by the time this base
+  // class could try to wait on its own, runTask() may already be
+  // executing against half-destroyed derived state. Calling this here,
+  // manually, first, is what keeps that from happening - the base class
+  // owns the synchronization primitive, but the ordering is still the
+  // derived class's responsibility.
+  void stopAndWait() {
+    stopRequested = true;
+    onStopRequested();
+    std::scoped_lock lock(taskLifetimeMutex);
+  }
+
  protected:
   virtual void runTask() = 0;
+
+  // Override to wake up whatever runTask()'s own loop is blocked on (a
+  // queue's wtpop, a semaphore's twait, a socket accept()) - called once
+  // from stopAndWait(), on the calling thread, before it blocks waiting
+  // for runTask() to actually return. Default no-op is fine for a loop
+  // that already polls shouldStop() on a short enough timeout by itself.
+  virtual void onStopRequested() {}
+
+  // What runTask()'s own loop condition should poll, instead of each
+  // derived class maintaining its own private atomic<bool> running/
+  // isRunning for the same purpose.
+  bool shouldStop() const { return stopRequested.load(); }
 
  private:
 #if _WIN32
@@ -91,12 +138,15 @@ class Task {
 #endif
 #ifdef ESP_PLATFORM
   int priority;
-  StaticTask_t* xTaskBuffer;
+  StaticTask_t* xTaskBuffer = nullptr;
   StackType_t* xStack;
 
   static void taskEntryFuncPSRAM(void* This) {
     Task* self = (Task*)This;
-    self->runTask();
+    {
+      std::scoped_lock lock(self->taskLifetimeMutex);
+      self->runTask();
+    }
 
     // TCB are cleanup in IDLE task, so give it some time
     TimerHandle_t timer =
@@ -112,9 +162,19 @@ class Task {
 #endif
 
   static void* taskEntryFunc(void* This) {
-    ((Task*)This)->runTask();
+    Task* self = (Task*)This;
+    std::scoped_lock lock(self->taskLifetimeMutex);
+    self->runTask();
     return NULL;
   }
+
+  std::atomic<bool> stopRequested{false};
+  // Held by whichever task-entry function is currently running runTask()
+  // for that call's whole duration - stopAndWait() acquiring this is what
+  // blocks until runTask() has actually returned. One canonical copy
+  // here, replacing what used to be a taskLifetimeMutex/runningMutex/
+  // isRunningMutex hand-rolled separately in every derived class.
+  std::mutex taskLifetimeMutex;
 };
 }  // namespace bell
 

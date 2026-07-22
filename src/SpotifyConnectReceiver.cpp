@@ -36,13 +36,13 @@ SpotifyConnectReceiver::SpotifyConnectReceiver(
       connectionStateCallback(std::move(onConnectionStateChanged)),
       audioSink(std::move(audioSink)) {}
 
-// Out-of-line (not defaulted in the header) - see the header's comment on
-// the declaration.
-SpotifyConnectReceiver::~SpotifyConnectReceiver() = default;
+// Out-of-line - see the header's comment on the declaration.
+SpotifyConnectReceiver::~SpotifyConnectReceiver() {
+  requestStop();
+}
 
 void SpotifyConnectReceiver::requestStop() {
-  running = false;
-  clientConnected.give();
+  stopAndWait();
 }
 
 bool SpotifyConnectReceiver::requestPlayPause(bool play) {
@@ -81,9 +81,9 @@ uint32_t SpotifyConnectReceiver::getPositionMs() {
 void SpotifyConnectReceiver::runTask() {
   startHttpServerAndMdns();
 
-  while (running) {
+  while (!shouldStop()) {
     clientConnected.wait();
-    if (!running) break;
+    if (shouldStop()) break;
 
     CSPOT_LOG(info, "Spotify client connecting for %s", deviceName.c_str());
     runSession();
@@ -165,7 +165,7 @@ void SpotifyConnectReceiver::runSession() {
   // runSessionInner()) is NOT retried here: only genuine exceptions are,
   // since those are the transient-network case.
   int backoffMs = SESSION_RETRY_BASE_MS;
-  for (int attempt = 1; running && attempt <= SESSION_MAX_ATTEMPTS;
+  for (int attempt = 1; !shouldStop() && attempt <= SESSION_MAX_ATTEMPTS;
        attempt++) {
     try {
       runSessionInner();
@@ -180,7 +180,7 @@ void SpotifyConnectReceiver::runSession() {
       break;
     }
     CSPOT_LOG(info, "retrying session in %dms", backoffMs);
-    for (int slept = 0; running && slept < backoffMs; slept += 250) {
+    for (int slept = 0; !shouldStop() && slept < backoffMs; slept += 250) {
       BELL_SLEEP_MS(250);
     }
     backoffMs = std::min(backoffMs * 2, SESSION_RETRY_MAX_MS);
@@ -234,7 +234,7 @@ void SpotifyConnectReceiver::runSessionInner() {
 
   if (connectionStateCallback) connectionStateCallback(true);
 
-  while (linked && running) {
+  while (linked && !shouldStop()) {
     ctx->session->handlePacket();
   }
 

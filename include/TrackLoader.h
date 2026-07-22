@@ -46,13 +46,18 @@ class TrackLoader : public bell::Task {
   void runTask() override;
   void stopTask();
 
+ protected:
+  // Wakes processSemaphore->twait(100) below so runTask() notices
+  // shouldStop() promptly instead of waiting out the poll. Defined in
+  // the .cpp: WrappedSemaphore is only forward-declared here.
+  void onStopRequested() override;
+
  private:
   std::shared_ptr<cspot::Context> ctx;
   std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher;
   std::shared_ptr<bell::WrappedSemaphore> processSemaphore;
   SnapshotFn snapshotPreloaded;
   TopUpFn tryTopUpLookahead;
-  std::mutex runningMutex;
 
   // PB scratch buffers - reused across tracks by stepLoadMetadata()'s
   // pb_release()/pbDecode() (same pattern as before the split).
@@ -60,7 +65,6 @@ class TrackLoader : public bell::Task {
   Episode pbEpisode;
 
   std::string accessKey;
-  bool isRunning = false;
 
   void processTrack(std::shared_ptr<QueuedTrack> track);
 };

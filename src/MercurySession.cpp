@@ -43,14 +43,16 @@ MercurySession::MercurySession(std::shared_ptr<TimeProvider> timeProvider)
 }
 
 MercurySession::~MercurySession() {
-  std::scoped_lock lock(this->isRunningMutex);
+  stopAndWait();
+}
+
+void MercurySession::onStopRequested() {
+  std::scoped_lock lock(shanConnMutex);
+  if (conn) conn->close();
 }
 
 void MercurySession::runTask() {
-  isRunning = true;
-  std::scoped_lock lock(this->isRunningMutex);
-
-  while (isRunning) {
+  while (!shouldStop()) {
     cspot::Packet packet = {};
     try {
       // getShanConn(), not the bare member: reconnect() (this same task,
@@ -76,7 +78,7 @@ void MercurySession::runTask() {
       CSPOT_LOG(error, "Error while receiving packet: %s", e.what());
       failAllPending();
 
-      if (!isRunning)
+      if (shouldStop())
         return;
 
       reconnect();
@@ -121,7 +123,7 @@ void MercurySession::reconnect() {
       CSPOT_LOG(error, "Cannot reconnect, will retry in 5s");
       BELL_SLEEP_MS(5000);
 
-      if (!isRunning) {
+      if (shouldStop()) {
         return;
       }
     }
@@ -129,7 +131,7 @@ void MercurySession::reconnect() {
 }
 
 bool MercurySession::triggerTimeout() {
-  if (!isRunning)
+  if (shouldStop())
     return true;
   auto currentTimestamp = timeProvider->getSyncedTimestamp();
 
@@ -161,14 +163,10 @@ void MercurySession::unregisterAudioKey(uint32_t sequenceId) {
 
 void MercurySession::disconnect() {
   CSPOT_LOG(info, "Disconnecting mercury session");
-  this->isRunning = false;
-  {
-    // conn can be null here if a reconnect() is torn down mid-attempt -
-    // was an unguarded null deref before. See F93.
-    std::scoped_lock lock(shanConnMutex);
-    if (conn) conn->close();
-  }
-  std::scoped_lock lock(this->isRunningMutex);
+  // onStopRequested() closes conn under shanConnMutex - conn can be null
+  // there if a reconnect() is torn down mid-attempt, already guarded
+  // against an unguarded null deref (was a real bug, see F93).
+  stopAndWait();
 }
 
 std::string MercurySession::getCountryCode() {

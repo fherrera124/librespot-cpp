@@ -56,13 +56,14 @@ ALSAAudioSink::ALSAAudioSink() : Task("", 0, 0, 0) {
 }
 
 ALSAAudioSink::~ALSAAudioSink() {
+  stopAndWait();
   snd_pcm_drain(pcm_handle);
   snd_pcm_close(pcm_handle);
 }
 
 void ALSAAudioSink::runTask() {
   std::unique_ptr<std::vector<uint8_t>> dataPtr;
-  while (true) {
+  while (!shouldStop()) {
     if (!this->ringbuffer.pop(dataPtr)) {
       usleep(100);
       continue;

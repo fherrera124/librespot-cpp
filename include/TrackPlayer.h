@@ -78,6 +78,13 @@ class TrackPlayer : bell::Task {
   void stop();
   void start();
 
+ protected:
+  // Matches stop()'s existing effect: pendingReset/currentSongPlaying so
+  // any in-progress wait/decode loop notices and unwinds instead of an
+  // explicit semaphore wake - runTask()'s own poll intervals (<=300ms)
+  // already tolerate this latency today.
+  void onStopRequested() override { resetState(); }
+
  private:
   std::shared_ptr<cspot::Context> ctx;
   std::shared_ptr<cspot::TrackQueue> trackQueue;
@@ -108,7 +115,9 @@ class TrackPlayer : bell::Task {
 
   bool autoStart = false;
 
-  std::atomic<bool> isRunning = false;
+  // Guards start() against being called more than once - unrelated to
+  // the base class's own stop-tracking (shouldStop()/stopAndWait()).
+  bool started = false;
   std::atomic<bool> pendingReset = false;
   std::atomic<bool> inFuture = false;
   std::atomic<size_t> pendingSeekPositionMs = 0;
@@ -117,8 +126,6 @@ class TrackPlayer : bell::Task {
   // See getDecoderPositionMs().
   std::atomic<bool> hasDecoderPosition = false;
   std::atomic<uint32_t> decoderPositionMs = 0;
-
-  std::mutex runningMutex;
 
   // Fires reachedPlaybackCallback once (via notifiedThisTrack), waits out
   // a pause without discarding `data`, then feeds it to audioSink. No-op
