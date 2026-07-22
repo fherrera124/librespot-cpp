@@ -2,8 +2,8 @@
 
 ALSAAudioSink::ALSAAudioSink() : Task("", 0, 0, 0) {
   /* Open the PCM device in playback mode */
-  if (pcm = snd_pcm_open(&pcm_handle, PCM_DEVICE, SND_PCM_STREAM_PLAYBACK, 0) <
-            0) {
+  pcm = snd_pcm_open(&pcm_handle, PCM_DEVICE, SND_PCM_STREAM_PLAYBACK, 0);
+  if (pcm < 0) {
     printf("ERROR: Can't open \"%s\" PCM device. %s\n", PCM_DEVICE,
            snd_strerror(pcm));
   }
@@ -14,24 +14,29 @@ ALSAAudioSink::ALSAAudioSink() : Task("", 0, 0, 0) {
   snd_pcm_hw_params_any(pcm_handle, params);
 
   /* Set parameters */
-  if (pcm = snd_pcm_hw_params_set_access(pcm_handle, params,
-                                         SND_PCM_ACCESS_RW_INTERLEAVED) < 0)
+  pcm = snd_pcm_hw_params_set_access(pcm_handle, params,
+                                     SND_PCM_ACCESS_RW_INTERLEAVED);
+  if (pcm < 0)
     printf("ERROR: Can't set interleaved mode. %s\n", snd_strerror(pcm));
 
-  if (pcm = snd_pcm_hw_params_set_format(pcm_handle, params,
-                                         SND_PCM_FORMAT_S16_LE) < 0)
+  pcm = snd_pcm_hw_params_set_format(pcm_handle, params,
+                                     SND_PCM_FORMAT_S16_LE);
+  if (pcm < 0)
     printf("ERROR: Can't set format. %s\n", snd_strerror(pcm));
 
-  if (pcm = snd_pcm_hw_params_set_channels(pcm_handle, params, 2) < 0)
+  pcm = snd_pcm_hw_params_set_channels(pcm_handle, params, 2);
+  if (pcm < 0)
     printf("ERROR: Can't set channels number. %s\n", snd_strerror(pcm));
   unsigned int rate = 44100;
-  if (pcm = snd_pcm_hw_params_set_rate_near(pcm_handle, params, &rate, 0) < 0)
+  pcm = snd_pcm_hw_params_set_rate_near(pcm_handle, params, &rate, 0);
+  if (pcm < 0)
     printf("ERROR: Can't set rate. %s\n", snd_strerror(pcm));
   unsigned int periodTime = 800;
   int dir = -1;
   snd_pcm_hw_params_set_period_time_near(pcm_handle, params, &periodTime, &dir);
   /* Write parameters */
-  if (pcm = snd_pcm_hw_params(pcm_handle, params) < 0)
+  pcm = snd_pcm_hw_params(pcm_handle, params);
+  if (pcm < 0)
     printf("ERROR: Can't set harware parameters. %s\n", snd_strerror(pcm));
 
   /* Resume information */
@@ -68,9 +73,8 @@ void ALSAAudioSink::runTask() {
       usleep(100);
       continue;
     }
-    if (pcm = snd_pcm_writei(pcm_handle, dataPtr->data(), this->frames) ==
-              -EPIPE) {
-
+    pcm = snd_pcm_writei(pcm_handle, dataPtr->data(), this->frames);
+    if (pcm == -EPIPE) {
       snd_pcm_prepare(pcm_handle);
     } else if (pcm < 0) {
       printf("ERROR. Can't write to PCM device. %s\n", snd_strerror(pcm));

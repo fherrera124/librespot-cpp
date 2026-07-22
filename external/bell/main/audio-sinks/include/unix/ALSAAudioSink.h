@@ -97,7 +97,10 @@ class ALSAAudioSink : public AudioSink, public bell::Task {
 
  private:
   RingbufferPointer<std::vector<uint8_t>, 3> ringbuffer;
-  unsigned int pcm;
+  // ALSA return codes are negative on error (e.g. -EPIPE) - was unsigned,
+  // silently making every "< 0"/"== -EPIPE" check below impossible to
+  // ever be true regardless of the operator-precedence fix.
+  int pcm;
   snd_pcm_t* pcm_handle;
   snd_pcm_hw_params_t* params;
   snd_pcm_uframes_t frames;
