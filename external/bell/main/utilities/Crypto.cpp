@@ -1,7 +1,17 @@
 #include "Crypto.h"
 
 #include <mbedtls/base64.h>  // for mbedtls_base64_encode, mbedtls_base64_decode
-#include <mbedtls/pkcs5.h>   // for mbedtls_pkcs5_pbkdf2_hmac_ext
+
+// Only public on a host build (non-ESP_PLATFORM) - same "moved private
+// under mbedTLS 4.0" situation as bignum.h just below, confirmed against
+// the real ESP-IDF toolchain (~/.espressif/v6.0.1's mbedtls component is
+// exactly 4.0.0): this header lives under tf-psa-crypto/drivers/builtin/
+// include/mbedtls/private/pkcs5.h there, not on the public include path.
+// See pbkdf2HmacSha1()'s own comment for why ESP_PLATFORM needs a
+// different implementation entirely, not just a different include.
+#ifndef ESP_PLATFORM
+#include <mbedtls/pkcs5.h>  // for mbedtls_pkcs5_pbkdf2_hmac_ext
+#endif
 
 // mbedtls/bignum.h is only guaranteed public via ESP-IDF's own mbedTLS
 // port (components/mbedtls/port/include/mbedtls/bignum.h) - a "stock"
@@ -437,15 +447,61 @@ void CryptoMbedTLS::aesECBdecrypt(const std::vector<uint8_t>& key,
 
 // PBKDF2
 //
-// Real ZeroConf pairing against this exact PSA-based implementation
-// failed on a real, currently-supported build (Ubuntu's mbedtls
-// 3.6.2-3ubuntu1, this repo's own extras/cli host target):
-// psa_key_derivation_setup(PSA_ALG_PBKDF2_HMAC(PSA_ALG_SHA_1)) returns
-// PSA_ERROR_NOT_SUPPORTED there - PBKDF2-HMAC as a PSA key-derivation
-// algorithm isn't compiled into every mbedtls build, distro-packaged or
-// otherwise. mbedtls_pkcs5_pbkdf2_hmac_ext() (non-deprecated, still
-// public in 3.x) has no such gate and is verified against the RFC 6070
-// PBKDF2-HMAC-SHA1 test vector on that same system.
+// Genuinely different implementations per mbedTLS major version, not a
+// choice - confirmed against both real targets this repo builds for:
+//
+// - mbedTLS 4.0 (ESP32/ESP-IDF, confirmed via the real toolchain -
+//   ~/.espressif/v6.0.1/esp-idf's mbedtls component is exactly 4.0.0):
+//   mbedtls/pkcs5.h moved to a private, non-public path
+//   (tf-psa-crypto/drivers/builtin/include/mbedtls/private/pkcs5.h) -
+//   not includable outside mbedTLS's own build. PSA's key-derivation API
+//   is the only public option there.
+// - mbedTLS 3.x (Ubuntu's 3.6.2-3ubuntu1, this repo's own extras/cli host
+//   target): the PSA path above compiles fine but fails at runtime -
+//   psa_key_derivation_setup(PSA_ALG_PBKDF2_HMAC(PSA_ALG_SHA_1)) returns
+//   PSA_ERROR_NOT_SUPPORTED there, confirmed against a real ZeroConf
+//   pairing attempt. PBKDF2-HMAC as a PSA key-derivation algorithm isn't
+//   compiled into every mbedtls build, distro-packaged or otherwise.
+//   mbedtls_pkcs5_pbkdf2_hmac_ext() (non-deprecated, still public in 3.x)
+//   has no such gate - verified against the RFC 6070 PBKDF2-HMAC-SHA1
+//   test vector on that same system.
+#ifdef ESP_PLATFORM
+std::vector<uint8_t> CryptoMbedTLS::pbkdf2HmacSha1(
+    const std::vector<uint8_t>& password, const std::vector<uint8_t>& salt,
+    int iterations, int digestSize) {
+  ensurePsaCryptoInit();
+
+  auto digest = std::vector<uint8_t>(digestSize);
+
+  psa_key_derivation_operation_t op = PSA_KEY_DERIVATION_OPERATION_INIT;
+  psa_status_t status =
+      psa_key_derivation_setup(&op, PSA_ALG_PBKDF2_HMAC(PSA_ALG_SHA_1));
+  // Order is mandated by PSA_ALG_PBKDF2_HMAC: cost, then salt, then password.
+  if (status == PSA_SUCCESS) {
+    status = psa_key_derivation_input_integer(
+        &op, PSA_KEY_DERIVATION_INPUT_COST, iterations);
+  }
+  if (status == PSA_SUCCESS) {
+    status = psa_key_derivation_input_bytes(
+        &op, PSA_KEY_DERIVATION_INPUT_SALT, salt.data(), salt.size());
+  }
+  if (status == PSA_SUCCESS) {
+    status = psa_key_derivation_input_bytes(
+        &op, PSA_KEY_DERIVATION_INPUT_PASSWORD, password.data(),
+        password.size());
+  }
+  if (status == PSA_SUCCESS) {
+    status = psa_key_derivation_output_bytes(&op, digest.data(), digestSize);
+  }
+  psa_key_derivation_abort(&op);
+
+  if (status != PSA_SUCCESS) {
+    throw std::runtime_error("pbkdf2HmacSha1 failed");
+  }
+
+  return digest;
+}
+#else
 std::vector<uint8_t> CryptoMbedTLS::pbkdf2HmacSha1(
     const std::vector<uint8_t>& password, const std::vector<uint8_t>& salt,
     int iterations, int digestSize) {
@@ -461,6 +517,7 @@ std::vector<uint8_t> CryptoMbedTLS::pbkdf2HmacSha1(
 
   return digest;
 }
+#endif
 
 void CryptoMbedTLS::dhInit() {
   privateKey = generateVectorWithRandomData(DH_KEY_SIZE);

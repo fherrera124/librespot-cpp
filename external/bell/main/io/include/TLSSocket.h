@@ -20,11 +20,14 @@
 // context members - mbedTLS 4.0 removed mbedtls_ctr_drbg_context/
 // mbedtls_entropy_context entirely, so randomness for those (DH key
 // generation, etc.) now comes from the PSA subsystem instead. That does
-// NOT extend to mbedtls_ssl_config's own f_rng field, though -
-// mbedtls_ssl_conf_rng() is still mandatory (TLSSocket.cpp calls it with
-// a small PSA-backed adapter) even on mbedtls 3.x, which still requires
-// it explicitly; skipping it entirely made every handshake fail
-// immediately with MBEDTLS_ERR_SSL_BAD_INPUT_DATA.
+// NOT extend to mbedtls_ssl_config's own f_rng field on mbedTLS 3.x,
+// though - confirmed genuinely different per platform: ESP_PLATFORM's
+// real mbedTLS 4.0 (~/.espressif/v6.0.1/esp-idf) doesn't even declare
+// mbedtls_ssl_conf_rng() anymore, while Ubuntu's mbedtls 3.6.2 still
+// requires it explicitly ("RNG function (mandatory)") - skipping it
+// there made every real handshake fail immediately with
+// MBEDTLS_ERR_SSL_BAD_INPUT_DATA. TLSSocket.cpp calls it with a small
+// PSA-backed adapter, but only for !ESP_PLATFORM.
 namespace bell {
 class TLSSocket : public bell::Socket {
  private:

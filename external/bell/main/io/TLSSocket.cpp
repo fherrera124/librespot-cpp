@@ -5,7 +5,6 @@
 #include <sys/socket.h>   // for setsockopt, select
 #include <sys/time.h>     // for struct timeval (SO_SNDTIMEO)
 #include <sys/select.h>   // for fd_set, select
-#include <mbedtls/entropy.h>      // for MBEDTLS_ERR_ENTROPY_SOURCE_FAILED
 #include <mbedtls/net_sockets.h>  // for mbedtls_net_connect, mbedtls_net_free
 #include <mbedtls/ssl.h>          // for mbedtls_ssl_conf_authmode, mbedtls_...
 #include <cstddef>                // for NULL
@@ -14,6 +13,20 @@
 #include "BellLogger.h"  // for AbstractLogger, BELL_LOG
 #include "X509Bundle.h"  // for shouldVerify, attach
 #include "psa_init.h"
+
+// mbedtls_ssl_conf_rng() genuinely doesn't exist in mbedTLS 4.0's public
+// API (confirmed against the real ESP-IDF toolchain,
+// ~/.espressif/v6.0.1/esp-idf, mbedtls component exactly 4.0.0 - zero
+// matches for the symbol anywhere in its include tree) - the SSL layer
+// really does draw its randomness from PSA unconditionally there, same
+// as this file's own long-standing comment says. mbedTLS 3.x (Ubuntu's
+// 3.6.2-3ubuntu1, this repo's own extras/cli host target) is different:
+// that field is still mandatory there ("RNG function (mandatory)" per
+// mbedtls_ssl_conf_rng()'s own doc comment) - skipping it left every
+// real TLS handshake failing instantly with MBEDTLS_ERR_SSL_BAD_INPUT_DATA,
+// confirmed live against a real Spotify AP connection.
+#ifndef ESP_PLATFORM
+#include <mbedtls/entropy.h>  // for MBEDTLS_ERR_ENTROPY_SOURCE_FAILED
 
 namespace {
 // mbedtls_ssl_conf_rng()'s callback signature - adapts the PSA random
@@ -25,6 +38,7 @@ int psaRandomForMbedtls(void*, unsigned char* output, size_t len) {
              : MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
 }
 }  // namespace
+#endif
 
 /**
  * Platform TLSSocket implementation for the mbedtls, ported for mbedTLS 4.0.
@@ -100,16 +114,11 @@ void bell::TLSSocket::open(const std::string& hostUrl, uint16_t port) {
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
   }
 
-  // mandatory per mbedtls_ssl_conf_rng()'s own doc comment ("RNG function
-  // (mandatory)") - without it, conf.f_rng stays NULL and
-  // mbedtls_ssl_handshake() fails immediately with
-  // MBEDTLS_ERR_SSL_BAD_INPUT_DATA before any bytes go on the wire (real,
-  // pre-existing bug: this call used to be missing entirely, on the theory
-  // that PSA's RNG applies unconditionally - true for the entropy/DRBG
-  // subsystem itself, but the SSL layer's own f_rng callback is a separate,
-  // still-mandatory field mbedTLS never fills in on its own). Reuses the
-  // same PSA generator Crypto.cpp's generateVectorWithRandomData() does.
+  // mbedTLS 3.x only - see the top-of-file comment. Not needed (and not
+  // even declared) on ESP_PLATFORM's mbedTLS 4.0.
+#ifndef ESP_PLATFORM
   mbedtls_ssl_conf_rng(&conf, psaRandomForMbedtls, nullptr);
+#endif
 
   // Without this, mbedtls_ssl_read() can block forever on a connection an
   // intermediate NAT/carrier silently dropped without a FIN/RST. Default is
