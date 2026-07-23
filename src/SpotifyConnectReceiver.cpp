@@ -241,6 +241,15 @@ void SpotifyConnectReceiver::runSessionInner() {
     ctx->session->handlePacket();
   }
 
+  // Tell the backend this device is going away. Possible fix, unconfirmed,
+  // for the app getting stuck on "Connecting..." after a quick CLI
+  // restart under our deterministic (name-derived) device id - go-librespot
+  // itself does NOT do this on a clean Close(), only reactively (another
+  // device took over, or an explicit stop command), so this is a deliberate
+  // divergence from the reference, not a port of a known-good fix. Harmless
+  // either way (more correct protocol behavior), but don't treat it as a
+  // proven root cause if the symptom resurfaces.
+  connectState->putStateInactive();
   connectState->disconnect();
   dealer->stop();
   dealer.reset();
