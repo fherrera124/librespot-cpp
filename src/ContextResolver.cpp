@@ -57,6 +57,13 @@ bool ContextResolver::trackFromJson(cJSON* trackItem, TrackReference& out) {
     out.uri = uriItem->valuestring;
   }
 
+  // Per-context-instance id - see TrackReference::uid's own comment on why
+  // a remote "play" command's skip_to needs this, not uri/gid.
+  cJSON* uidItem = cJSON_GetObjectItem(trackItem, "uid");
+  if (uidItem != nullptr && uidItem->valuestring != nullptr) {
+    out.uid = uidItem->valuestring;
+  }
+
   // Canonical protobuf JSON mapping: `bytes gid` travels as base64 -
   // unlike SPIRC's TrackRef, no hex round-trip needed here.
   cJSON* gidItem = cJSON_GetObjectItem(trackItem, "gid");

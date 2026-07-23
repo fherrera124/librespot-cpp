@@ -461,8 +461,14 @@ bool PlayerCommandHandler::handlePlay(cJSON* command) {
   // PlayerState.context_uri.
   stateModel.setContextUri(resolvedContextUri);
 
-  // command.options.skip_to.{track_uri,track_index} - track_uid not
-  // matched (TrackReference has no uid field, only uri/gid).
+  // command.options.skip_to.{track_uri,track_uid,track_index}, tried in
+  // that order. track_uid matters more than it looks: clicking a track
+  // inside an already-active playlist context sends *only*
+  // skip_to.track_uid (confirmed on real hardware, no track_uri/
+  // track_index in that payload at all) - it's how Spotify disambiguates
+  // duplicate tracks/local files within one playlist, where uri/gid alone
+  // can't. Without it this silently fell through to startIndex's default
+  // of 0, restarting the context's own first track on every click.
   int startIndex = 0;
   bool startPaused = false;
   cJSON* optionsItem =
@@ -474,21 +480,22 @@ bool PlayerCommandHandler::handlePlay(cJSON* command) {
 
     cJSON* skipToItem = cJSON_GetObjectItem(optionsItem, "skip_to");
     if (skipToItem != nullptr) {
-      // TEMP DIAGNOSTIC (2026-07-22): clicking a track within an already-
-      // active playlist reportedly always restarts from the context's own
-      // first track - confirming whether the real skip_to payload uses
-      // track_uid (not matched today - see this function's own comment)
-      // instead of/alongside track_uri. Remove once resolved.
-      char* skipToDump = cJSON_PrintUnformatted(skipToItem);
-      CSPOT_LOG(info, "play: raw skip_to = %s", skipToDump ? skipToDump : "(null)");
-      if (skipToDump) free(skipToDump);
-
       cJSON* trackUriItem = cJSON_GetObjectItem(skipToItem, "track_uri");
+      cJSON* trackUidItem = cJSON_GetObjectItem(skipToItem, "track_uid");
       if (trackUriItem != nullptr && trackUriItem->valuestring != nullptr &&
           trackUriItem->valuestring[0] != '\0') {
         std::string skipToUri = trackUriItem->valuestring;
         for (size_t i = 0; i < tracks.size(); i++) {
           if (tracks[i].uri == skipToUri) {
+            startIndex = (int)i;
+            break;
+          }
+        }
+      } else if (trackUidItem != nullptr && trackUidItem->valuestring != nullptr &&
+                trackUidItem->valuestring[0] != '\0') {
+        std::string skipToUid = trackUidItem->valuestring;
+        for (size_t i = 0; i < tracks.size(); i++) {
+          if (tracks[i].uid == skipToUid) {
             startIndex = (int)i;
             break;
           }
