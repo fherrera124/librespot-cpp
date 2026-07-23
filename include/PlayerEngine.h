@@ -46,7 +46,7 @@ class PlayerEngine : public bell::Task {
   void setConnectionId(const std::string& connectionId);
 
   // PUTs the current device state to spclient. Synchronous - only call from
-  // DealerClient's own task, at registration time.
+  // DealerSession's own task, at registration time.
   // isActive: Device.is_active, drives cluster pushes; defaults false
   // (registration-only PUTs).
   // Returns true on HTTP 200.
@@ -54,7 +54,7 @@ class PlayerEngine : public bell::Task {
 
   // Tells spclient this device stopped being active (PUT
   // /connect-state/v1/devices/{id}/inactive). Synchronous - only call from
-  // DealerClient's task (cluster-update path).
+  // DealerSession's task (cluster-update path).
   bool putStateInactive();
 
   // Decodes a ClusterUpdate push and stops playback if we thought we were
@@ -172,7 +172,7 @@ class PlayerEngine : public bell::Task {
   std::atomic<uint64_t> activeSinceMs{0};
 
   // See setLastCommand(). Guarded by lastCommandMutex: written from
-  // DealerClient's task, read from both PUT paths.
+  // DealerSession's task, read from both PUT paths.
   std::mutex lastCommandMutex;
   uint32_t lastCommandMessageId = 0;
   std::string lastCommandSentByDeviceId;
@@ -191,7 +191,7 @@ class PlayerEngine : public bell::Task {
   // Owns spclient host resolution/connection reuse/retry/rate-limit
   // tracking for put()/putInactive() - see PutStateClient.h. Serializes
   // its own sends end-to-end: putState() runs synchronously on
-  // DealerClient's task while updatePlayerState()'s actual send runs on
+  // DealerSession's task while updatePlayerState()'s actual send runs on
   // this class's own task - two tasks that can call in concurrently.
   PutStateClient putStateClient;
 

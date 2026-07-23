@@ -455,9 +455,9 @@ producción, solo `tests/`).
 
 ---
 
-### F103 — Quinto binario `engine_test`: TrackQueue/TrackPlayer/DealerClient/PlayerEngine compilando y linkeando para host (Hardening/testing, aplicado)
+### F103 — Quinto binario `engine_test`: TrackQueue/TrackPlayer/DealerSession/PlayerEngine compilando y linkeando para host (Hardening/testing, aplicado)
 
-Hasta acá `TrackQueue.cpp`/`TrackPlayer.cpp`/`DealerClient.cpp`/
+Hasta acá `TrackQueue.cpp`/`TrackPlayer.cpp`/`DealerSession.cpp`/
 `PlayerEngine.cpp`(+`PlayerEngineCommands.cpp`, ver
 `docs/dealer_websocket_migration.md` §7) quedaban totalmente fuera de
 `tests/` — no por ninguna dependencia real de ESP32 (ninguno de los
@@ -492,7 +492,7 @@ ESP32):
 
 **Por qué es un target aparte, no parte de `unit_tests`**: estos
 archivos necesitan el `ApResolve.cpp` real (`fetchFirstSpclientAddress()`/
-`fetchFirstDealerAddress()`, que `DealerClient`/`PlayerEngine`
+`fetchFirstDealerAddress()`, que `DealerSession`/`PlayerEngine`
 llaman) — pero `unit_tests`/`f93_concurrency_test`/
 `f87_logger_concurrency_test` linkean `ApResolveStub.cpp` (el doble de
 F101, solo cubre `fetchFirstApAddress()`). Compilar ambos en el mismo
@@ -508,7 +508,7 @@ completo. Además se agregaron unos pocos `TEST_CASE` reales de
 `TrackReference::encodeURI()`/`decodeURI()` (ida y vuelta base62↔gid)
 y `ContextResolver::trackFromJson()` (los tres casos: gid en base64,
 solo uri con fallback base62, ninguno de los dos). Testear el
-comportamiento en runtime de `DealerClient`/`PlayerEngine`
+comportamiento en runtime de `DealerSession`/`PlayerEngine`
 (reconexión, PUTs, comandos) seguiría necesitando algo del calibre de
 `FakeAP`/`FakeCdnServer` de F101 pero para un servidor Dealer WS falso
 — no se hizo acá, queda como posible extensión futura si hace falta.

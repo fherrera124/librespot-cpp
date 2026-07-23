@@ -136,7 +136,7 @@ void PlayerEngine::buildDeviceInfo(connectstate_DeviceInfo& info) {
   caps.supports_command_request = true;
   caps.supports_playlist_v2 = true;
   // False until gzip decoding is supported (§6.3) - keeps cluster updates
-  // uncompressed so DealerClient can read them.
+  // uncompressed so DealerSession can read them.
   caps.supports_gzip_pushes = false;
   caps.supported_types_count = 2;
   strcpy(caps.supported_types[0], "audio/track");

@@ -68,7 +68,7 @@ class TCPServerSocket {
   // callers use this to periodically re-check their own stop condition
   // instead of blocking in accept() forever with no portable way to
   // interrupt it. Same RECEIVE_POLL_MS-style pattern as
-  // DealerClient::runTask().
+  // DealerSession::runTask().
   int acceptWithTimeout(int timeoutMs) {
     if (listenFd < 0) {
       return -1;

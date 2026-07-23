@@ -17,7 +17,7 @@ class SimpleHTTPServer;
 
 namespace cspot {
 class LoginBlob;
-class DealerClient;
+class DealerSession;
 
 struct SpotifyConnectReceiverConfig {
   std::string deviceName;
@@ -33,7 +33,7 @@ struct SpotifyConnectReceiverConfig {
 
 // Runs a Spotify Connect device end-to-end: ZeroConf pairing (HTTP server +
 // mDNS advertisement), session connect/auth/retry, and the actual playback
-// engine (via DealerClient/PlayerEngine) - everything a consumer on
+// engine (via DealerSession/PlayerEngine) - everything a consumer on
 // any platform needs, given only an AudioSink and config. Platform-specific
 // code (GPIO pins, a concrete AudioSink implementation) stays with the
 // caller; this class never touches hardware directly.
@@ -56,7 +56,7 @@ class SpotifyConnectReceiver : public bell::Task {
                          EventHandler eventHandler,
                          ConnectionStateCallback onConnectionStateChanged);
   // Defined in the .cpp, not inlined here: MDNSService/SimpleHTTPServer/
-  // DealerClient are only forward-declared in this header, and the
+  // DealerSession are only forward-declared in this header, and the
   // implicit unique_ptr deleter needs their complete types to call
   // delete - an inline definition would break for any translation unit
   // that includes this header without also including theirs.
@@ -110,7 +110,7 @@ class SpotifyConnectReceiver : public bell::Task {
   // task joined) BEFORE either - its handlers run on that task and touch
   // both. Members destroy in reverse declaration order.
   std::unique_ptr<bell::SimpleHTTPServer> httpServer;
-  std::unique_ptr<cspot::DealerClient> dealer;
+  std::unique_ptr<cspot::DealerSession> dealer;
 
   void startHttpServerAndMdns();
 

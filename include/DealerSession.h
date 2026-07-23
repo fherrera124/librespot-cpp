@@ -25,10 +25,10 @@ class PlayerEngine;
 // connection lifecycle and receive loop, parses the JSON envelope, and
 // dispatches by URI/type to this class's own PlayerEngine
 // (getConnectState()), which owns the whole playback engine.
-class DealerClient : public bell::Task {
+class DealerSession : public bell::Task {
  public:
-  DealerClient(std::shared_ptr<cspot::Context> ctx);
-  ~DealerClient();
+  DealerSession(std::shared_ptr<cspot::Context> ctx);
+  ~DealerSession();
 
   /**
   * @brief Stops the reconnect/receive loop and closes the connection.
@@ -48,17 +48,30 @@ class DealerClient : public bell::Task {
   * play/pause/next/previous/seek button presses, position reads) - the
   * same PlayerEngine that also executes remote player/command
   * requests, so there's exactly one engine either input reaches. Valid for
-  * as long as this DealerClient is (constructed in the constructor, never
+  * as long as this DealerSession is (constructed in the constructor, never
   * null).
   */
   PlayerEngine* getConnectState() { return connectState.get(); }
+
+  // Pops one message (bounded ~200ms wait, mirrors MercurySession::
+  // handlePacket()) and dispatches it if one arrived - the external
+  // entry point SpotifyConnectReceiver's own dispatch loop drives,
+  // exactly like Mercury's own handlePacket(). Safe to call from any
+  // thread: dispatchMessage() never touches `transport` (see its own
+  // comment) - the only thing that may is this task's own runTask().
+  bool handleMessage();
 
  protected:
   void runTask() override;
 
  private:
   bool connectOnce();
-  void handleMessage(const std::string& json);
+  // The real parse/dispatch logic - decides by URI/type and updates
+  // PlayerEngine/Context state, or queues a player/command for
+  // CommandWorker. Never calls transport->sendText() itself (replies go
+  // through pendingReplies instead), which is what makes it safe to run
+  // from any thread, not just runTask()'s own.
+  void dispatchMessage(const std::string& json);
   void sendReply(const std::string& key, bool success);
 
   // A "request" queued for CommandWorker (potentially slow, must not stall
@@ -104,6 +117,11 @@ class DealerClient : public bell::Task {
   std::shared_ptr<Login5Client> login5;
   std::unique_ptr<bell::WebSocketTransport> transport;
   std::unique_ptr<PlayerEngine> connectState;
+
+  // Raw messages received by runTask()'s own thread, drained externally by
+  // handleMessage() - same producer/consumer shape as MercurySession's own
+  // packetQueue.
+  bell::Queue<std::string> messageQueue;
 
   bell::Queue<PendingCommand> pendingCommands;
   bell::Queue<PendingReply> pendingReplies;

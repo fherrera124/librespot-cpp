@@ -48,7 +48,7 @@ vivía en `bell/`, no en `cspot/` (sección 2 de
 | `LoginBlob` | Credenciales: decodificación del blob de emparejamiento ZeroConf, arma el JSON que expone el HTTP server de pairing. |
 | `ApResolve` | Resuelve las direcciones de Access Point/Dealer/spclient a usar. |
 | `TimeProvider` | Sincroniza el reloj con el servidor de Spotify (expiración de tokens, PING/PONG). |
-| `Login5Client` | Token de Spotify's Login5 API — el que usa `DealerClient` para autenticar la conexión WebSocket al Dealer (`wss://.../?access_token=...`). Distinto del token OAuth clásico que pide `AccessKeyFetcher`. |
+| `Login5Client` | Token de Spotify's Login5 API — el que usa `DealerSession` para autenticar la conexión WebSocket al Dealer (`wss://.../?access_token=...`). Distinto del token OAuth clásico que pide `AccessKeyFetcher`. |
 | `Utils` | Funciones sueltas de bajo nivel: `extract`/`pack`, `hton64`, hex, etc. |
 
 ### Mercury (pub/sub sobre la conexión Shannon)
@@ -77,7 +77,7 @@ acá solo el mapa de clases.
 
 | Archivo | Qué hace |
 |---|---|
-| `DealerClient` | Dueño de la conexión WebSocket al Dealer y su loop de recepción - parsea el envelope JSON y despacha por URI/tipo. Tiene su propia tarea nested `CommandWorker` que ejecuta `player/command` requests fuera del loop de recepción (para no trabarlo). |
+| `DealerSession` | Dueño de la conexión WebSocket al Dealer y su loop de recepción - parsea el envelope JSON y despacha por URI/tipo. Tiene su propia tarea nested `CommandWorker` que ejecuta `player/command` requests fuera del loop de recepción (para no trabarlo). |
 | `PlayerEngine` | Publica el connect-state del dispositivo a spclient (tarea propia de PUT) y es dueño del motor de reproducción completo (`PlaybackController`/`PlayerStateModel`/`PlayerCommandHandler`). Antes se llamaba `ConnectStateHandler`. |
 | `PlaybackController` | Dueño de `TrackQueue`/`TrackPlayer`, tracking de posición, y la superficie de control (load/skip/seek/pause). |
 | `PlayerCommandHandler` | Decodifica y ejecuta los requests `hm://connect-state/v1/player/command` (transfer/play/pause/skip/seek/repeat/edición de cola) contra `PlaybackController`/`PlayerStateModel`/`ContextResolver`. |
@@ -88,7 +88,7 @@ acá solo el mapa de clases.
 
 | Archivo | Qué hace |
 |---|---|
-| `SpotifyConnectReceiver` | "Corre un dispositivo Spotify Connect de punta a punta": pairing ZeroConf (HTTP server + mDNS), conexión/auth/retry de sesión, y el motor completo (vía `DealerClient`/`PlayerEngine`) - todo lo que un consumidor en cualquier plataforma necesita, dado solo un `AudioSink` y config. Es lo que instancia `cspot_connect.cpp` (ver abajo) - antes esa lógica de ciclo de vida vivía ahí mismo. |
+| `SpotifyConnectReceiver` | "Corre un dispositivo Spotify Connect de punta a punta": pairing ZeroConf (HTTP server + mDNS), conexión/auth/retry de sesión, y el motor completo (vía `DealerSession`/`PlayerEngine`) - todo lo que un consumidor en cualquier plataforma necesita, dado solo un `AudioSink` y config. Es lo que instancia `cspot_connect.cpp` (ver abajo) - antes esa lógica de ciclo de vida vivía ahí mismo. |
 
 ### Soporte/utilidades
 
@@ -108,7 +108,7 @@ retiró junto con `SpircHandler`.
 
 | Carpeta | Qué hay |
 |---|---|
-| `main/io/` | Sockets y red: `Socket`/`TCPSocket`/`TLSSocket` (port a mbedTLS 4.0), `HTTPClient`, `SocketStream`, `WebSocketTransport` (RFC 6455, usado por `DealerClient`), `SimpleHTTPServer` (HTTP mínimo portable, usado por el pairing ZeroConf). |
+| `main/io/` | Sockets y red: `Socket`/`TCPSocket`/`TLSSocket` (port a mbedTLS 4.0), `HTTPClient`, `SocketStream`, `WebSocketTransport` (RFC 6455, usado por `DealerSession`), `SimpleHTTPServer` (HTTP mínimo portable, usado por el pairing ZeroConf). |
 | `main/utilities/` | `BellTask` (wrapper de tareas FreeRTOS/pthread que usa *todo* `cspot` - ver `stopAndWait()`/`onStopRequested()`/`shouldStop()`, 2026-07-21), `Crypto` (port a mbedTLS 4.0/PSA), logging (`BellLogger`), `WrappedSemaphore`, colas, buffers circulares. |
 | `main/audio-codec/` | Decoders — envuelven `tremor` (Vorbis)/`libhelix-mp3` (MP3); AAC/Opus deshabilitados (`BELL_CODEC_* OFF`). |
 | `main/audio-sinks/` | Salidas de audio. `BufferedAudioSink`/`PlainI2SAudioSink` (DAC I2S plano, sin códec I2C) portadas a `driver/i2s_std.h` - son las que usa `cspot_connect.cpp`. El resto (`AC101`, `ES8311`, `ES8388`, `ES9018`, `InternalAudioSink`, `SPDIF`, `TAS5711` - con códec/control I2C) siguen en el driver I2S legacy y quedan excluidas del build (`bell/CMakeLists.txt` las filtra). |
@@ -139,7 +139,7 @@ SpotifyConnectReceiver(audioSink, config, eventHandler, ...)
   -> handshake DH + AuthChallenges    (PlainConnection, sin cifrar)
   -> Session::authenticate()          (LoginBlob -> AuthChallenges)
   -> ShannonConnection                (a partir de acá, cifrado)
-  -> DealerClient (tarea propia)      (Login5Client -> token -> wss:// dealer)
+  -> DealerSession (tarea propia)      (Login5Client -> token -> wss:// dealer)
        -> CommandWorker (tarea propia) ejecuta player/command requests
        -> PlayerEngine: cluster/volume pushes, PUT de connect-state (tarea propia)
        -> PlaybackController::loadTracks()/skipTrack()/...

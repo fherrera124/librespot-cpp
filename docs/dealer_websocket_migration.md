@@ -30,7 +30,7 @@ hoy, no una idiosincrasia de un solo cliente:
 
 **Clases y responsabilidades**:
 
-- **`DealerClient`** (`bell::Task` propia, 32KB/PSRAM): dueña del ciclo
+- **`DealerSession`** (`bell::Task` propia, 32KB/PSRAM): dueña del ciclo
   de vida de la conexión WS. Resuelve el host (`ApResolve`), pide token
   (`Login5Client`), conecta vía `WebSocketTransport`, parsea el
   envelope JSON, rutea por URI/`message_ident`, manda/verifica ping-
@@ -47,7 +47,7 @@ hoy, no una idiosincrasia de un solo cliente:
   el 2026-07-18, ya que no tenía ninguna dependencia real de Dealer ni
   de ESP32: el tuning específico del Dealer (`PING_INTERVAL_MS`/
   `PING_TIMEOUT_MS`/`MAX_MESSAGE_SIZE`) ahora son parámetros de
-  `create()`, con los valores calibrados viviendo en `DealerClient.cpp`
+  `create()`, con los valores calibrados viviendo en `DealerSession.cpp`
   en vez de hardcodeados en el transporte): RFC 6455 propio sobre
   `bell::TLSSocket`, un solo hilo, sin mutex, **no thread-safe** (ver
   comentario de cabecera del archivo). Rama `wss://` idéntica en firmware y host;
@@ -98,7 +98,7 @@ country code, sync de tiempo, y el único GET de metadata
   la sesión WS con el HTTP PUT.
 - **El ping JSON de aplicación (`{"type":"ping"}` cada 30s) es
   obligatorio — los frames de control WS solos NO alcanzan** para
-  mantener la conexión no-idle a los ojos del backend. `DealerClient`
+  mantener la conexión no-idle a los ojos del backend. `DealerSession`
   además vigila que los pongs realmente lleguen (`jsonPongDeadline`,
   timeout ~40s) y fuerza una reconexión si dejan de llegar — mismo
   mecanismo que `go-librespot` (`pingTicker()`/`timeSinceLastPong()`).
@@ -226,7 +226,7 @@ real - `go-librespot` no tiene equivalente para ninguno de los dos:
   (reusar, y si tira excepción, reconectar en el próximo intento).
 - `CDNAudioFile`: mismo patrón para la conexión CDN (>20s idle) -
   retirado, mismo motivo.
-- **Se mantiene**: el watchdog de pongs perdidos de `DealerClient` (ver
+- **Se mantiene**: el watchdog de pongs perdidos de `DealerSession` (ver
   §2) - es el único de los tres con equivalente real confirmado en
   `go-librespot`.
 
@@ -327,7 +327,7 @@ independientemente:
 
 ## 7. Otros hallazgos reales, no relacionados al cierre del WS
 
-- **`PlayerEngine`/`DealerClient` deben correr en su propia
+- **`PlayerEngine`/`DealerSession` deben correr en su propia
   `bell::Task` (32KB, PSRAM)** - nunca HTTPS/TLS síncrono desde la
   tarea de quien llama. Dos crashes reales por violar esto: una tarea
   de 8KB insuficiente para un handshake TLS, y un PUT síncrono
@@ -353,10 +353,10 @@ independientemente:
   primer frame (subido de 32KB a 256KB tras perder en silencio un
   cluster update real de 54KB).
 - **`sendPutStateRequest()` se llama desde dos tareas distintas**
-  (registro desde `DealerClient`, estado normal desde la propia tarea
+  (registro desde `DealerSession`, estado normal desde la propia tarea
   de `PlayerEngine`) - necesita `putMutex` serializando toda la
   función, no sólo cachear campos.
-- **`DealerClient::runTask()` no debe ejecutar `handlePlayerCommand()`
+- **`DealerSession::runTask()` no debe ejecutar `handlePlayerCommand()`
   inline** - puede bloquear en HTTP (context-resolve) y detiene la
   lectura/pong del WS mientras tanto. Separado en una `CommandWorker`
   con tarea propia; comunicación por dos colas

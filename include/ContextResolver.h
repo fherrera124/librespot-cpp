@@ -22,7 +22,7 @@ class Login5Client;
 //
 // Context/ContextPage/ContextTrack are protobuf's canonical JSON mapping
 // (bytes fields as base64 strings) - cJSON parsing end to end, no nanopb
-// schema, same as DealerClient's envelope.
+// schema, same as DealerSession's envelope.
 class ContextResolver {
  public:
   ContextResolver(std::shared_ptr<cspot::Context> ctx,
@@ -66,7 +66,7 @@ class ContextResolver {
 
   // Cached across fetchJson() calls, cleared on transport failure. hostMutex
   // only guards spclientHost: seedSpclientHost() can run on
-  // PlayerEngine's task while fetchJson() runs on DealerClient's.
+  // PlayerEngine's task while fetchJson() runs on DealerSession's.
   // `connection` stays single-task (only fetchJson() touches it), so it
   // needs no lock of its own.
   std::mutex hostMutex;

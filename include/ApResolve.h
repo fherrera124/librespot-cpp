@@ -16,7 +16,7 @@ class ApResolve {
 
   /**
    * @brief All candidate Dealer WebSocket endpoints (host:port), in the
-   * order apresolve.spotify.com returned them - DealerClient tries each
+   * order apresolve.spotify.com returned them - DealerSession tries each
    * before giving up, instead of getting stuck on a single bad host (same
    * "try every resolved address" pattern as PlainConnection::connect()'s
    * F17 fix; matches go-librespot's own dealer address rotation).

@@ -15,7 +15,7 @@ Currently in a state of rapid development.
 
 ## Spotify Connect engine
 
-The engine (`Session`, `DealerClient`, `PlayerEngine`, `TrackPlayer`,
+The engine (`Session`, `DealerSession`, `PlayerEngine`, `TrackPlayer`,
 `TrackQueue`, `AudioSink`) has no application glue (WiFi, zeroconf, I2S
 pins) - that's the consuming project's job.
 

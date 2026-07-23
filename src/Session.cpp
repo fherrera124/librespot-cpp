@@ -75,7 +75,7 @@ void Session::connectWithRandomAp() {
   // Try every candidate before giving up, instead of getting stuck on a
   // single bad AP - same pattern as PlainConnection::connect()'s own F17
   // fix one level down (per-hostname address rotation), and
-  // DealerClient::connectOnce()'s dealer address rotation.
+  // DealerSession::connectOnce()'s dealer address rotation.
   for (const auto& apAddr : apAddrs) {
     auto conn = std::make_unique<cspot::PlainConnection>();
     conn->timeoutHandler = [this]() {

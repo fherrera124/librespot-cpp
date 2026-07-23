@@ -423,7 +423,7 @@ bool PlayerCommandHandler::handleTransfer(cJSON* command) {
   pb_release(connectstate_TransferState_fields, &transferState);
 
   // Synchronous, before loadTracks() kicks off the async key/CDN fetch and
-  // before DealerClient sends this request's WS reply - see
+  // before DealerSession sends this request's WS reply - see
   // putBufferingState()'s header comment / §26.
   std::string firstTrackUri = (startIndex >= 0 && startIndex < (int)tracks.size())
                                   ? tracks[startIndex].uri
@@ -511,7 +511,7 @@ bool PlayerCommandHandler::handlePlay(cJSON* command) {
   stateModel.adoptOrRegenerateSessionId(nullptr);
 
   // Synchronous, before loadTracks() kicks off the async key/CDN fetch and
-  // before DealerClient sends this request's WS reply - see
+  // before DealerSession sends this request's WS reply - see
   // putBufferingState()'s header comment / §26.
   std::string firstTrackUri = (startIndex >= 0 && startIndex < (int)tracks.size())
                                   ? tracks[startIndex].uri

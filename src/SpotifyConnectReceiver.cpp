@@ -7,7 +7,7 @@
 #include "BellUtils.h"  // for BELL_SLEEP_MS
 #include "CSpotContext.h"
 #include "PlayerEngine.h"
-#include "DealerClient.h"
+#include "DealerSession.h"
 #include "LoginBlob.h"
 #include "Logger.h"
 #include "MDNSService.h"
@@ -220,7 +220,7 @@ void SpotifyConnectReceiver::runSessionInner() {
   // the actual playback engine - real player/command requests execute
   // directly against it. Connects on its own task, nothing here blocks on
   // it.
-  dealer = std::make_unique<cspot::DealerClient>(ctx);
+  dealer = std::make_unique<cspot::DealerSession>(ctx);
   auto connectState = dealer->getConnectState();
 
   // audioSink outlives every session (real hardware/ring buffer) -
@@ -237,8 +237,14 @@ void SpotifyConnectReceiver::runSessionInner() {
 
   if (connectionStateCallback) connectionStateCallback(true);
 
+  // Single unified dispatch loop: Mercury and Dealer now share the same
+  // producer/consumer shape (each has its own thread doing the real,
+  // possibly-blocking transport read, pushing onto its own queue; this
+  // loop is the one place that drains both and decides whether to keep
+  // going) - see docs/cspot_bell_estructura.md.
   while (linked && !shouldStop()) {
     ctx->session->handlePacket();
+    dealer->handleMessage();
   }
 
   // Tell the backend this device is going away. Possible fix, unconfirmed,

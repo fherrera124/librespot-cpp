@@ -1,4 +1,4 @@
-#include "DealerClient.h"
+#include "DealerSession.h"
 
 #include <algorithm>  // for min
 #include <chrono>     // for steady_clock - JSON ping cadence (§25)
@@ -37,7 +37,7 @@ constexpr uint32_t DEALER_PING_TIMEOUT_MS = 7000;
 constexpr size_t DEALER_MAX_MESSAGE_SIZE = 256 * 1024;
 }  // namespace
 
-DealerClient::DealerClient(std::shared_ptr<cspot::Context> ctx)
+DealerSession::DealerSession(std::shared_ptr<cspot::Context> ctx)
     : bell::Task("cspotDealer", 32 * 1024, 1, 0), ctx(ctx) {
   login5 = std::make_shared<Login5Client>(ctx);
   connectState = std::make_unique<PlayerEngine>(ctx, login5);
@@ -46,11 +46,11 @@ DealerClient::DealerClient(std::shared_ptr<cspot::Context> ctx)
   startTask();
 }
 
-DealerClient::~DealerClient() {
+DealerSession::~DealerSession() {
   stop();
 }
 
-void DealerClient::stop() {
+void DealerSession::stop() {
   // Never touches transport directly - not thread-safe, only runTask()'s
   // own thread may. Its 1000ms receiveMessage() poll notices shouldStop()
   // on its own, no explicit wake needed.
@@ -63,7 +63,7 @@ void DealerClient::stop() {
   stopAndWait();
 }
 
-DealerClient::CommandWorker::CommandWorker(
+DealerSession::CommandWorker::CommandWorker(
     PlayerEngine* connectState,
     bell::Queue<PendingCommand>* pendingCommands,
     bell::Queue<PendingReply>* pendingReplies)
@@ -74,15 +74,15 @@ DealerClient::CommandWorker::CommandWorker(
   startTask();
 }
 
-DealerClient::CommandWorker::~CommandWorker() {
+DealerSession::CommandWorker::~CommandWorker() {
   stop();
 }
 
-void DealerClient::CommandWorker::stop() {
+void DealerSession::CommandWorker::stop() {
   stopAndWait();
 }
 
-void DealerClient::CommandWorker::runTask() {
+void DealerSession::CommandWorker::runTask() {
   PendingCommand cmd;
   while (!shouldStop()) {
     if (!pendingCommands->wtpop(cmd, 1000)) {
@@ -104,18 +104,18 @@ void DealerClient::CommandWorker::runTask() {
   }
 }
 
-bool DealerClient::isConnected() {
+bool DealerSession::isConnected() {
   return transport != nullptr && transport->isConnected();
 }
 
-std::string DealerClient::getConnectionId() {
+std::string DealerSession::getConnectionId() {
   std::lock_guard<std::mutex> lock(connectionIdMutex);
   return connectionId;
 }
 
 // Never cache the URL: re-resolves the host and re-fetches the token every
 // attempt (§6.5).
-bool DealerClient::connectOnce() {
+bool DealerSession::connectOnce() {
   std::vector<std::string> dealerHosts;
   try {
     ApResolve apResolve("");
@@ -149,7 +149,7 @@ bool DealerClient::connectOnce() {
   return false;
 }
 
-void DealerClient::runTask() {
+void DealerSession::runTask() {
   int backoffMs = RECONNECT_BACKOFF_BASE_MS;
   bool everConnected = false;
 
@@ -181,7 +181,10 @@ void DealerClient::runTask() {
     std::string message;
     while (!shouldStop() && transport->isConnected()) {
       if (transport->receiveMessage(message, RECEIVE_POLL_MS)) {
-        handleMessage(message);
+        // Dispatch itself now happens off this thread - see handleMessage()
+        // (the public, externally-driven entry point) and messageQueue's
+        // own comment.
+        messageQueue.push(message);
         idleMs = 0;
       } else {
         idleMs += RECEIVE_POLL_MS;
@@ -236,7 +239,16 @@ void DealerClient::runTask() {
   }
 }
 
-void DealerClient::handleMessage(const std::string& json) {
+bool DealerSession::handleMessage() {
+  std::string message;
+  if (messageQueue.wtpop(message, 200)) {
+    dispatchMessage(message);
+    return true;
+  }
+  return false;
+}
+
+void DealerSession::dispatchMessage(const std::string& json) {
   cJSON* root = cJSON_Parse(json.c_str());
   if (root == nullptr) {
     CSPOT_LOG(error, "Dealer: unparseable message (%d bytes)",
@@ -406,7 +418,7 @@ void DealerClient::handleMessage(const std::string& json) {
         if (endpointItem != nullptr && endpointItem->valuestring != nullptr) {
           endpoint = endpointItem->valuestring;
           // Handed off to CommandWorker - a slow command must never stall
-          // this task's own receive loop/pings (see DealerClient.h).
+          // this task's own receive loop/pings (see DealerSession.h).
           pendingCommands.push(PendingCommand{key, ident, endpoint, command,
                                               root, ownedRoot});
           queued = true;
@@ -446,7 +458,7 @@ void DealerClient::handleMessage(const std::string& json) {
   cJSON_Delete(root);
 }
 
-void DealerClient::sendReply(const std::string& key, bool success) {
+void DealerSession::sendReply(const std::string& key, bool success) {
   if (key.empty() || transport == nullptr) {
     return;
   }
