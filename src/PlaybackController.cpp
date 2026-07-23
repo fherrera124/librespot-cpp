@@ -172,6 +172,24 @@ bool PlaybackController::skipTrack(TrackQueue::SkipDirection dir,
                                    bool allowSeeking) {
   bool skipped =
       trackQueue->skipTrack(dir, getPositionMs(), true, allowSeeking);
+  if (skipped) {
+    // Synchronous reset, before trackPlayer->resetState() kicks off the
+    // slow reload - matches go-librespot's skipPrev()/skipNext()
+    // (controls.go), which zero PositionAsOfTimestamp immediately rather
+    // than waiting for loadCurrentTrack(). Every skipTrack()-driven reload
+    // always starts at position 0 in every branch, so 0 is never a guess
+    // here. Not gated on `dir`: NEXT has the identical staleness, just
+    // less visible.
+    //
+    // trackLoadedCallback/reachedPlaybackCallback still re-anchor
+    // positionMeasuredAt once the reload actually completes - don't
+    // remove that; without it getPositionMs() would report a "playing"
+    // clock ticking through the whole silent reload window once real
+    // audio starts.
+    std::lock_guard<std::mutex> lock(positionMutex);
+    positionMs = 0;
+    positionMeasuredAt = ctx->timeProvider->getSyncedTimestamp();
+  }
   trackPlayer->resetState(!skipped);
   return skipped;
 }
