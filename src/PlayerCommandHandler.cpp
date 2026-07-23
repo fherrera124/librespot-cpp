@@ -474,6 +474,15 @@ bool PlayerCommandHandler::handlePlay(cJSON* command) {
 
     cJSON* skipToItem = cJSON_GetObjectItem(optionsItem, "skip_to");
     if (skipToItem != nullptr) {
+      // TEMP DIAGNOSTIC (2026-07-22): clicking a track within an already-
+      // active playlist reportedly always restarts from the context's own
+      // first track - confirming whether the real skip_to payload uses
+      // track_uid (not matched today - see this function's own comment)
+      // instead of/alongside track_uri. Remove once resolved.
+      char* skipToDump = cJSON_PrintUnformatted(skipToItem);
+      CSPOT_LOG(info, "play: raw skip_to = %s", skipToDump ? skipToDump : "(null)");
+      if (skipToDump) free(skipToDump);
+
       cJSON* trackUriItem = cJSON_GetObjectItem(skipToItem, "track_uri");
       if (trackUriItem != nullptr && trackUriItem->valuestring != nullptr &&
           trackUriItem->valuestring[0] != '\0') {
