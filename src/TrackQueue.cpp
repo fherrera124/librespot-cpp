@@ -15,12 +15,7 @@
 #include "TrackLoader.h"
 #include "Utils.h"
 #include "WrappedSemaphore.h"
-#ifdef BELL_ONLY_CJSON
 #include "cJSON.h"
-#else
-#include "nlohmann/json.hpp"      // for basic_json<>::object_t, basic_json
-#include "nlohmann/json_fwd.hpp"  // for json
-#endif
 #include "protobuf/metadata.pb.h"
 
 using namespace cspot;
@@ -417,7 +412,6 @@ void QueuedTrack::stepLoadCDNUrl(const std::string& accessKey) {
       throw std::runtime_error("storage-resolve returned an empty body");
     }
 
-#ifdef BELL_ONLY_CJSON
     // cJSON_Parse()/cJSON_GetObjectItem() both return null on failure - the
     // original code dereferenced the result unconditionally, a null deref
     // waiting for a malformed/unexpected response. See F80.
@@ -433,10 +427,6 @@ void QueuedTrack::stepLoadCDNUrl(const std::string& accessKey) {
     }
     cdnUrl = cdnUrlItem->valuestring;
     cJSON_Delete(jsonResult);
-#else
-    auto jsonResult = nlohmann::json::parse(result);
-    cdnUrl = jsonResult["cdnurl"][0];
-#endif
 
     CSPOT_LOG(info, "Received CDN URL, %s", cdnUrl.c_str());
     setState(State::READY);

@@ -59,9 +59,6 @@ if(ESP_PLATFORM)
     else()
         set(BELL_CODEC_MP3 OFF)
     endif()
-    if(NOT CONFIG_LIBRESPOT_USE_NLOHMANN_JSON)
-        set(BELL_ONLY_CJSON ON)
-    endif()
 endif()
 
 # Use externally specified bell library or the vendored copy

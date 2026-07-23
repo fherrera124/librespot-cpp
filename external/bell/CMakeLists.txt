@@ -12,7 +12,6 @@ option(BELL_SINK_ALSA "Enable ALSA audio sink" OFF)
 option(BELL_SINK_PORTAUDIO "Enable PortAudio sink" OFF)
 
 # cJSON wrapper
-option(BELL_ONLY_CJSON "Use only cJSON, not Nlohmann")
 set(BELL_EXTERNAL_CJSON "" CACHE STRING "External cJSON library target name, optional")
 
 # vorbis
@@ -22,9 +21,6 @@ option(BELL_VORBIS_FLOAT "Use floating point Vorbis API" OFF)
 # fmt & regex
 option(BELL_DISABLE_FMT "Don't use std::fmt (saves space)" OFF)
 option(BELL_DISABLE_REGEX "Don't use std::regex (saves space)" OFF)
-
-# disable json tests
-set(JSON_BuildTests OFF CACHE INTERNAL "")
 
 # Backwards compatibility with deprecated options
 if(BELL_USE_ALSA)
@@ -49,7 +45,6 @@ if(NOT BELL_DISABLE_SINKS)
     message(STATUS "    - PortAudio sink: ${BELL_SINK_PORTAUDIO}")
 endif()
 
-message(STATUS "    Use cJSON only: ${BELL_ONLY_CJSON}")
 message(STATUS "    Disable Fmt: ${BELL_DISABLE_FMT}")
 message(STATUS "    Disable Regex: ${BELL_DISABLE_REGEX}")
 
@@ -192,12 +187,6 @@ if(NOT BELL_DISABLE_SINKS)
     list(APPEND SOURCES ${SINK_SOURCES})
 endif()
 
-if(NOT BELL_ONLY_CJSON)
-    set(JSON_SystemInclude ON CACHE INTERNAL "")
-    add_subdirectory(external/nlohmann_json)
-    list(APPEND EXTRA_LIBS nlohmann_json::nlohmann_json)
-endif()	
-
 if(BELL_EXTERNAL_CJSON)
 	list(APPEND EXTRA_LIBS ${BELL_EXTERNAL_CJSON})
 else()	
@@ -241,10 +230,6 @@ endif()
 
 if(BELL_DISABLE_REGEX)
     target_compile_definitions(bell PUBLIC BELL_DISABLE_REGEX)
-endif()	
-
-if(BELL_ONLY_CJSON)
-    target_compile_definitions(bell PUBLIC BELL_ONLY_CJSON)
 endif()	
 
 if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "SunOS")

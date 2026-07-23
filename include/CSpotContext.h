@@ -9,13 +9,7 @@
 #include "TimeProvider.h"
 #include "protobuf/authentication.pb.h"  // for AuthenticationType_AUTHE...
 #include "protobuf/metadata.pb.h"
-#ifdef BELL_ONLY_CJSON
 #include "cJSON.h"
-#else
-#include "nlohmann/detail/json_pointer.hpp"  // for json_pointer<>::string_t
-#include "nlohmann/json.hpp"      // for basic_json<>::object_t, basic_json
-#include "nlohmann/json_fwd.hpp"  // for json
-#endif
 
 namespace cspot {
 struct Context {
@@ -43,7 +37,6 @@ struct Context {
   std::shared_ptr<TimeProvider> timeProvider;
   std::shared_ptr<cspot::MercurySession> session;
   std::string getCredentialsJson() {
-#ifdef BELL_ONLY_CJSON
     cJSON* json_obj = cJSON_CreateObject();
     cJSON_AddStringToObject(json_obj, "authData",
                             Crypto::base64Encode(config.authData).c_str());
@@ -58,15 +51,6 @@ struct Context {
     free(str);
 
     return json_objStr;
-#else
-    nlohmann::json obj;
-    obj["authData"] = Crypto::base64Encode(config.authData);
-    obj["authType"] =
-        AuthenticationType_AUTHENTICATION_STORED_SPOTIFY_CREDENTIALS;
-    obj["username"] = config.username;
-
-    return obj.dump();
-#endif
   }
 
   static std::shared_ptr<Context> createFromBlob(

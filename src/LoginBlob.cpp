@@ -8,13 +8,7 @@
 #include "ConstantParameters.h"          // for brandName, cspot, protoc...
 #include "Logger.h"                      // for CSPOT_LOG
 #include "protobuf/authentication.pb.h"  // for AuthenticationType_AUTHE...
-#ifdef BELL_ONLY_CJSON
 #include "cJSON.h"
-#else
-#include "nlohmann/detail/json_pointer.hpp"  // for json_pointer<>::string_t
-#include "nlohmann/json.hpp"      // for basic_json<>::object_t, basic_json
-#include "nlohmann/json_fwd.hpp"  // for json
-#endif
 
 using namespace cspot;
 
@@ -167,7 +161,6 @@ void LoginBlob::loadUserPass(const std::string& username,
 }
 
 void LoginBlob::loadJson(const std::string& json) {
-#ifdef BELL_ONLY_CJSON
   cJSON* root = cJSON_Parse(json.c_str());
   this->authType = cJSON_GetObjectItem(root, "authType")->valueint;
   this->username = cJSON_GetObjectItem(root, "username")->valuestring;
@@ -175,18 +168,9 @@ void LoginBlob::loadJson(const std::string& json) {
       cJSON_GetObjectItem(root, "authData")->valuestring;
   this->authData = crypto->base64Decode(authDataObject);
   cJSON_Delete(root);
-#else
-  auto root = nlohmann::json::parse(json);
-  this->authType = root["authType"];
-  this->username = root["username"];
-  std::string authDataObject = root["authData"];
-
-  this->authData = crypto->base64Decode(authDataObject);
-#endif
 }
 
 std::string LoginBlob::toJson() {
-#ifdef BELL_ONLY_CJSON
   cJSON* json_obj = cJSON_CreateObject();
   cJSON_AddStringToObject(json_obj, "authData",
                           crypto->base64Encode(authData).c_str());
@@ -199,14 +183,6 @@ std::string LoginBlob::toJson() {
   free(str);
 
   return json_objStr;
-#else
-  nlohmann::json obj;
-  obj["authData"] = crypto->base64Encode(authData);
-  obj["authType"] = this->authType;
-  obj["username"] = this->username;
-
-  return obj.dump();
-#endif
 }
 
 void LoginBlob::loadZeroconfQuery(
@@ -231,7 +207,6 @@ std::string LoginBlob::buildZeroconfInfo() {
   // Encode publicKey into base64
 
   auto encodedKey = crypto->base64Encode(crypto->publicKey);
-#ifdef BELL_ONLY_CJSON
   cJSON* json_obj = cJSON_CreateObject();
   cJSON_AddNumberToObject(json_obj, "status", 101);
   cJSON_AddStringToObject(json_obj, "statusString", "OK");
@@ -260,31 +235,6 @@ std::string LoginBlob::buildZeroconfInfo() {
   free(str);
 
   return json_objStr;
-#else
-  nlohmann::json obj;
-  obj["status"] = 101;
-  obj["statusString"] = "OK";
-  obj["version"] = cspot::protocolVersion;
-  obj["spotifyError"] = 0;
-  obj["libraryVersion"] = cspot::swVersion;
-  obj["accountReq"] = "PREMIUM";
-  obj["brandDisplayName"] = cspot::brandName;
-  obj["modelDisplayName"] = name;
-  obj["voiceSupport"] = "NO";
-  obj["availability"] = this->username;
-  obj["productID"] = 0;
-  obj["tokenType"] = "default";
-  obj["groupStatus"] = "NONE";
-  obj["resolverVersion"] = "0";
-  obj["scope"] = "streaming,client-authorization-universal";
-  obj["activeUser"] = "";
-  obj["deviceID"] = deviceId;
-  obj["remoteName"] = name;
-  obj["publicKey"] = encodedKey;
-  obj["deviceType"] = "SPEAKER";
-
-  return obj.dump();
-#endif
 }
 
 std::string LoginBlob::getDeviceId() {

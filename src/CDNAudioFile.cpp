@@ -19,12 +19,6 @@
 #include "URLParser.h"         // for URLParser::parse - host comparison in fetchRange()
 #include "Utils.h"             // for bigNumAdd, bytesToHexString, string...
 #include "WrappedSemaphore.h"  // for WrappedSemaphore
-#ifdef BELL_ONLY_CJSON
-#include "cJSON.h"
-#else
-#include "nlohmann/json.hpp"      // for basic_json<>::object_t, basic_json
-#include "nlohmann/json_fwd.hpp"  // for json
-#endif
 
 using namespace cspot;
 

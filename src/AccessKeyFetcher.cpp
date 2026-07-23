@@ -18,12 +18,7 @@
 #include "TimeProvider.h"      // for TimeProvider
 #include "Utils.h"             // for string_format
 
-#ifdef BELL_ONLY_CJSON
 #include "cJSON.h"
-#else
-#include "nlohmann/json.hpp"      // for basic_json<>::object_t, basic_json
-#include "nlohmann/json_fwd.hpp"  // for json
-#endif
 
 using namespace cspot;
 
@@ -74,16 +69,15 @@ void AccessKeyFetcher::updateAccessKey() {
     auto credentials = "grant_type=client_credentials&client_id=" + ctx->config.clientId + "&client_secret=" + ctx->config.clientSecret;
     std::vector<uint8_t> body(credentials.begin(), credentials.end());
 
-    // FIX: neither branch used to check that the response actually parsed
-    // or that "access_token"/"expires_in" were present before dereferencing
+    // FIX: this used to skip checking that the response actually parsed or
+    // that "access_token"/"expires_in" were present before dereferencing
     // them - a malformed/truncated response (e.g. a proxy error page
     // instead of the real token response) crashed via a NULL cJSON
-    // ->valuestring deref (cJSON branch) or an uncaught nlohmann exception
-    // (nlohmann branch). This runs on TrackQueue's own task ("CSpotTrackQueue"),
-    // a different task/stack than the one the runSession() try/catch
-    // (finding F17) wraps - so an uncaught failure here escapes straight to
-    // std::terminate()/abort() and reboots the device. See
-    // docs/spotify_component_analysis.md, finding F26.
+    // ->valuestring deref. This runs on TrackQueue's own task
+    // ("CSpotTrackQueue"), a different task/stack than the one the
+    // runSession() try/catch (finding F17) wraps - so an uncaught failure
+    // here escapes straight to std::terminate()/abort() and reboots the
+    // device. See docs/spotify_component_analysis.md, finding F26.
     //
     // The HTTP POST itself can also throw (TLSSocket handshake failure) -
     // same F26 gap, uncaught here it rebooted the device. See F63.
@@ -99,44 +93,23 @@ void AccessKeyFetcher::updateAccessKey() {
       continue;
     }
 
-#ifdef BELL_ONLY_CJSON
     cJSON* root = cJSON_Parse(response->body().data());
     cJSON* tokenItem = root ? cJSON_GetObjectItem(root, "access_token") : nullptr;
     cJSON* expiresItem = root ? cJSON_GetObjectItem(root, "expires_in") : nullptr;
     bool hasError = root ? (cJSON_GetObjectItem(root, "error") != nullptr) : true;
     if (root && !hasError && tokenItem && tokenItem->valuestring && expiresItem) {
-        accessKey = std::string(tokenItem->valuestring);
-        int expiresIn = expiresItem->valueint;
-        cJSON_Delete(root);
-#else
-    std::string tokenValue;
-    int expiresIn = 0;
-    bool parsedOk = false;
-    try {
-      auto root = nlohmann::json::parse(response->bytes());
-      if (!root.contains("error") && root.contains("access_token") &&
-          root.contains("expires_in")) {
-        tokenValue = root["access_token"].get<std::string>();
-        expiresIn = root["expires_in"].get<int>();
-        parsedOk = true;
-      }
-    } catch (const std::exception& e) {
-      CSPOT_LOG(error, "Failed to parse access token response: %s", e.what());
-    }
-    if (parsedOk) {
-        accessKey = tokenValue;
-#endif
-        // Successfully received an auth token
+      accessKey = std::string(tokenItem->valuestring);
+      int expiresIn = expiresItem->valueint;
+      cJSON_Delete(root);
+
+      // Successfully received an auth token
       CSPOT_LOG(info, "Access token sucessfully fetched");
       success = true;
 
       this->expiresAt =
             ctx->timeProvider->getSyncedTimestamp() + (expiresIn * 1000);
-    }
-    else {
-#ifdef BELL_ONLY_CJSON
+    } else {
       if (root) cJSON_Delete(root);
-#endif
       CSPOT_LOG(error, "Failed to fetch access token");
       BELL_SLEEP_MS(3000);
     }

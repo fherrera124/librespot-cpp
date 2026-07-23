@@ -25,8 +25,8 @@ using namespace cspot;
 // but not for reconnect() (called on any read/write error - see
 // MercurySession.cpp runTask()): it re-runs connectWithRandomAp()
 // (ApResolve.cpp - a full HTTPS GET via bell::HTTPClient, i.e. a TLS
-// handshake, plus a nlohmann::json::parse() of the response, both
-// non-trivial stack users on their own) followed by authenticate()
+// handshake, plus a cJSON parse of the response, both non-trivial stack
+// users on their own) followed by authenticate()
 // (Session.cpp), which stack-allocates an `APWelcome welcome;` nanopb
 // struct (~1KB, thanks to its embedded reusable_auth_credentials/
 // lfs_secret/canonical_username fields - see protobuf/authentication.options)

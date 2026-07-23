@@ -2,10 +2,6 @@
 
 #include <string>  // for string
 #include <vector>  // for vector
-#ifdef BELL_ONLY_CJSON
-#include "cJSON.h"
-#else
-#endif
 
 namespace cspot {
 class ApResolve {

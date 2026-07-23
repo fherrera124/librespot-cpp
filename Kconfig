@@ -4,8 +4,4 @@ menu "librespot-cpp (Spotify Connect engine)"
         bool "MP3 codec (episodios de podcast)"
         default y
 
-    config LIBRESPOT_USE_NLOHMANN_JSON
-        bool "Usar nlohmann_json en vez de cJSON"
-        default n
-
 endmenu
