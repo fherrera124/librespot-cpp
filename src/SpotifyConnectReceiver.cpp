@@ -57,9 +57,9 @@ bool SpotifyConnectReceiver::requestNext() {
   return dealer->getConnectState()->nextSong();
 }
 
-bool SpotifyConnectReceiver::requestPrevious() {
+bool SpotifyConnectReceiver::requestPrevious(bool allowSeeking) {
   if (!linked || !dealer) return false;
-  return dealer->getConnectState()->previousSong();
+  return dealer->getConnectState()->previousSong(allowSeeking);
 }
 
 bool SpotifyConnectReceiver::requestSetRepeatContext(bool enabled) {

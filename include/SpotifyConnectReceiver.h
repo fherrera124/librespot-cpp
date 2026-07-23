@@ -71,7 +71,12 @@ class SpotifyConnectReceiver : public bell::Task {
   // any task. Returns false if there's no active/linked session yet.
   bool requestPlayPause(bool play);
   bool requestNext();
-  bool requestPrevious();
+  // allowSeeking: forwarded to PlaybackController::previousSong() - true
+  // (default) is today's behavior (restart the current track if more than
+  // ~3s in, else go to the actual previous one); false always goes to the
+  // actual previous track, ignoring position entirely. See
+  // TrackQueue::skipTrack()'s own comment on allowSeeking.
+  bool requestPrevious(bool allowSeeking = true);
   bool requestSetRepeatContext(bool enabled);
   bool requestSeek(uint32_t positionMs);
   uint32_t getPositionMs();
