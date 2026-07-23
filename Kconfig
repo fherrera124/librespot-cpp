@@ -1,32 +1,8 @@
 menu "librespot-cpp (Spotify Connect engine)"
 
-    config LIBRESPOT_CODEC_VORBIS
-        bool "Vorbis codec (streams de tracks)"
-        default y
-
     config LIBRESPOT_CODEC_MP3
         bool "MP3 codec (episodios de podcast)"
         default y
-
-    config LIBRESPOT_CODEC_AAC
-        bool "AAC codec"
-        default n
-
-    config LIBRESPOT_CODEC_OPUS
-        bool "Opus codec"
-        default n
-
-    config LIBRESPOT_CODEC_ALAC
-        bool "ALAC codec"
-        default n
-
-    config LIBRESPOT_ENABLE_MQTT
-        bool "Habilitar cliente MQTT interno de bell"
-        default n
-
-    config LIBRESPOT_ENABLE_WEBSERVER
-        bool "Habilitar servidor HTTP CivetWeb interno de bell"
-        default n
 
     config LIBRESPOT_USE_NLOHMANN_JSON
         bool "Usar nlohmann_json en vez de cJSON"
