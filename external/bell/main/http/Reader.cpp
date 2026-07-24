@@ -1,10 +1,15 @@
 #include "bell/http/Reader.h"
 
+#include "bell/Logger.h"
 #include "bell/Result.h"
 #include "bell/http/Common.h"
 #include "bell/io/MemoryStream.h"
 #include "bell/net/URIParser.h"
 #include "tl/expected.hpp"
+
+namespace {
+const char* LOG_TAG = "HTTPReader";
+}
 
 using namespace bell;
 
@@ -65,6 +70,10 @@ bell::Result<> http::Reader::readHeaders() {
   // Consume the stream byte by byte, so we dont read into the body
   while (lastPhrResult <= 0 && istream->get(lastChar)) {
     if (bufferPtr->size() > maxRequestLen) {
+      BELL_LOG(error, LOG_TAG,
+               "readHeaders: exceeded maxRequestLen ({} bytes), so far: {}",
+               maxRequestLen,
+               std::string_view(bufferPtr->data(), bufferPtr->size()));
       return make_unexpected_errc(std::errc::io_error);
     }
 
@@ -96,6 +105,12 @@ bell::Result<> http::Reader::readHeaders() {
 
       // Throw on phr error, or if the parser is not done yet and we're at the end
       if (lastPhrResult == -1 || (isLastLine && lastPhrResult <= 0)) {
+        BELL_LOG(error, LOG_TAG,
+                 "readHeaders: phr_parse_{} rejected/incomplete "
+                 "(result={}, isLastLine={}), {} bytes so far: {}",
+                 readerDirection == Direction::Request ? "request" : "response",
+                 lastPhrResult, isLastLine, bufferPtr->size(),
+                 std::string_view(bufferPtr->data(), bufferPtr->size()));
         return make_unexpected_errc(std::errc::io_error);
       }
 
@@ -104,6 +119,14 @@ bell::Result<> http::Reader::readHeaders() {
   }
 
   if (lastPhrResult <= 0) {
+    // Stream ended (clean EOF or a real read error already logged by
+    // SocketBuffer) before a full status line + headers were ever seen.
+    BELL_LOG(error, LOG_TAG,
+             "readHeaders: stream ended before headers were complete "
+             "(eof={}, fail={}, bad={}), {} bytes so far: {}",
+             istream->eof(), istream->fail(), istream->bad(),
+             bufferPtr->size(),
+             std::string_view(bufferPtr->data(), bufferPtr->size()));
     return make_unexpected_errc(std::errc::io_error);
   }
 
