@@ -47,10 +47,13 @@ class StreamPlayer : public bell::Task {
   void handlePlayEvent(bool play);
   void handleFlushEvent();
 
-  // Idempotent: opens the decoder for the current queue head if playing,
-  // not already open, and the file's ready. Safe to call speculatively
-  // from handleFileProvided/handlePlayEvent/taskLoop (playbackMutex is
-  // recursive, so nested calls from a caller already holding it are fine).
+  // Idempotent: opens the decoder for the current queue head once it's not
+  // already open and the file's ready - deliberately regardless of
+  // isPlaying (see the .cpp for why: a paused transfer still needs to
+  // reach a real "ready" state, not stay stuck "buffering" forever). Safe
+  // to call speculatively from handleFileProvided/handlePlayEvent/taskLoop
+  // (playbackMutex is recursive, so nested calls from a caller already
+  // holding it are fine).
   void maybeStartCurrentTrack();
 
   // isPlaying/isBuffering are sent to the server as-is (see

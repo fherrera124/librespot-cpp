@@ -155,9 +155,11 @@ void StreamPlayer::handlePlayEvent(bool shouldPlay) {
   BELL_LOG(info, LOG_TAG, "Received PLAYER_PLAY event, shouldPlay={}",
            shouldPlay);
   isPlaying = shouldPlay;
-  if (shouldPlay) {
-    maybeStartCurrentTrack();
-  }
+  // Not gated on shouldPlay: if the track was already opened while paused,
+  // this is what re-announces the corrected isPlaying value on resume
+  // (maybeStartCurrentTrack() is a no-op if the decoder's already open,
+  // beyond that one announce).
+  maybeStartCurrentTrack();
   queueUpdateSemaphore.give();
 }
 
@@ -169,10 +171,21 @@ void StreamPlayer::handleFlushEvent() {
 
 void StreamPlayer::maybeStartCurrentTrack() {
   std::scoped_lock lock(playbackMutex);
-  if (!isPlaying || audioDecoder->isOpen() || !isCurrentTrackReady()) {
+  if (audioDecoder->isOpen() || !isCurrentTrackReady()) {
     return;
   }
 
+  // Deliberately NOT gated on isPlaying: a paused transfer still needs the
+  // track opened and ready, exactly like a playing one - only actually
+  // feeding decoded audio (taskLoop()'s own separate isPlaying check
+  // before calling processPacket()) should wait on isPlaying. Confirmed
+  // against a real Spotify session: gating the open itself on isPlaying
+  // left isBuffering stuck at true forever for any transfer that started
+  // paused (the only place that ever corrected it to false required
+  // isPlaying=true first) - the real app read that as the device being
+  // permanently stuck loading and greyed out its Play button. Mirrors
+  // librespot-cpp's TrackPlayer, which always loads a track regardless of
+  // its own startPaused flag.
   auto& file = providedTracks[playbackQueue[currentTrackIndex]];
   BELL_LOG(info, LOG_TAG, "Opening CDN stream for {}: {}", file.itemId.uri,
            file.cdnUrl);
@@ -185,9 +198,10 @@ void StreamPlayer::maybeStartCurrentTrack() {
   }
 
   if (file.itemId == playbackQueue[0]) {
-    // Real playback is genuinely starting now - the earlier
-    // handleFileProvided() announce only ever meant "buffering".
-    announceState(/*isPlaying=*/true, /*isBuffering=*/false);
+    // Ready now - reflects whatever the current play/pause state actually
+    // is rather than hardcoding true, since "ready but paused" is a real,
+    // valid state distinct from "still buffering".
+    announceState(isPlaying, /*isBuffering=*/false);
   }
 }
 
