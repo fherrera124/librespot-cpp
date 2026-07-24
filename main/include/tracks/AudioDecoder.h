@@ -17,7 +17,8 @@ class AudioDecoder {
   virtual ~AudioDecoder() = default;
 
   virtual bell::Result<> openStream(
-      const std::string& cdnUrl, const std::vector<std::byte>& decryptKey) = 0;
+      const std::string& cdnUrl, const std::vector<std::byte>& decryptKey,
+      const SpotifyId& trackId) = 0;
 
   virtual void processPacket() = 0;
 

@@ -71,6 +71,16 @@ enum AudioFormat {
     MP3_160 = 5;
     MP3_96 = 6;
     MP3_160_ENC = 7;
-    AAC_24 = 8;
-    AAC_48 = 9;
+    // Was wrong past index 7 (had AAC_24=8, AAC_48=9, nothing past that) -
+    // corrected against librespot's real metadata.proto, matching the
+    // identical fix already made and documented in our other project
+    // (librespot-cpp). Nanopb decodes/stores unknown-to-us numeric enum
+    // values fine regardless, so this was a correctness/readability fix,
+    // not something silently failing before.
+    MP4_128_DUAL = 8;
+    OTHER3 = 9;
+    AAC_160 = 10;
+    AAC_320 = 11;
+    MP4_128 = 12;
+    OTHER5 = 13;
 }

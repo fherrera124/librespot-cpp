@@ -104,9 +104,8 @@ void ApClient::apPacketHandler(uint8_t packetType, const std::byte* data,
       break;
     }
     case ApCommandType::CountryCode: {
-      std::string_view countryCode(reinterpret_cast<const char*>(data), len);
-      BELL_LOG(info, LOG_TAG, "Received country code: {}", countryCode);
-      // TODO: Set country code somewhere
+      this->countryCode.assign(reinterpret_cast<const char*>(data), len);
+      BELL_LOG(info, LOG_TAG, "Received country code: {}", this->countryCode);
       break;
     }
     case ApCommandType::AudioKeyResponseError:

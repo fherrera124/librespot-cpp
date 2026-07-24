@@ -12,7 +12,8 @@
 
 using namespace cspot;
 
-cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo)
+cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo,
+                        cspot::AudioOutputCallback audioOutputCallback)
     : authInfo(std::move(authInfo)) {
   // Prepare the session context
   eventLoop = std::make_shared<cspot::EventLoop>();
@@ -27,7 +28,10 @@ cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo)
   connectStateHandler = std::make_shared<ConnectStateHandler>(
       eventLoop, this->authInfo, spClient);
 
-  // trackPlayer = std::make_shared<TrackPlayer>(eventLoop, spClient, apClient);
+  auto fileProvider = createDefaultFileProvider(eventLoop, spClient, apClient);
+  auto audioDecoder = createAudioDecoder(std::move(audioOutputCallback));
+  streamPlayer = std::make_shared<StreamPlayer>(
+      eventLoop, std::move(fileProvider), std::move(audioDecoder));
 
   eventLoop->registerHandler(EventLoop::EventType::DEALER_MESSAGE,
                              std::bind(&cspot::Session::handleDealerMessage,

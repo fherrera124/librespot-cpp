@@ -2,6 +2,7 @@
 #include <istream>
 #include <memory>
 
+#include "AudioSinkI2S.h"
 #include "AuthInfo.h"
 #include "Authenticator.h"
 #include "Session.h"
@@ -25,6 +26,15 @@
 namespace {
 const char* TAG = "cspot";
 const char* sessionFilePath = "/spiffs/session.json";
+
+// JC3248W535 I2S pinout - onboard NS4168 mono class-D amp, I2S-only, no
+// DIN/I2C control lines needed. Reused directly from /desarrollo/git/cspot's
+// own already hardware-verified components/cspot/Kconfig for this exact
+// board, not re-derived.
+constexpr gpio_num_t kI2sBclkGpio = GPIO_NUM_42;
+constexpr gpio_num_t kI2sWsGpio = GPIO_NUM_2;
+constexpr gpio_num_t kI2sDoutGpio = GPIO_NUM_41;
+constexpr gpio_num_t kI2sMclkGpio = GPIO_NUM_0;  // boot-strap pin, safe once running
 
 // Mirrors targets/cli/main.cpp's waitForZeroconfAuth() - same ZeroConf
 // pairing flow, same bell::http::Server/bell::mdns API (portable, no
@@ -144,7 +154,22 @@ class CSpotTask : public bell::Task {
       }
     }
 
-    auto session = std::make_shared<cspot::Session>(authInfo);
+    cspot::AudioSinkI2S::Config sinkConfig{
+        .port = I2S_NUM_0,
+        .bclkPin = kI2sBclkGpio,
+        .wsPin = kI2sWsGpio,
+        .doutPin = kI2sDoutGpio,
+        .mclkPin = kI2sMclkGpio,
+        .monoOutput = true,
+    };
+    auto audioSink = std::make_shared<cspot::AudioSinkI2S>(sinkConfig);
+    cspot::AudioOutputCallback audioCallback =
+        [audioSink](tcb::span<const std::byte> pcm, const cspot::SpotifyId&) {
+          audioSink->feedPCMFrames(
+              reinterpret_cast<const uint8_t*>(pcm.data()), pcm.size());
+        };
+
+    auto session = std::make_shared<cspot::Session>(authInfo, audioCallback);
     auto startRes = session->start();
     if (!startRes) {
       BELL_LOG(error, TAG, "Failed to start session: {}", startRes.error());

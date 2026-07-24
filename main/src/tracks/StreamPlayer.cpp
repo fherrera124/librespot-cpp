@@ -1,7 +1,6 @@
 #include "tracks/StreamPlayer.h"
 #include "FileProvider.h"
 #include "Utils.h"
-#include "bell/utils/Utils.h"
 
 using namespace cspot;
 
@@ -12,7 +11,11 @@ const size_t maxPreloadedTracks = 3;
 StreamPlayer::StreamPlayer(std::shared_ptr<cspot::EventLoop> eventLoop,
                            std::unique_ptr<cspot::FileProvider> fileProvider,
                            std::unique_ptr<cspot::AudioDecoder> audioDecoder)
-    : bell::Task("cspot_player", 4 * 1024),
+    // taskLoop() calls directly into TLS handshake (HTTPS CDN fetch), AES
+    // decrypt, and Vorbis decode on this stack - this codebase's own git
+    // history already has two hardware stack-overflow crashes from
+    // undersized task stacks doing similar HTTPS/crypto work.
+    : bell::Task("cspot_player", 32 * 1024),
       eventLoop(std::move(eventLoop)),
       fileProvider(std::move(fileProvider)),
       audioDecoder(std::move(audioDecoder)) {
@@ -104,13 +107,22 @@ void StreamPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
     }
   }
 
-  // Ensure we don't keep files for tracks that are no longer in the queue
+  // Ensure we don't keep files for tracks that are no longer in the queue.
+  // Collect stale ids first instead of erasing from providedTracks while
+  // iterating it directly - erase() invalidates the range-for's iterator
+  // mid-loop (a real hardware crash, reproduced: SpotifyId::operator==
+  // reading garbage memory from the dangling iterator on the very next
+  // comparison).
+  std::vector<SpotifyId> staleTrackIds;
   for (auto& trackId : providedTracks) {
     if (std::find(playbackQueue.begin(), playbackQueue.end(), trackId.first) ==
         playbackQueue.end()) {
-      providedTracks.erase(trackId.first);
-      fileProvider->cancel(trackId.first);
+      staleTrackIds.push_back(trackId.first);
     }
+  }
+  for (auto& trackId : staleTrackIds) {
+    providedTracks.erase(trackId);
+    fileProvider->cancel(trackId);
   }
 }
 
@@ -138,15 +150,38 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
   } else {
     // Probably outdated request
   }
+
+  maybeStartCurrentTrack();
+  queueUpdateSemaphore.give();
 }
 
 void StreamPlayer::handlePlayEvent(bool shouldPlay) {
   std::scoped_lock lock(playbackMutex);
+  isPlaying = shouldPlay;
+  if (shouldPlay) {
+    maybeStartCurrentTrack();
+  }
+  queueUpdateSemaphore.give();
 }
 
 void StreamPlayer::handleFlushEvent() {
   std::scoped_lock lock(playbackMutex);
   flushRequested = true;
+  queueUpdateSemaphore.give();
+}
+
+void StreamPlayer::maybeStartCurrentTrack() {
+  std::scoped_lock lock(playbackMutex);
+  if (!isPlaying || audioDecoder->isOpen() || !isCurrentTrackReady()) {
+    return;
+  }
+
+  auto& file = providedTracks[playbackQueue[currentTrackIndex]];
+  auto res = audioDecoder->openStream(file.cdnUrl, file.decryptionKey,
+                                      file.itemId);
+  if (!res) {
+    BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
+  }
 }
 
 void StreamPlayer::announceState() {
@@ -173,56 +208,34 @@ void StreamPlayer::announceState() {
 }
 
 void StreamPlayer::taskLoop() {
-    bell::utils::sleepMs(100);
-  // if (!trackDecoder->isOpen()) {
-  //   // In case there's no stream, wait for semaphore
-  //   queueUpdateSemaphore.take(100);
-  // }
+  {
+    std::scoped_lock lock(playbackMutex);
+    if (flushRequested) {
+      BELL_LOG(info, LOG_TAG, "Flush requested, resetting state");
+      flushRequested = false;
+      audioDecoder->resetStream();
+      currentTrackIndex = 0;
+    }
+    maybeStartCurrentTrack();
+  }
 
-  // std::optional<ProvidedFile> requestedProvidedFile;
-  // {
-  //   std::scoped_lock lock(playbackMutex);
+  if (isPlaying && audioDecoder->isOpen()) {
+    // Deliberately outside playbackMutex: this can block for an HTTP
+    // round-trip or on the I2S sink's ring buffer, and holding the lock
+    // here would stall handleFlushEvent/handleQueueUpdate/handlePlayEvent,
+    // which run on the EventLoop's own dispatch task, not this one.
+    audioDecoder->processPacket();
 
-  //   // Got a flush, reset state
-  //   if (flushRequested) {
-  //     BELL_LOG(info, LOG_TAG, "Flush requested, resetting state");
-  //     flushRequested = false;
-  //     trackDecoder->resetStream();
-  //     currentTrackIndex = 0;
-  //   }
-
-  //   if (!trackDecoder->isOpen() && isCurrentTrackReady()) {
-  //     requestedProvidedFile = providedTracks[playbackQueue[currentTrackIndex]];
-  //   }
-  // }
-
-  // if (requestedProvidedFile) {
-  //   BELL_LOG(info, LOG_TAG, "Starting playback of track {}",
-  //            requestedProvidedFile->itemId.uri);
-
-  //   auto res = trackDecoder->open(requestedProvidedFile->cdnUrl,
-  //                                 requestedProvidedFile->decryptionKey);
-  //   if (!res) {
-  //     BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
-  //     return;
-  //   }
-  // }
-
-  // if (trackDecoder->isOpen()) {
-  //   auto res = trackDecoder->decodePacket();
-  //   if (!res) {
-  //     BELL_LOG(error, LOG_TAG, "Failed to decode packet: {}", res.error());
-  //   } else {
-  //   }
-  //   bell::utils::sleepMs(2);  // Simulate some processing time
-
-  //   if (trackDecoder->isEndOfStream()) {
-  //     BELL_LOG(info, LOG_TAG, "Track ended, moving to next track");
-  //     std::scoped_lock lock(playbackMutex);
-  //     trackDecoder->resetStream();
-  //     currentTrackIndex++;
-  //   }
-  // }
+    std::scoped_lock lock(playbackMutex);
+    if (audioDecoder->isEOF()) {
+      BELL_LOG(info, LOG_TAG, "Track ended, moving to next track");
+      audioDecoder->resetStream();
+      currentTrackIndex++;
+      maybeStartCurrentTrack();
+    }
+  } else {
+    queueUpdateSemaphore.take(100);
+  }
 }
 
 bool StreamPlayer::isCurrentTrackReady() {

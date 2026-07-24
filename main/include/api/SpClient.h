@@ -10,6 +10,7 @@
 
 // Protobufs
 #include "proto/ConnectPb.h"
+#include "proto/ExtendedMetadataPb.h"
 #include "proto/MetadataPb.h"
 #include "proto/SpotifyId.h"
 
@@ -46,6 +47,16 @@ class SpClient {
 
   virtual bell::Result<std::string> resolveStorageInteractive(
       const std::vector<std::byte>& fileId, bool prefetch = false) = 0;
+
+  /**
+   * @brief Fetches the AUDIO_FILES extended-metadata for an entity (track
+   * or episode) URI - modern spclient no longer serves AudioFile entries
+   * through trackMetadata()/episodeMetadata() at all, they live behind
+   * this separate extended-metadata API instead (matches go-librespot's
+   * own real, current behavior).
+   */
+  virtual bell::Result<std::vector<cspot_proto::AudioFile>> resolveAudioFiles(
+      const std::string& entityUri) = 0;
 };
 
 std::unique_ptr<SpClient> createDefaultSpClient(

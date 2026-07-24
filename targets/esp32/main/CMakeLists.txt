@@ -12,9 +12,16 @@ file(GLOB SOURCES "*.cpp" "*.c")
 list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ESPStatusLed.cpp")
 
 # Configure the target
+# Specifying REQUIRES/PRIV_REQUIRES at all (needed for esp_driver_i2s, the
+# new AudioSinkI2S dependency) turns off ESP-IDF's legacy fallback of
+# linking against every component in the build - main.cpp's own direct
+# esp_event.h/esp_spiffs.h/esp_wifi.h/nvs_flash.h/protocol_examples_common.h
+# includes (previously resolved "for free" via that fallback) need to be
+# listed explicitly too.
 idf_component_register(
     SRCS ${SOURCES}
     INCLUDE_DIRS "."
+    PRIV_REQUIRES esp_driver_i2s esp_event esp_netif esp_wifi nvs_flash spiffs protocol_examples_common
 )
 idf_build_set_property(COMPILE_OPTIONS "-fdiagnostics-color=always" APPEND)
 

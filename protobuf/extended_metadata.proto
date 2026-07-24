@@ -1,0 +1,82 @@
+syntax = "proto2";
+
+import "nanopb.proto";
+import "metadata.proto";
+
+// The real Spotify enum has ~230 values (see go-librespot's
+// extension_kind.proto for the full reference) - only declaring the two
+// this project actually requests. Modern spclient no longer serves
+// AudioFile/Restriction/alternative through /metadata/4/track/ at all
+// (confirmed by hand-decoding a real response on real hardware) - both
+// now live behind this extended-metadata API instead.
+enum ExtensionKind {
+    AUDIO_FILES = 5;
+    TRACK_V4 = 10;
+    EPISODE_V4 = 12;
+}
+
+message ExtensionQuery {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    optional ExtensionKind extension_kind = 1;
+}
+
+message EntityRequest {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    optional string entity_uri = 1;
+    repeated ExtensionQuery query = 2;
+}
+
+message BatchedEntityRequest {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    repeated EntityRequest entity_request = 2;
+}
+
+// Minimal stand-in for google.protobuf.Any - identical wire shape
+// (type_url is field 1, value is field 2). Every caller here already
+// knows the target message type statically per ExtensionKind, so full
+// Any semantics (type_url matching) aren't needed - just decode value.
+message AnyMessage {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    optional bytes value = 2;
+}
+
+message EntityExtensionDataHeader {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    // Real wire type is plain int32 (not zigzag) - this keyword is only
+    // documentation though, since FT_CALLBACK fields get no type-aware
+    // codegen from nanopb at all. The actual fix (uint32_t, to route
+    // through bindField()'s plain-varint path) lives in the C++ wrapper
+    // struct - see ExtendedMetadataPb.h.
+    optional int32 status_code = 1;
+}
+
+message EntityExtensionData {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    optional EntityExtensionDataHeader header = 1;
+    optional string entity_uri = 2;
+    optional AnyMessage extension_data = 3;
+}
+
+message EntityExtensionDataArray {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    optional ExtensionKind extension_kind = 2;
+    repeated EntityExtensionData extension_data = 3;
+}
+
+message BatchedExtensionResponse {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    repeated EntityExtensionDataArray extended_metadata = 2;
+}
+
+// AUDIO_FILES extension payload. Real message also carries normalization
+// params/average_bitrate/audio_id - not needed here (this project already
+// does its own loudness normalization) so left out.
+message ExtendedAudioFile {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    optional AudioFile file = 1;
+}
+
+message AudioFilesExtensionResponse {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    repeated ExtendedAudioFile files = 1;
+}

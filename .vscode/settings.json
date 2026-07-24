@@ -9,5 +9,6 @@
         "--compile-commands-dir=${workspaceFolder}/targets/cli/build"
     ],
     "editor.tabSize": 2,
-    "idf.pythonInstallPath": "/opt/homebrew/opt/python@3.12/Frameworks/Python.framework/Versions/3.12/bin/python3"
+    "idf.pythonInstallPath": "/opt/homebrew/opt/python@3.12/Frameworks/Python.framework/Versions/3.12/bin/python3",
+    "idf.currentSetup": "/home/user/.espressif/v6.0.1/esp-idf"
 }

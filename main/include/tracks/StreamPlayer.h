@@ -35,6 +35,7 @@ class StreamPlayer : public bell::Task {
 
   int currentTrackIndex = 0;
   bool flushRequested = false;
+  bool isPlaying = false;
   std::unique_ptr<AudioDecoder> audioDecoder;
 
   void taskLoop() override;
@@ -45,6 +46,12 @@ class StreamPlayer : public bell::Task {
   bool isCurrentTrackReady();
   void handlePlayEvent(bool play);
   void handleFlushEvent();
+
+  // Idempotent: opens the decoder for the current queue head if playing,
+  // not already open, and the file's ready. Safe to call speculatively
+  // from handleFileProvided/handlePlayEvent/taskLoop (playbackMutex is
+  // recursive, so nested calls from a caller already holding it are fine).
+  void maybeStartCurrentTrack();
 
   void announceState();
 };

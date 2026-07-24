@@ -284,6 +284,9 @@ bell::Result<> ConnectStateHandler::handleTransferCommand(
   }
   trackQueueHandler->updateTrackWindows();
 
+  eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, true);
+  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !shouldPause);
+
   return {};
 }
 
@@ -292,7 +295,14 @@ bell::Result<> ConnectStateHandler::handlePlayCommand(
   // TODO: Handle overrides
   const tao::json::value& context = command.at("context");
   const tao::json::value& options = command.at("options");
-  const tao::json::value& skipTo = options.at("skip_to");
+  // skip_to isn't present on every play command (e.g. a plain "resume my
+  // library" play has none) - options.at("skip_to") threw and silently
+  // dropped the whole command on real hardware ("JSON object key
+  // \"skip_to\" not found", caught generically by EventLoop's handler
+  // try/catch).
+  static const tao::json::value emptySkipTo = tao::json::empty_object;
+  const tao::json::value* skipToPtr = options.find("skip_to");
+  const tao::json::value& skipTo = skipToPtr ? *skipToPtr : emptySkipTo;
   auto contextUri = context.optional<std::string>("uri");
   auto skipToUid = skipTo.optional<std::string>("track_uid");
   auto skipToUri = skipTo.optional<std::string>("track_uri");
@@ -309,6 +319,9 @@ bell::Result<> ConnectStateHandler::handlePlayCommand(
   }
 
   trackQueueHandler->updateTrackWindows();
+
+  eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, true);
+  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, true);
 
   auto& playerState = putStateRequestProto.device.playerState;
   auto track = trackQueueHandler->currentTrack();

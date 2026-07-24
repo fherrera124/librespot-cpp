@@ -22,12 +22,19 @@ class ApClient {
 
   void doHousekeeping();
 
+  // Empty until the AP sends its CountryCode packet, shortly after
+  // connecting. Used to resolve region-restricted tracks to a playable
+  // alternative (see FileProvider.cpp).
+  const std::string& getCountryCode() const { return countryCode; }
+
  private:
   const char* LOG_TAG = "ApClient";
 
   std::shared_ptr<cspot::EventLoop> eventLoop;
   std::shared_ptr<cspot::AuthInfo> authInfo;
   std::unique_ptr<ApConnection> apConnection;
+
+  std::string countryCode;
 
   uint32_t audioKeySequence = 0;
 

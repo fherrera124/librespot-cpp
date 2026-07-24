@@ -1,6 +1,7 @@
 #include "bell/audio/TremorVorbisCodec.h"
 
 // Standard includes
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <unordered_map>
@@ -130,11 +131,26 @@ bell::Result<Codec::DecodeResult> TremorVorbisCodec::decode(
   int32_t** pcm;
   int samples = vorbis_synthesis_pcmout(&dspState, &pcm);
   if (samples > 0) {
+    // Interleave + fixed-point-to-S16 scale/clip, ported directly from
+    // libtremor's own ov_read() (vorbisfile.c) - tremor's pcm[ch] arrays
+    // hold ogg_int32_t fixed-point samples, not ready-to-use int16_t.
+    int channels = audioFormat.getNumChannels();
+    pcmScratch.resize(static_cast<size_t>(samples) * channels);
+    for (int ch = 0; ch < channels; ch++) {
+      const int32_t* src = pcm[ch];
+      int16_t* dest = pcmScratch.data() + ch;
+      for (int j = 0; j < samples; j++) {
+        *dest = static_cast<int16_t>(
+            std::clamp<int32_t>(src[j] >> 9, -32768, 32767));
+        dest += channels;
+      }
+    }
+
     vorbis_synthesis_read(&dspState, samples);
 
     return DecodeResult{
-        .pcm = {reinterpret_cast<std::byte*>(pcm[0]),
-                audioFormat.samplesToBytes(samples)},
+        .pcm = {reinterpret_cast<std::byte*>(pcmScratch.data()),
+                pcmScratch.size() * sizeof(int16_t)},
         .consumedInputBytes = encodedInput.size(),
     };
   }

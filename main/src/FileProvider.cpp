@@ -9,6 +9,39 @@
 
 using namespace cspot;
 
+namespace {
+bool countryListContains(const std::string& countryList,
+                         const std::string& country) {
+  for (size_t i = 0; i + 1 < countryList.size(); i += 2) {
+    if (countryList[i] == country[0] && countryList[i + 1] == country[1]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Mirrors librespot-cpp's TrackDataUtils::doRestrictionsApply() (a real,
+// hardware-proven implementation in our other project) - true if the
+// given country can NOT play a track/alternative with these restrictions.
+bool doRestrictionsApply(const std::vector<cspot_proto::Restriction>& restrictions,
+                         const std::string& country) {
+  if (country.empty()) {
+    // AP hasn't sent its CountryCode packet yet - can't evaluate, assume
+    // playable rather than block everything.
+    return false;
+  }
+  for (auto& restriction : restrictions) {
+    if (!restriction.countriesAllowed.empty()) {
+      return !countryListContains(restriction.countriesAllowed, country);
+    }
+    if (!restriction.countriesForbidden.empty()) {
+      return countryListContains(restriction.countriesForbidden, country);
+    }
+  }
+  return false;
+}
+}  // namespace
+
 class DefaultFileProvider : public FileProvider, bell::Task {
  public:
   DefaultFileProvider(std::shared_ptr<EventLoop> eventLoop,
@@ -44,7 +77,13 @@ class DefaultFileProvider : public FileProvider, bell::Task {
 DefaultFileProvider::DefaultFileProvider(std::shared_ptr<EventLoop> eventLoop,
                                          std::shared_ptr<SpClient> spClient,
                                          std::shared_ptr<ApClient> apClient)
-    : bell::Task("cspot_file_provider", 4 * 1024, false),
+    // 4KB was never enough for this task's real work (HTTPS + protobuf
+    // decode via spClient->trackMetadata()/resolveStorageInteractive()) -
+    // it just never actually ran until Stage D wired StreamPlayer up to
+    // call provideTrack() for real tracks. Confirmed via a real hardware
+    // stack-overflow crash ("A stack overflow in task cspot_file_prov"),
+    // same class of bug as StreamPlayer's own stack (StreamPlayer.cpp).
+    : bell::Task("cspot_file_provider", 32 * 1024, false),
       eventLoop(std::move(eventLoop)),
       spClient(std::move(spClient)),
       apClient(std::move(apClient)) {
@@ -120,17 +159,64 @@ void DefaultFileProvider::taskLoop() {
       return;
     }
 
-    const auto& files = metadataRes->audioFiles;
+    // Some tracks aren't directly playable in this account's region -
+    // the playable version lives under `alternative` instead (confirmed
+    // on real hardware: several tracks in a real playlist all resolved
+    // this way). Mirrors librespot-cpp's own fallback for the exact same
+    // real Spotify behavior. Only restriction/alternative info comes from
+    // trackMetadata() now - AudioFile entries are resolved separately
+    // below via resolveAudioFiles(), keyed by whichever entity (original
+    // or alternative) survives this check.
+    const std::string& countryCode = apClient->getCountryCode();
+    SpotifyId effectiveTrackId = file->itemId;
+    bool hasPlayableEntity = true;
 
-    // Step 2, pick audio file & resolve cdn url
+    if (doRestrictionsApply(metadataRes->restrictions, countryCode)) {
+      hasPlayableEntity = false;
+      for (auto& alt : metadataRes->alternativeTracks) {
+        if (!doRestrictionsApply(alt.restrictions, countryCode)) {
+          effectiveTrackId = SpotifyId(SpotifyIdType::Track, alt.gid);
+          hasPlayableEntity = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasPlayableEntity) {
+      file->isError = true;
+      BELL_LOG(info, LOG_TAG,
+               "Track {} is restricted in {} with no playable alternative",
+               file->itemId.uri, countryCode);
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      return;
+    }
+
+    // Step 2, fetch the actual playable files, pick one & resolve cdn url
+    auto filesRes = spClient->resolveAudioFiles(effectiveTrackId.uri);
+    if (!filesRes) {
+      file->isError = true;
+      BELL_LOG(info, LOG_TAG, "Could not resolve audio files, err={}",
+               filesRes.error());
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      return;
+    }
+
+    auto& files = *filesRes;
     auto selectedAudioFile = std::find_if(
-        files.begin(), files.end(), [](const cspot_proto::AudioFile& file) {
-          return file.format == AudioFormat_OGG_VORBIS_160;
+        files.begin(), files.end(), [](const cspot_proto::AudioFile& f) {
+          return f.format == AudioFormat_OGG_VORBIS_160;
         });
 
     if (selectedAudioFile == files.end()) {
       file->isError = true;
-      BELL_LOG(info, LOG_TAG, "Could not find suitable audio file");
+      std::string formatsSeen;
+      for (const auto& f : files) {
+        formatsSeen += std::to_string(static_cast<int>(f.format)) + " ";
+      }
+      BELL_LOG(info, LOG_TAG,
+               "Could not find suitable audio file, {} files available, "
+               "formats: {}",
+               files.size(), formatsSeen);
 
       // Post failure
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
@@ -155,12 +241,24 @@ void DefaultFileProvider::taskLoop() {
     file->fileId = selectedAudioFile->fileId;
     file->trackMetadata = *metadataRes;
 
+    BELL_LOG(info, LOG_TAG, "Resolved CDN url for track {}: {}",
+             file->itemId.uri, file->cdnUrl);
+
     {
       std::scoped_lock lock(pendingAudioKeyFilesMutex);
-      pendingAudioKeyFiles.insert({file->itemId, file.value()});
+      // Keyed by effectiveTrackId (the alternative's gid, when one was
+      // used) because that's what the AP protocol requires in the wire
+      // request to match the requested fileId, and it's what comes back
+      // unchanged as AudioKeyResponse::trackId (see ApClient::requestAudioKey/
+      // apPacketHandler - the response is correlated by sequence number,
+      // then echoes back whatever trackId was stored at request time).
+      // file->itemId itself (the original queue track id, used by
+      // StreamPlayer to key its own state) is untouched here.
+      pendingAudioKeyFiles.insert({effectiveTrackId, file.value()});
 
       // Request audio key from the ap
-      auto requestRes = apClient->requestAudioKey(file->itemId, file->fileId);
+      auto requestRes =
+          apClient->requestAudioKey(effectiveTrackId, file->fileId);
       if (!requestRes) {
         // Post failure
         file->isError = true;
@@ -189,8 +287,16 @@ void DefaultFileProvider::handleAudioKeyResponse(
 
     file.isError = false;  // success
 
+    BELL_LOG(info, LOG_TAG, "File ready for track {}: cdnUrl={}, keyLen={}",
+             file.itemId.uri, file.cdnUrl, file.decryptionKey.size());
+
     // post result
     eventLoop->post(EventLoop::EventType::FILE_PROVIDED, file);
+  } else {
+    BELL_LOG(warn, LOG_TAG,
+             "Audio key response for {} matched no pending request "
+             "(already cancelled/superseded?)",
+             response.trackId.hexGid());
   }
 }
 

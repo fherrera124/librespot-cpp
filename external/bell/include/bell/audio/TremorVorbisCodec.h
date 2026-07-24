@@ -1,6 +1,9 @@
 #include "bell/audio/Codec.h"
 
 // Standard includes
+#include <cstdint>
+#include <vector>
+
 #include "bell/audio/Common.h"
 #include "ivorbiscodec.h"
 
@@ -92,6 +95,11 @@ class TremorVorbisCodec : public Codec {
 
   bool infoInitialized = false;
   int headerPacketCount = 0;
+
+  // Owned, interleaved S16 output - tremor's own pcm[] buffers are
+  // reused/overwritten on the next vorbis_synthesis_blockin() call, so
+  // decode() can't return a span into them directly.
+  std::vector<int16_t> pcmScratch;
 };
 }  // namespace bell::audio
 
