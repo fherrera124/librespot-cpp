@@ -143,6 +143,25 @@ bell::Result<> net::TLSSocket::connect(const std::string& host, uint16_t port,
   mbedtls_ssl_conf_authmode(&sslConf, MBEDTLS_SSL_VERIFY_NONE);
   mbedtls_ssl_conf_max_tls_version(&sslConf, MBEDTLS_SSL_VERSION_TLS1_2);
 
+  // mbedtls_ssl_conf_read_timeout()'s own doc comment: default is "no
+  // timeout" for mbedtls_ssl_read(), and that only even applies to blocking
+  // I/O (timeoutMs > 0 here, see setBlocking() above) if a non-null
+  // f_recv_timeout was set via mbedtls_ssl_set_bio() - which it is
+  // (setupBioCallbacks()'s recvTimeoutFunc). Without this, a blocking-mode
+  // read that never gets a response (peer stalls mid-response, a CDN edge
+  // that stops responding, etc.) blocks forever - a real hardware hang
+  // reproduced via AudioDecoderImpl::openStream()'s CDN fetch (uses
+  // operationTimeoutMs=3000, i.e. blocking mode): it ran synchronously on
+  // EventLoop's own dispatch task, so the hang didn't just stall this one
+  // request, it permanently froze all future dealer/queue processing too,
+  // with only the separate poller task's own WS ping/pong still visible in
+  // the log. Reusing the caller's own connect timeout here as the read
+  // timeout too - it's the same "how long is this operation allowed to
+  // take" budget the caller already asked for.
+  if (timeoutMs > 0) {
+    mbedtls_ssl_conf_read_timeout(&sslConf, static_cast<uint32_t>(timeoutMs));
+  }
+
   // mbedTLS 4.0+ doesn't declare mbedtls_ssl_conf_rng() at all - the SSL
   // layer draws randomness from PSA unconditionally there instead (see
   // ensurePsaCryptoInit() above). mbedTLS <4.0 requires this explicitly
