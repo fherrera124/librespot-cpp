@@ -172,8 +172,11 @@ void StreamPlayer::maybeStartCurrentTrack() {
   }
 
   auto& file = providedTracks[playbackQueue[currentTrackIndex]];
+  BELL_LOG(info, LOG_TAG, "Opening CDN stream for {}: {}", file.itemId.uri,
+           file.cdnUrl);
   auto res = audioDecoder->openStream(file.cdnUrl, file.decryptionKey,
                                       file.itemId);
+  BELL_LOG(info, LOG_TAG, "openStream() returned for {}", file.itemId.uri);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
     return;
