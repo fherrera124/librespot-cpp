@@ -61,28 +61,17 @@ bell::Result<> ApClient::requestAudioKey(const SpotifyId& trackId,
   audioKeyRequests.insert(
       {audioKeySequence, {trackId, fileId}});  // Store the request
 
-  // Must be unique per in-flight request - audioKeyRequests is keyed by
-  // this value, and the AP just echoes back whatever we send. Never
-  // incrementing it here meant every request (e.g. the 3-4 lookahead
-  // tracks FileProvider fetches per queue update) went out as sequence 0:
-  // insert() above no-ops for every request after the first (the key
-  // already exists), so only one track's mapping ever survived. The
-  // first response received got misattributed to that lone entry and
-  // erased it; every other track's real response then failed to find
-  // any mapping at all ("unknown sequence ID") and was silently dropped.
-  // Reproduced on real hardware: one track got a bogus 2-byte "key" (an
-  // AudioKeyResponseError's error code, from a response actually meant
-  // for a different track) while the other three never got a
-  // FILE_PROVIDED event at all.
-  audioKeySequence++;
-
   // Structure: [FILEID] [TRACKID] [4 BYTES SEQUENCE ID] [0x00, 0x00]
   std::vector<std::byte> requestData = fileId;
 
   // Track ID
   requestData.insert(requestData.end(), trackId.gid.begin(), trackId.gid.end());
 
-  // Sequence ID
+  // Sequence ID - must match the value used as the audioKeyRequests key
+  // above exactly, since the AP just echoes it back and that's how the
+  // response gets matched to a track. This used to read audioKeySequence
+  // before it was ever incremented (correct) - keep it that way; the
+  // increment below must stay AFTER this read, not before it.
   uint32_t sequence = htonl(audioKeySequence);
   requestData.insert(
       requestData.end(), reinterpret_cast<std::byte*>(&sequence),
@@ -91,6 +80,21 @@ bell::Result<> ApClient::requestAudioKey(const SpotifyId& trackId,
   // Append the 0x00, 0x00 bytes
   requestData.push_back(std::byte{0x00});
   requestData.push_back(std::byte{0x00});
+
+  // Must be unique per in-flight request - audioKeyRequests is keyed by
+  // this value, and the AP just echoes back whatever we send. Never
+  // incrementing it at all meant every request (e.g. the 3-4 lookahead
+  // tracks FileProvider fetches per queue update) went out as sequence 0:
+  // insert() above no-ops for every request after the first (the key
+  // already exists), so only one track's mapping ever survived - fixed
+  // by incrementing here. A first attempt at this fix incremented before
+  // building requestData above, which sent the AP the POST-increment
+  // value while the map still held the PRE-increment key - reproduced on
+  // real hardware as "unknown sequence ID: 1", "2", "3", ... for every
+  // single request, an even worse regression than the original bug.
+  // Incrementing here, after requestData already captured the correct
+  // pre-increment value, keeps the map key and the wire value identical.
+  audioKeySequence++;
 
   // Send the audio key request packet
   return apConnection->sendPacket(
