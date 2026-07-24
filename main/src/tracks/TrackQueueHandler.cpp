@@ -296,7 +296,6 @@ bell::Result<> DefaultTrackQueueHandler::ensureEnoughTracks() {
 
 bell::Result<> DefaultTrackQueueHandler::fetchRootPage(
     const std::string& rootContextUri) {
-  this->currentContextUri = rootContextUri;
   BELL_LOG(info, LOG_TAG, "Fetching context root, uri={}", rootContextUri);
   pageParser.reset();
   auto res = spClient->contextResolve(rootContextUri);
@@ -304,7 +303,20 @@ bell::Result<> DefaultTrackQueueHandler::fetchRootPage(
     return tl::make_unexpected(res.error());
   }
 
-  return feedResponseToParser(*res);
+  auto feedRes = feedResponseToParser(*res);
+  if (!feedRes) {
+    return feedRes;
+  }
+
+  // Only claim this context as loaded once it actually is - a real hardware
+  // crash (LoadProhibited in getOffsetIndex(), out-of-bounds contextPages[0]
+  // on an empty vector) traced back to this being set unconditionally
+  // before the fetch/parse could fail: a failed first attempt still left
+  // currentContextUri pointing at the target playlist, so the app's retry
+  // took loadContext()'s "same context, don't refetch" branch against a
+  // contextPages that was never actually populated.
+  this->currentContextUri = rootContextUri;
+  return {};
 }
 
 bell::Result<> DefaultTrackQueueHandler::fetchContextPage(
@@ -521,6 +533,17 @@ bell::Result<> DefaultTrackQueueHandler::enableShuffle(bool shuffle) {
 std::optional<cspot_proto::ContextIndex>
 DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
   if (!contextIndex) {
+    return std::nullopt;
+  }
+
+  // Defensive: contextIndex should always refer to a real page once set,
+  // but a real hardware crash (out-of-bounds contextPages[page] on an empty
+  // vector, in the case where contextIndex got defaulted to {0, 0} against
+  // a context that failed to actually populate any pages) showed this
+  // invariant can't be fully trusted at every call site. Bounds-checking
+  // here once, rather than at every caller, matches this function's own
+  // existing contract of returning nullopt for any "can't get there" case.
+  if (contextIndex->page >= contextPages.size()) {
     return std::nullopt;
   }
 
