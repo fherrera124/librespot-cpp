@@ -1,10 +1,10 @@
 [submodule "external/bell"]
 	path = external/bell
-	url = git@github.com:feelfreelinux/bell.git
+	url = https://github.com/feelfreelinux/bell.git
 	branch = develop
 [submodule "external/nanopb"]
 	path = external/nanopb
-	url = git@github.com:nanopb/nanopb.git
+	url = https://github.com/nanopb/nanopb.git
 [submodule "external/websocketpp"]
 	path = external/websocketpp
-	url = git@github.com:feelfreelinux/websocketpp.git
+	url = https://github.com/feelfreelinux/websocketpp.git

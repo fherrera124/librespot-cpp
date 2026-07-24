@@ -5,13 +5,9 @@
 #include "Authenticator.h"
 #include "Session.h"
 #include "Utils.h"
-#include "audio/CDNDataStream.h"
 #include "bell/Logger.h"
-#include "bell/audio/Common.h"
-#include "bell/audio/OggContainer.h"
 #include "bell/http/Client.h"
 #include "bell/http/Server.h"
-#include "bell/io/FileDataStream.h"
 #include "bell/mdns/Manager.h"
 #include "bell/utils/Semaphore.h"
 #include "proto/AuthenticationPb.h"
@@ -83,90 +79,6 @@ void waitForZeroconfAuth(std::shared_ptr<cspot::AuthInfo> authInfo) {
 
   authSemaphore.take();
 };
-
-void testCDNFile() {
-  std::string audioKey = "";
-  std::string cdnUrl = "";
-
-  auto audioKeyBytes = cspot::base64Decode(audioKey);
-
-  auto dataStream = std::make_shared<cspot::CDNDataStream>(
-      std::make_shared<bell::HTTPClient>());
-  auto res = dataStream->open(cdnUrl, audioKeyBytes);
-  if (!res) {
-    BELL_LOG(error, "Main", "Failed to open cdn data stream: {}", res.error());
-    return;
-  }
-  std::ifstream f("test.ogg", std::ios::binary);
-  if (!f.is_open()) {
-    BELL_LOG(error, "Main", "Failed to open test.ogg");
-    return;
-  }
-
-  // auto dataStream = std::make_shared<bell::io::FileDataStream>(std::move(f));
-
-  auto oggContainer = std::make_shared<bell::audio::OggContainer>();
-  auto oggRes = oggContainer->openForRead(dataStream);
-  if (!oggRes) {
-    BELL_LOG(error, "Main", "Failed to open Ogg container: {}", oggRes.error());
-    return;
-  }
-
-  auto vorbisCodec = std::make_shared<bell::audio::TremorVorbisCodec>();
-  (void)oggContainer->readNextPacket();
-
-  for (int x = 0; x < 10; x++) {
-    auto packet = oggContainer->readNextPacket();
-    if (!packet) {
-      BELL_LOG(error, "Main", "Failed to read Ogg packet: {}", packet.error());
-      continue;
-    }
-    BELL_LOG(info, "Main", "Read Ogg packet with {} bytes",
-             packet->data.size());
-    auto vorbisRes = vorbisCodec->setupDecodeFromHeaders(packet->data);
-    if (!vorbisRes) {
-      BELL_LOG(error, "Main", "Failed to setup Vorbis decoder: {}",
-               vorbisRes.error());
-      return;
-    }
-    if (vorbisRes == bell::AudioCodec::SetupStatus::Ready) {
-      BELL_LOG(info, "Main", "Setup ready");
-      break;
-    }
-  }
-
-  auto seekRes = oggContainer->seekToFrame(4500000, 10000);
-  if (!seekRes) {
-    BELL_LOG(error, "Main", "Failed to seek: {}", seekRes.error());
-    return;
-  } else {
-    BELL_LOG(info, "Main", "Seeked to frame");
-  }
-  // while (true) {
-  //   auto packet = oggContainer->readNextPacket();
-  //   if (packet.error() == bell::audio::Errc::EndOfStream) {
-  //     BELL_LOG(info, "Main", "Reached end of stream");
-  //     break;
-  //   }
-  //   if (!packet) {
-  //     BELL_LOG(error, "Main", "Failed to read Ogg packet: {}", packet.error());
-  //     break;
-  //   }
-  //   BELL_LOG(info, "Main", "Read Ogg packet with {} bytes",
-  //            packet->data.size());
-  //   auto decodeRes = vorbisCodec->decode(packet->data);
-  //   if (!decodeRes) {
-  //     BELL_LOG(error, "Main", "Failed to decode Vorbis packet: {}",
-  //              decodeRes.error());
-  //     if (decodeRes.error() == bell::audio::Errc::EndOfStream) {
-  //       BELL_LOG(info, "Main", "Reached end of stream");
-  //       break;
-  //     }
-  //     continue;
-  //   }
-  //   BELL_LOG(info, "Main", "Decoded {} samples", decodeRes->pcm.size());
-  // }
-}
 
 int main(int argc, char** argv) {
   bell::registerDefaultLogger();
