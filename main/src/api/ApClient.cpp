@@ -136,7 +136,6 @@ void ApClient::apPacketHandler(uint8_t packetType, const std::byte* data,
       BELL_LOG(info, LOG_TAG,
                "Received audio key for track ID: {}, success: {}",
                ids.first.hexGid(), success);
-      logDataBase64(data + 4, len - 4);
 
       AudioKeyResponse response = {
           .success = success,

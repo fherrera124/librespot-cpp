@@ -82,8 +82,6 @@ bell::Result<> DefaultSpClient::putConnectState(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  logDataBase64(freshBuffer.data(), freshBuffer.size());
-
   uint32_t salt = std::rand();
   auto httpResponse = httpClient->put(
       fmt::format("https://{}/connect-state/v1/devices/{}?product=0&salt={}",
@@ -111,8 +109,6 @@ bell::Result<> DefaultSpClient::putConnectState(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  auto bod = httpResponse->bytes();
-  std::cout << "Response body size: " << (bod ? bod->size() : 0) << std::endl;
   return {};
 }
 
@@ -208,10 +204,6 @@ bell::Result<std::vector<std::byte>> DefaultSpClient::extendedMetadataRaw(
     return bell::make_unexpected_errc<std::vector<std::byte>>(
         std::errc::bad_message);
   }
-  BELL_LOG(info, LOG_TAG, "BatchedEntityRequest bytes (kind {}):",
-           static_cast<int>(kind));
-  logDataBase64(requestBytes.data(), requestBytes.size());
-
   auto url = fmt::format("https://{}/extended-metadata/v0/extended-metadata",
                          spClientAddress);
   auto response = httpClient->post(
@@ -239,10 +231,6 @@ bell::Result<std::vector<std::byte>> DefaultSpClient::extendedMetadataRaw(
     return bell::make_unexpected_errc<std::vector<std::byte>>(
         std::errc::bad_message);
   }
-  BELL_LOG(info, LOG_TAG, "BatchedExtensionResponse bytes ({} bytes):",
-           resultBytes->size());
-  logDataBase64(resultBytes->data(), resultBytes->size());
-
   cspot_proto::BatchedExtensionResponse batchResponse;
   if (!nanopb_helper::decodeFromVector(batchResponse, *resultBytes)) {
     BELL_LOG(error, LOG_TAG, "Failed to decode BatchedExtensionResponse");

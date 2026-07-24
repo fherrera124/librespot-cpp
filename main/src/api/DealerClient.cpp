@@ -59,7 +59,11 @@ bell::Result<> DealerClient::connect(
 
   // Mark transport as secure
   wsClient.set_secure(true);
-  wsClient.clear_access_channels(websocketpp::log::alevel::none);
+  // alevel::none is 0 - clearing it is a no-op, so every access channel
+  // (frame_header/frame_payload byte dumps included) stayed on and spammed
+  // the log on every single WS message. alevel::all is the actual "disable
+  // everything" mask.
+  wsClient.clear_access_channels(websocketpp::log::alevel::all);
 
   // Register readable listener
   socketPoll->registerSocket(

@@ -150,7 +150,6 @@ void ConnectStateHandler::initialize() {
 
 bell::Result<> ConnectStateHandler::handlePlayerCommand(
     tao::json::value& messageJson) {
-  std::cout << tao::json::to_string(messageJson) << std::endl;
   auto& payload = messageJson.at("payload");
   auto& command = payload.at("command");
   std::string endpoint = command.at("endpoint").get_string();
@@ -276,8 +275,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommand(
 
   playerState.duration = 0;
 
-  std::cout << "Current track after transfer: " << (track ? track->uri : "none")
-            << std::endl;
+  BELL_LOG(info, LOG_TAG, "Current track after transfer: {}",
+           track ? track->uri : "none");
   if (!putState()) {
     BELL_LOG(error, LOG_TAG, "Failed to put state");
     return {};

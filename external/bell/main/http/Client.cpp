@@ -163,8 +163,6 @@ bell::Result<Response> DefaultTransport::execute(const Request& req) {
   auto connection = connectionPool->acquire(*req.uri.host, port);
 
   if (connection) {
-    std::cout << "Reusing existing connection to " << *req.uri.host << ":"
-              << port << std::endl;
     socketStream = std::make_shared<net::SocketStream>(*connection);
   } else {
     if (req.uri.scheme == "https") {
