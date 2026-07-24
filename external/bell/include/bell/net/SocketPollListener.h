@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "bell/Logger.h"
 #include "bell/net/Socket.h"
 
 namespace bell::net {
@@ -57,6 +58,7 @@ class SocketPollListener {
   std::unordered_map<int, SocketCallbacks> handlers;
   std::vector<pollfd> fds;
   std::recursive_mutex pollMutex;
+  const char* LOG_TAG = "SocketPollListener";
 
   // Updates the file descriptor list for polling, based on the registered sockets
   void updateFdList();

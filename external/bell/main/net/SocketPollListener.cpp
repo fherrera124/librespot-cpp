@@ -4,8 +4,8 @@
 #include <sys/poll.h>
 #include <cstring>
 
+#include "bell/Logger.h"
 #include "bell/utils/Utils.h"
-#include "fmt/format.h"
 
 using namespace bell::net;
 
@@ -118,57 +118,65 @@ void SocketPollListener::poll(int timeoutMs) {
   int pollResult = ::poll(fdsCopy.data(), fdsCopy.size(), timeoutMs);
 
   if (pollResult < 0) {  // Handle polling error
-    throw std::runtime_error(
-        fmt::format("poll failed err={}", strerror(errno)));
+    BELL_LOG(error, LOG_TAG, "poll failed err={}", strerror(errno));
     return;
   }
 
   for (auto& pfd : fdsCopy) {
-    if (pfd.revents != 0) {  // If there are any events
-      auto it = handlers.find(pfd.fd);
-      if (it != handlers.end()) {
-        auto socketPtr = it->second.socketPtr.lock();
+    if (pfd.revents == 0) {
+      continue;
+    }
 
+    // Fresh handlers.find() per revents bit, not one cached iterator: an
+    // earlier callback for this fd (eg. Readable finding a dead socket)
+    // can unregisterSocket() and erase the handler mid-dispatch, which
+    // would leave a cached iterator dangling for the next bit's check -
+    // e.g. POLLIN+POLLHUP arriving together on a peer-closed socket.
+    auto dispatchEvent = [&](int pollFlag, Event eventType) {
+      if (!(pfd.revents & pollFlag)) {
+        return;
+      }
+
+      EventCallback cb;
+      std::shared_ptr<Socket> socketPtr;
+
+      {
+        std::scoped_lock lock(pollMutex);
+        auto it = handlers.find(pfd.fd);
+        if (it == handlers.end()) {
+          return;
+        }
+
+        socketPtr = it->second.socketPtr.lock();
         if (!socketPtr) {
-          continue;
+          return;
         }
 
-        if ((pfd.revents & POLLIN) &&
-            it->second.callbacks.contains(Event::Readable)) {
-          // Call the readable callback
-          it->second.callbacks[Event::Readable](*socketPtr);
+        auto cbIt = it->second.callbacks.find(eventType);
+        if (cbIt == it->second.callbacks.end()) {
+          return;
         }
 
-        if ((pfd.revents & POLLOUT) &&
-            it->second.callbacks.contains(Event::Writeable)) {
-          // Call the writeable callback
-          it->second.callbacks[Event::Writeable](*socketPtr);
-        }
+        cb = cbIt->second;
+      }
 
-        if ((pfd.revents & POLLPRI) &&
-            it->second.callbacks.contains(Event::Priority)) {
-          // Call the priority callback
-          it->second.callbacks[Event::Priority](*socketPtr);
-        }
+      // Run the callback with the lock released, so it can freely call
+      // back into registerSocket()/unregisterSocket() without blocking
+      // (or racing) other threads doing the same.
+      cb(*socketPtr);
+    };
 
-        if ((pfd.revents & POLLERR) &&
-            it->second.callbacks.contains(Event::Error)) {
-          // Call the writeable callback
-          it->second.callbacks[Event::Error](*socketPtr);
-        }
+    dispatchEvent(POLLIN, Event::Readable);
+    dispatchEvent(POLLOUT, Event::Writeable);
+    dispatchEvent(POLLPRI, Event::Priority);
+    dispatchEvent(POLLERR, Event::Error);
 
-        if (pfd.revents & POLLHUP) {
-          if (it->second.callbacks.contains(Event::Hangup)) {
-            // Call the hangup callback
-            it->second.callbacks[Event::Hangup](*socketPtr);
-          }
+    if (pfd.revents & POLLHUP) {
+      dispatchEvent(POLLHUP, Event::Hangup);
 
-          // Remove the handler
-          handlers.erase(it->first);
-
-          // Rebuild the file descriptor list
-          updateFdList();
-        }
+      std::scoped_lock lock(pollMutex);
+      if (handlers.erase(pfd.fd) > 0) {
+        updateFdList();
       }
     }
   }
