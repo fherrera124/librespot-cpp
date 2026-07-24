@@ -115,6 +115,27 @@ bell::Result<> TCPSocket::connect(const std::string& host, uint16_t port,
     }
   }
 
+  // OS-level TCP keepalive - catches a peer that goes silent at the network
+  // level (WiFi AP drops the association, a NAT/router mapping expires,
+  // etc.) without ever sending a FIN/RST, which otherwise leaves the socket
+  // waiting forever with no error and nothing to poll() on. Mirrors
+  // librespot-cpp's own hardware-tuned values (PlainConnection.cpp/
+  // TLSSocket.cpp there), applied centrally here since every TCP-based
+  // connection in this codebase (ApConnection, DealerClient's TLSSocket,
+  // the HTTP client's plain/TLS sockets) goes through this same connect().
+  int keepalive = 1;
+  setsockopt(sockFd, SOL_SOCKET, SO_KEEPALIVE,
+             reinterpret_cast<const char*>(&keepalive), sizeof(keepalive));
+#ifndef _WIN32
+  int keepIdle = 30;
+  setsockopt(sockFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(keepIdle));
+  int keepInterval = 10;
+  setsockopt(sockFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval,
+             sizeof(keepInterval));
+  int keepCount = 3;
+  setsockopt(sockFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(keepCount));
+#endif
+
   return {};
 }
 
