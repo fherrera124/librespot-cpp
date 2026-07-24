@@ -116,6 +116,22 @@ class ApConnection {
 
   bell::Result<size_t> receivePlainPacket();
 
+  // Reads exactly `len` bytes, transparently retrying on EAGAIN/EWOULDBLOCK
+  // (apSock is non-blocking - see the connect(..., timeoutMs=0) call site -
+  // so a read finding 0 bytes currently available is normal, not an error,
+  // and used to be treated as fatal here: receivePacket()/receivePlainPacket()
+  // read a multi-byte packet across a handful of individual read() calls,
+  // and if the rest of the packet hadn't arrived from the wire yet, that
+  // transient EAGAIN killed the whole AP connection permanently (state
+  // dropped to ERROR), which is exactly what a real hardware session hit -
+  // every single audio key request failing with "Not owner" (this
+  // toolchain's newlib strerror() text for EPERM, returned by
+  // sendPacket()/receivePacket() once state != CONNECTED_SHANNON) because
+  // the connection had already silently died within the first second or
+  // two. Bounded by operationTimeout so a genuinely dead connection still
+  // surfaces as a real error instead of hanging forever.
+  bell::Result<> readExact(std::byte* buf, size_t len);
+
   static void updateShannonNonce(uint32_t& nonce, Shannon& cipher);
 };
 }  // namespace cspot

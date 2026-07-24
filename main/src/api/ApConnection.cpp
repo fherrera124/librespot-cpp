@@ -1,10 +1,13 @@
 #include "api/ApConnection.h"
 
+#include <chrono>
+
 #include "Utils.h"
 #include "authentication.pb.h"
 #include "bell/Logger.h"
 #include "bell/Result.h"
 #include "bell/utils/DigestCrypto.h"
+#include "bell/utils/Utils.h"
 #include "mbedtls/md.h"
 #include "tl/expected.hpp"
 
@@ -365,11 +368,11 @@ bell::Result<size_t> ApConnection::receivePlainPacket() {
   uint32_t packetSize = 0;
 
   // Not using a BinaryStream here, as we only really need to read a single uint32_t
-  auto res = apSock->read(reinterpret_cast<std::byte*>(&packetSize),
-                          sizeof(packetSize));
+  auto res = readExact(reinterpret_cast<std::byte*>(&packetSize),
+                       sizeof(packetSize));
 
   if (!res) {
-    return res;
+    return tl::make_unexpected(res.error());
   }
 
   if (state != State::CONNECTED_SHANNON) {
@@ -389,14 +392,9 @@ bell::Result<size_t> ApConnection::receivePlainPacket() {
   // Already read the packet size, so subtract it from the total size
   packetSize -= 4;
 
-  size_t readBytes = 0;
-
-  while (readBytes != packetSize) {
-    res = apSock->read(&connectionBuffer[readBytes], packetSize - readBytes);
-    if (!res) {
-      return tl::make_unexpected(res.error());
-    }
-    readBytes += *res;
+  res = readExact(connectionBuffer.data(), packetSize);
+  if (!res) {
+    return tl::make_unexpected(res.error());
   }
 
   if (state != State::CONNECTED_SHANNON) {
@@ -408,6 +406,38 @@ bell::Result<size_t> ApConnection::receivePlainPacket() {
   // Ensure the accumulated exchange buffer does not exceed a certain size
   assert(accumulatedExchangeBuffer.size() <= 1024);
   return packetSize;
+}
+
+bell::Result<> ApConnection::readExact(std::byte* buf, size_t len) {
+  size_t readBytes = 0;
+  auto deadline = std::chrono::steady_clock::now() +
+                  std::chrono::milliseconds(operationTimeout);
+
+  while (readBytes < len) {
+    auto res = apSock->read(buf + readBytes, len - readBytes);
+    if (!res) {
+      if (res.error() == std::errc::operation_would_block ||
+          res.error() == std::errc::interrupted) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+          return bell::make_unexpected_errc(std::errc::timed_out);
+        }
+        bell::utils::sleepMs(1);
+        continue;
+      }
+      return tl::make_unexpected(res.error());
+    }
+
+    if (*res == 0) {
+      // Peer closed mid-packet - a successful read of 0 bytes, not an
+      // error (see Socket::read()'s own doc comment), so don't touch
+      // res.error() here.
+      return bell::make_unexpected_errc(std::errc::connection_reset);
+    }
+
+    readBytes += *res;
+  }
+
+  return {};
 }
 
 void ApConnection::updateShannonNonce(uint32_t& nonce, Shannon& cipher) {
@@ -475,7 +505,7 @@ bell::Result<std::byte*> ApConnection::receivePacket(uint8_t& cmd,
   }
 
   // Receive 3 bytes, cmd + size
-  auto res = apSock->read(connectionBuffer.data(), 3);
+  auto res = readExact(connectionBuffer.data(), 3);
   if (!res) {
     return tl::make_unexpected(res.error());
   }
@@ -493,14 +523,9 @@ bell::Result<std::byte*> ApConnection::receivePacket(uint8_t& cmd,
     connectionBuffer.resize(packetSize + shannonMacSize);
   }
 
-  size_t readBytes = 0;
-  while (readBytes != packetSize + shannonMacSize) {
-    res = apSock->read(&connectionBuffer[readBytes],
-                       packetSize + shannonMacSize - readBytes);
-    if (!res) {
-      return tl::make_unexpected(res.error());
-    }
-    readBytes += *res;
+  res = readExact(connectionBuffer.data(), packetSize + shannonMacSize);
+  if (!res) {
+    return tl::make_unexpected(res.error());
   }
 
   // Decrypt the packet
