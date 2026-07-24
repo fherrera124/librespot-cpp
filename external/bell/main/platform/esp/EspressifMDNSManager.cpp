@@ -345,7 +345,22 @@ class EspressifMDNAdvertiser : public Advertiser {
 
 class EspressifMDNSManager : public Manager {
  public:
-  EspressifMDNSManager() = default;
+  // mdns_service_add() hard-requires both of these to have already
+  // happened (confirmed by reading mdns_responder.c directly:
+  // mdns_service_add() itself checks `s_server` - ESP_ERR_INVALID_STATE
+  // if missing - and mdns_service_add_for_host_base() separately checks
+  // `s_server->hostname` - ESP_ERR_INVALID_ARG if missing) - neither was
+  // being called anywhere in this codebase, so advertise() was silently
+  // failing on every real device (the mDNS service never actually got
+  // registered, so nothing could ever discover it) - confirmed on real
+  // JC3248W535 hardware: ZeroConf's own HTTP server came up fine, but the
+  // device never appeared in the Spotify app.
+  EspressifMDNSManager() {
+    auto ret = mdns_init();
+    if (ret != ESP_OK) {
+      BELL_LOG(error, LOG_TAG, "mdns_init failed: {}", (int)ret);
+    }
+  }
 
   bell::Result<std::unique_ptr<Browser>> browse(
       const std::string& serviceType, const std::string& /*serviceDomain*/,
@@ -368,6 +383,26 @@ class EspressifMDNSManager : public Manager {
       uint16_t port,
       const std::unordered_map<std::string, std::string>& txtRecords,
       int /*interfaceIndex*/) override {
+    // The mDNS hostname (the ".local" name a client resolves to an IP) and
+    // default instance name are device-wide, not per-service - reusing
+    // serviceName here matches the usual ZeroConf convention of the same
+    // name for both. Same fix already validated in our other ESP32
+    // project's own bell fork (MDNSService.cpp's ensureResponderStarted()).
+    auto hostnameRet = mdns_hostname_set(serviceName.c_str());
+    if (hostnameRet != ESP_OK) {
+      BELL_LOG(error, LOG_TAG, "mdns_hostname_set failed: {}",
+              (int)hostnameRet);
+      return tl::make_unexpected(
+          bell::mdns::MdnsErrc::service_registration_failed);
+    }
+    auto instanceRet = mdns_instance_name_set(serviceName.c_str());
+    if (instanceRet != ESP_OK) {
+      BELL_LOG(error, LOG_TAG, "mdns_instance_name_set failed: {}",
+              (int)instanceRet);
+      return tl::make_unexpected(
+          bell::mdns::MdnsErrc::service_registration_failed);
+    }
+
     auto advertiser = std::make_unique<EspressifMDNAdvertiser>();
     auto res =
         advertiser->advertise(serviceName, serviceType, port, txtRecords);
@@ -390,6 +425,8 @@ class EspressifMDNSManager : public Manager {
   }
 
  private:
+  const char* LOG_TAG = "EspressifMDNSManager";
+
   // Pointer to the browse executor
   std::shared_ptr<BrowseExecutor> browseExecutor =
       std::make_shared<BrowseExecutor>();

@@ -85,6 +85,10 @@ void waitForZeroconfAuth(std::shared_ptr<cspot::AuthInfo> authInfo) {
   auto service = bell::mdns::getDefaultManager()->advertise(
       authInfo->deviceName, "_spotify-connect._tcp", "", "", 2139,
       {{"VERSION", "1.0"}, {"CPath", "/spotify_handler"}, {"Stack", "SP"}});
+  if (!service) {
+    BELL_LOG(error, "Zeroconf", "mDNS advertise failed - device won't be "
+                                "discoverable by the Spotify app");
+  }
 
   authSemaphore.take();
 }
