@@ -61,6 +61,21 @@ bell::Result<> ApClient::requestAudioKey(const SpotifyId& trackId,
   audioKeyRequests.insert(
       {audioKeySequence, {trackId, fileId}});  // Store the request
 
+  // Must be unique per in-flight request - audioKeyRequests is keyed by
+  // this value, and the AP just echoes back whatever we send. Never
+  // incrementing it here meant every request (e.g. the 3-4 lookahead
+  // tracks FileProvider fetches per queue update) went out as sequence 0:
+  // insert() above no-ops for every request after the first (the key
+  // already exists), so only one track's mapping ever survived. The
+  // first response received got misattributed to that lone entry and
+  // erased it; every other track's real response then failed to find
+  // any mapping at all ("unknown sequence ID") and was silently dropped.
+  // Reproduced on real hardware: one track got a bogus 2-byte "key" (an
+  // AudioKeyResponseError's error code, from a response actually meant
+  // for a different track) while the other three never got a
+  // FILE_PROVIDED event at all.
+  audioKeySequence++;
+
   // Structure: [FILEID] [TRACKID] [4 BYTES SEQUENCE ID] [0x00, 0x00]
   std::vector<std::byte> requestData = fileId;
 

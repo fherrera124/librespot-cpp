@@ -282,6 +282,19 @@ void DefaultFileProvider::handleAudioKeyResponse(
     // Erase the result
     pendingAudioKeyFiles.erase(fileRes);
 
+    if (!response.success) {
+      // An AudioKeyResponseError carries a short error code in place of
+      // the key (2 bytes, not 16) - treating it as a real key regardless
+      // of response.success (as this code used to) fed garbage into
+      // mbedtls_aes_setkey_enc downstream, reproduced on real hardware as
+      // "Failed to set AES key" retried forever for the affected track.
+      file.isError = true;
+      BELL_LOG(info, LOG_TAG, "Audio key request denied for track {}",
+               file.itemId.uri);
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, file);
+      return;
+    }
+
     // assign audio key
     file.decryptionKey = response.audioKey;
 
