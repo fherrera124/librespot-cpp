@@ -5,7 +5,18 @@
 
 using namespace cspot;
 
-cspot::EventLoop::EventLoop() : bell::Task("cspot_event_loop", 8 * 1024) {
+// 8KB (the original size) was enough until a real dispatched event
+// actually did real work - a "transfer" player command drives
+// ConnectStateHandler -> TrackQueueHandler -> ContextPageParser resolving
+// a playlist context, layering tao::json + protobuf decode + an HTTPS
+// call to spclient on top of this task's own dispatch loop. Found via a
+// real hardware stack-overflow crash (FreeRTOS's own canary-based
+// detector: "A stack overflow in task cspot_event_loo has been
+// detected"), not guessed at - this is every dispatched event's entry
+// point (Dealer messages/requests, audio key responses, track metadata,
+// queue updates, player state), so sized generously rather than tuned to
+// exactly this one path.
+cspot::EventLoop::EventLoop() : bell::Task("cspot_event_loop", 32 * 1024) {
   // Run the event loop in a separate thread
   startTask();
 }
