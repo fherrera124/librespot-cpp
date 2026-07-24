@@ -75,7 +75,13 @@ file(GLOB PROTOS ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf/*.proto)
 nanopb_generate_cpp(TARGET cspot-proto ${PROTOS})
 list(APPEND EXTRA_LIBS cspot-proto)
 target_compile_definitions(cspot-proto PUBLIC PB_ENABLE_MALLOC)
-target_compile_options(websockets INTERFACE -Wno-null-pointer-subtraction)
+# Clang-only warning flag (real GCC toolchains, including this project's
+# xtensa-esp-elf one, don't have -Wnull-pointer-subtraction at all - passing
+# it unconditionally just prints a "note: unrecognized command-line option"
+# on every build there).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  target_compile_options(websockets INTERFACE -Wno-null-pointer-subtraction)
+endif()
 
 # target_compile_definitions(cspot-proto PUBLIC PB_FIELD_32BIT)
 add_library(cspot STATIC ${SOURCES} ${PROTO_SRCS})

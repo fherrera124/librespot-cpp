@@ -404,6 +404,7 @@ DefaultTrackQueueHandler::currentTrack() {
         .uri = track.uri,
         .uid = "q0",
         .provider = "queue",
+        .gid = std::nullopt,
     };
   }
 
@@ -424,6 +425,7 @@ DefaultTrackQueueHandler::currentTrack() {
         .uri = trackId.uri,
         .uid = "",
         .provider = "context",
+        .gid = std::nullopt,
     };
   }
 
