@@ -36,6 +36,7 @@ bell::Result<> DealerClient::connect(
     const std::string& dealerAddress, const std::string& accessKey,
     const std::shared_ptr<bell::SocketPollListener>& socketPoll) {
   connectionReady = false;
+  this->socketPoll = socketPoll;
 
   std::string connectionUrl =
       fmt::format("{}/?access_token={}", dealerAddress, accessKey);
@@ -65,9 +66,29 @@ bell::Result<> DealerClient::connect(
       socket, bell::PollEvent::Readable, [this](auto& sock) {
         if (wsConnection) {
           auto res = sock.read(inputBuffer.data(), inputBuffer.size());
-          if (!res || *res == 0) {
+          if (!res) {
+            // res holds a real error here - safe to call .error(). A
+            // successful read of 0 bytes (peer closed) falls through to
+            // the branch below instead: res.error() on an expected that
+            // actually holds a value is UB, and was a real crash (a
+            // LoadProhibited panic reading a garbage std::error_code
+            // category vtable) reproduced on real hardware when the
+            // dealer server closed the WebSocket connection.
             BELL_LOG(error, LOG_TAG, "Socket read error: {}",
                      res.error().message());
+            // A dead socket stays "readable" forever (reading it just
+            // keeps failing), so without this the poller re-invokes this
+            // same callback as fast as it can - a real hardware hang
+            // reproduced as a task watchdog reset (the hot loop starves
+            // the idle task). Stop being polled once the socket's gone.
+            connectionReady = false;
+            this->socketPoll->unregisterSocket(this->socket,
+                                               bell::PollEvent::All);
+          } else if (*res == 0) {
+            BELL_LOG(info, LOG_TAG, "Dealer socket closed by peer");
+            connectionReady = false;
+            this->socketPoll->unregisterSocket(this->socket,
+                                               bell::PollEvent::All);
           } else {
             std::scoped_lock lock(accessMutex);
 
@@ -123,8 +144,12 @@ void DealerClient::onWSOpen(websocketpp::connection_hdl /*conn*/) {  // NOLINT
 }
 
 void DealerClient::onWSClose(websocketpp::connection_hdl /*conn*/) {
-
   BELL_LOG(info, LOG_TAG, "Websocket connection closed");
+  // Stops doHousekeeping()'s ping (and replyToRequest(), if a stray
+  // dealer request ever arrives after this) from calling send() on a
+  // connection websocketpp itself already knows is dead - was spamming
+  // "Error sending response: invalid state" every 30s after a close.
+  connectionReady = false;
 }
 
 std::error_code DealerClient::wsWriteHandler(websocketpp::connection_hdl hdl,
@@ -182,6 +207,10 @@ void DealerClient::onWSMessage(websocketpp::connection_hdl conn,
 bell::Result<> DealerClient::replyToRequest(bool success,
                                             const std::string& requestKey) {
   std::scoped_lock lock(accessMutex);
+
+  if (!connectionReady) {
+    return bell::make_unexpected_errc(std::errc::not_connected);
+  }
 
   tao::json::value response = {
       {"type", "reply"},

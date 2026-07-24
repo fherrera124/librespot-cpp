@@ -46,6 +46,7 @@ class DealerClient {
   std::array<std::byte, 1024 * 8L> inputBuffer{};
 
   std::shared_ptr<bell::TLSSocket> socket;
+  std::shared_ptr<bell::SocketPollListener> socketPoll;
 
   std::chrono::system_clock::time_point lastPingTime;
   std::chrono::system_clock::time_point lastPongTime;
