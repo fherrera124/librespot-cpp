@@ -1,12 +1,53 @@
 #include "bell/net/SocketStream.h"
 
 #include "bell/Logger.h"
+#include "bell/utils/Utils.h"
 
+#include <chrono>
 #include <cstdint>  // for uint8_t
 #include <cstdio>   // for NULL, ssize_t
+#include <functional>
 #include <memory>
 
 using namespace bell::net;
+
+namespace {
+// A non-blocking socket's read()/write() returning "would block" just means
+// "nothing available/room right now", not a real error - the underlying
+// Socket implementations (POSIXSocket::read/write) surface this as
+// std::errc::operation_would_block, same as any other error, indistinguishable
+// to a naive caller. Every call site here used to treat that the same as a
+// hard failure (or, for underflow(), the same as a clean EOF!) - a real
+// hardware bug: HTTPClient requests default to operationTimeoutMs=0, which
+// (per TCPSocket::connect()) leaves the socket permanently non-blocking, and
+// the very first request on a fresh connection (slower - cold TLS handshake)
+// was reliably hitting this the instant the response hadn't arrived yet by
+// the time readHeaders() first tried to read it ("Error during headers
+// read" on real hardware). Retries transparently instead, bounded so a
+// genuinely dead connection still surfaces as a real error.
+bell::Result<size_t> retryOnWouldBlock(
+    const std::function<bell::Result<size_t>()>& op) {
+  constexpr int timeoutMs = 5000;
+  auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+
+  while (true) {
+    auto res = op();
+    if (res) {
+      return res;
+    }
+    if (res.error() == std::errc::operation_would_block ||
+        res.error() == std::errc::interrupted) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return bell::make_unexpected_errc<size_t>(std::errc::timed_out);
+      }
+      bell::utils::sleepMs(1);
+      continue;
+    }
+    return res;
+  }
+}
+}  // namespace
 
 SocketBuffer::SocketBuffer(std::shared_ptr<Socket> socket)
     : internalSocket(std::move(socket)) {}
@@ -14,8 +55,10 @@ SocketBuffer::SocketBuffer(std::shared_ptr<Socket> socket)
 int SocketBuffer::sync() {
   size_t n = pptr() - pbase();
   while (n > 0) {
-    auto bw =
-        internalSocket->write(reinterpret_cast<std::byte*>(pptr() - n), n);
+    auto bw = retryOnWouldBlock([&] {
+      return internalSocket->write(reinterpret_cast<std::byte*>(pptr() - n),
+                                   n);
+    });
     if (!bw) {
       // Set failbit and preserve the socket error
       BELL_LOG(error, "SocketBuffer", "Write failed: {}", bw.error());
@@ -30,8 +73,10 @@ int SocketBuffer::sync() {
 }
 
 SocketBuffer::int_type SocketBuffer::underflow() {
-  auto br =
-      internalSocket->read(reinterpret_cast<std::byte*>(ibuf.data()), bufLen);
+  auto br = retryOnWouldBlock([&] {
+    return internalSocket->read(reinterpret_cast<std::byte*>(ibuf.data()),
+                                bufLen);
+  });
   if (!br) {
     BELL_LOG(error, "SocketBuffer", "Read error: {}", br.error());
     setg(nullptr, nullptr, nullptr);
@@ -66,8 +111,10 @@ std::streamsize SocketBuffer::xsgetn(char_type* _s, std::streamsize _n) {
   std::streamsize remain = _n - bn;
   char_type* end = _s + _n;
   while (remain > 0) {
-    auto br = internalSocket->read(reinterpret_cast<std::byte*>(end - remain),
-                                   remain);
+    auto br = retryOnWouldBlock([&] {
+      return internalSocket->read(
+          reinterpret_cast<std::byte*>(end - remain), remain);
+    });
 
     if (!br) {
       return (_n - remain);
@@ -93,8 +140,10 @@ std::streamsize SocketBuffer::xsputn(const char_type* s, std::streamsize n) {
   std::streamsize remain = n;
   const char_type* end = s + n;
   while (remain > bufLen) {
-    auto bw = internalSocket->write(
-        reinterpret_cast<const std::byte*>(end - remain), remain);
+    auto bw = retryOnWouldBlock([&] {
+      return internalSocket->write(
+          reinterpret_cast<const std::byte*>(end - remain), remain);
+    });
     if (!bw) {
       return 0;  // Stream sets failbit
     }
