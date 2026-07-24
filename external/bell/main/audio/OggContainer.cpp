@@ -59,12 +59,14 @@ bell::Result<> OggContainer::openForRead(
     bool reachedEnd = false;
     while (!reachedEnd) {
       auto pageRes = readNextPage();
-      if (pageRes.error() == bell::audio::Errc::EndOfStream) {
-        reachedEnd = true;
-      } else if (!pageRes) {
-        BELL_LOG(warn, LOG_TAG, "Could not read page during init - {}",
-                 pageRes.error());
-        return tl::make_unexpected(pageRes.error());
+      if (!pageRes) {
+        if (pageRes.error() == bell::audio::Errc::EndOfStream) {
+          reachedEnd = true;
+        } else {
+          BELL_LOG(warn, LOG_TAG, "Could not read page during init - {}",
+                   pageRes.error());
+          return tl::make_unexpected(pageRes.error());
+        }
       }
     }
 
@@ -78,6 +80,21 @@ bell::Result<> OggContainer::openForRead(
                seekRes.error());
       return tl::make_unexpected(seekRes.error());
     }
+
+    // ogg_sync_pageseek() serves whatever's already buffered before ever
+    // touching the stream again - the tail scan above can leave a real,
+    // valid trailing page's leftover bytes sitting in oggSyncState's
+    // buffer. Without resetting it here, the "first page" read below
+    // would actually be served from that stale tail data instead of the
+    // fresh bytes at the position we just seeked back to, handing Tremor
+    // a mid-stream audio packet instead of the Vorbis id header.
+    // Reproduced on real hardware: every attempt to open a specific
+    // track failed identically with "Not a Vorbis stream" (Tremor -132)
+    // on packet 0, with the tail scan's own totalFrames reading back
+    // consistent and correct across retries - proving the corruption was
+    // deterministic and downstream of a valid tail scan, not a network
+    // issue.
+    ogg_sync_reset(&oggSyncState);
   }
 
   // Read the first page to get the stream serial number.
