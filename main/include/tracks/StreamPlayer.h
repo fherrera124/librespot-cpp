@@ -53,6 +53,15 @@ class StreamPlayer : public bell::Task {
   // recursive, so nested calls from a caller already holding it are fine).
   void maybeStartCurrentTrack();
 
-  void announceState();
+  // isPlaying/isBuffering are sent to the server as-is (see
+  // ConnectStateHandler's PLAYER_STATE_UPDATED handler) - callers must only
+  // claim isPlaying=true once audio is actually flowing, not merely once a
+  // CDN url/decrypt key are resolved. Confirmed against a real hardware
+  // session: claiming isPlaying=true at file-ready time (before the decoder
+  // was even opened) was read by the real Spotify app as the device never
+  // successfully connecting - librespot-cpp's own PlayerEngine.cpp has the
+  // exact same two-phase buffering->playing split, with a comment
+  // documenting the same client-visible failure from getting this wrong.
+  void announceState(bool isPlaying, bool isBuffering);
 };
 }  // namespace cspot

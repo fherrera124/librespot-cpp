@@ -54,10 +54,6 @@ void StreamPlayer::registerHandlers() {
 }
 
 void StreamPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
-
-  std::cout << "Handling queue update, current track id: "
-            << (update.currentTrackId ? update.currentTrackId->uri : "none")
-            << ", next tracks: ";
   std::scoped_lock lock(playbackMutex);
 
   if (!update.currentTrackId) {
@@ -137,15 +133,14 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
 
   if (this->providedTracks.contains(providedFile.itemId)) {
     this->providedTracks[providedFile.itemId] = providedFile;
-    std::string audioKey = base64Encode(providedFile.decryptionKey.data(),
-                                        providedFile.decryptionKey.size());
 
-    BELL_LOG(info, LOG_TAG,
-             "Track {} is ready to play from file {}, audio key = {}",
-             providedFile.itemId.uri, providedFile.cdnUrl, audioKey);
+    BELL_LOG(info, LOG_TAG, "Track {} is ready to play from file {}",
+             providedFile.itemId.uri, providedFile.cdnUrl);
 
     if (providedFile.itemId == playbackQueue[0]) {
-      announceState();
+      // Still buffering here - the decoder hasn't been opened yet, let
+      // alone produced any real audio. See announceState()'s doc comment.
+      announceState(/*isPlaying=*/false, /*isBuffering=*/true);
     }
   } else {
     // Probably outdated request
@@ -181,15 +176,22 @@ void StreamPlayer::maybeStartCurrentTrack() {
                                       file.itemId);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
+    return;
+  }
+
+  if (file.itemId == playbackQueue[0]) {
+    // Real playback is genuinely starting now - the earlier
+    // handleFileProvided() announce only ever meant "buffering".
+    announceState(/*isPlaying=*/true, /*isBuffering=*/false);
   }
 }
 
-void StreamPlayer::announceState() {
+void StreamPlayer::announceState(bool isPlaying, bool isBuffering) {
   std::scoped_lock lock(playbackMutex);
 
   PlayerStateUpdate stateUpdate{
-      .isPlaying = false,
-      .isBuffering = true,
+      .isPlaying = isPlaying,
+      .isBuffering = isBuffering,
       .timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
                        .count(),
@@ -200,8 +202,6 @@ void StreamPlayer::announceState() {
   if (providedTracks[playbackQueue[0]].trackMetadata) {
     stateUpdate.playbackDurationMs =
         providedTracks[playbackQueue[0]].trackMetadata->durationMs;
-    stateUpdate.isPlaying = true;
-    stateUpdate.isBuffering = false;
   }
 
   eventLoop->post(EventLoop::EventType::PLAYER_STATE_UPDATED, stateUpdate);
