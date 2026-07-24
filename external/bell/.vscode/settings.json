@@ -1,0 +1,12 @@
+{
+    "clangd.arguments": [
+        "--background-index",
+        "--clang-tidy",
+        "-j=8",
+        "--pch-storage=memory",
+        // "--query-driver=/**/bin/xtensa-esp32-elf-*"
+    ],
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "editor.tabSize": 2,
+    "idf.pythonInstallPath": "/opt/homebrew/opt/python@3.12/Frameworks/Python.framework/Versions/3.12/bin/python3"
+}

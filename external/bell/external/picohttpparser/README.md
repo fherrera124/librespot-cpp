@@ -1,0 +1,2 @@
+# picohttp parser @ f8d0513f1a7a111f2597d643b073935a8afaf9e5
+Original source at https://github.com/h2o/picohttpparser. Taken out of tree at commit f8d0513f1a7a111f2597d643b073935a8afaf9e5, wrapped with a cmake target.

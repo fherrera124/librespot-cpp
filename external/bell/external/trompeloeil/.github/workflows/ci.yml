@@ -1,0 +1,1873 @@
+name: CI
+
+# Trigger on pushes to all branches and for all pull-requests
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    container: ${{ matrix.config.container }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+#          # GCC-4.8
+#          - {
+#            name: "Linux GCC 4.8 C++11",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/gcc:4.8" },
+#            #cc: "gcc-4.8", cxx: "g++-4.8",
+#            compiler: gcc,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#          }
+#          # GCC-4.9
+#          - {
+#            name: "Linux GCC 4.9 C++11",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/gcc:4.9" },
+#            compiler: gcc,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#          }
+#          - {
+#            name: "Linux GCC 4.9 C++14",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/gcc:4.9" },
+#            compiler: gcc,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#          }
+#          # GCC-5
+#          - {
+#            name: "Linux GCC 5 C++11",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/gcc:5" },
+#            compiler: gcc,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#          }
+#          - {
+#            name: "Linux GCC 5 C++14",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/gcc:5" },
+#            compiler: gcc,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#          }
+#          - {
+#            name: "Linux GCC 5 C++17",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/gcc:5" },
+#            compiler: gcc,
+#            cxx_standard: 17,
+#            cxx_asan: true,
+#          }
+#          # GCC-6
+#          - {
+#            name: "Linux GCC 6 C++11",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/gcc:6" },
+#            compiler: gcc,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#          }
+#          - {
+#            name: "Linux GCC 6 C++14",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/gcc:6" },
+#            compiler: gcc,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#          }
+#          - {
+#            name: "Linux GCC 6 C++17",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/gcc:6" },
+#            compiler: gcc,
+#            cxx_standard: 17,
+#            cxx_asan: true,
+#          }
+
+          # GCC-7
+          - {
+            name: "Linux GCC 7 C++11",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:7" },
+            compiler: gcc,
+            cxx_standard: 11,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 7 C++14",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:7" },
+            compiler: gcc,
+            cxx_standard: 14,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 7 C++17",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:7" },
+            compiler: gcc,
+            cxx_standard: 17,
+            cxx_asan: true,
+          }
+
+          # GCC-8
+          - {
+            name: "Linux GCC 8 C++11",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:8" },
+            compiler: gcc,
+            cxx_standard: 11,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 8 C++14",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:8" },
+            compiler: gcc,
+            cxx_standard: 14,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 8 C++17",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:8" },
+            compiler: gcc,
+            cxx_standard: 17,
+            cxx_asan: true,
+          }
+
+          # GCC-9
+          - {
+            name: "Linux GCC 9 C++11",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:9" },
+            compiler: gcc,
+            cxx_standard: 11,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 9 C++14",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:9" },
+            compiler: gcc,
+            cxx_standard: 14,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 9 C++17",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:9" },
+            compiler: gcc,
+            cxx_standard: 17,
+            cxx_asan: true,
+          }
+
+          # GCC-10
+          - {
+            name: "Linux GCC 10 C++11",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:10" },
+            compiler: gcc,
+            cxx_standard: 11,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 10 C++14",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:10" },
+            compiler: gcc,
+            cxx_standard: 14,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 10 C++17",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:10" },
+            compiler: gcc,
+            cxx_standard: 17,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 10 C++20",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:10" },
+            compiler: gcc,
+            cxx_standard: 20,
+            cxx_asan: true,
+          }
+
+          # GCC-11
+          - {
+            name: "Linux GCC 11 C++11",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:11" },
+            compiler: gcc,
+            cxx_standard: 11,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 11 C++14",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:11" },
+            compiler: gcc,
+            cxx_standard: 14,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 11 C++17",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:11" },
+            compiler: gcc,
+            cxx_standard: 17,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 11 C++20",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:11" },
+            compiler: gcc,
+            cxx_standard: 20,
+            cxx_asan: true,
+          }
+
+          # GCC-12
+          - {
+            name: "Linux GCC 12 C++11",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:12" },
+            compiler: gcc,
+            cxx_standard: 11,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 12 C++14",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:12" },
+            compiler: gcc,
+            cxx_standard: 14,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 12 C++17",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:12" },
+            compiler: gcc,
+            cxx_standard: 17,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 12 C++20",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:12" },
+            compiler: gcc,
+            cxx_standard: 20,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 12 C++23",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:12" },
+            compiler: gcc,
+            cxx_standard: 23,
+            cxx_asan: true,
+          }
+          # GCC-13
+          - {
+            name: "Linux GCC 13 C++11",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:13" },
+            compiler: gcc,
+            cxx_standard: 11,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 13 C++14",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:13" },
+            compiler: gcc,
+            cxx_standard: 14,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 13 C++17",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:13" },
+            compiler: gcc,
+            cxx_standard: 17,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 13 C++20",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:13" },
+            compiler: gcc,
+            cxx_standard: 20,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 13 C++23",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:13" },
+            compiler: gcc,
+            cxx_standard: 23,
+            cxx_asan: true,
+          }
+          # GCC-14
+          - {
+            name: "Linux GCC 14 C++11",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:14" },
+            compiler: gcc,
+            cxx_standard: 11,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 14 C++14",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:14" },
+            compiler: gcc,
+            cxx_standard: 14,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 14 C++17",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:14" },
+            compiler: gcc,
+            cxx_standard: 17,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 14 C++20",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:14" },
+            compiler: gcc,
+            cxx_standard: 20,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 14 C++23",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:14" },
+            compiler: gcc,
+            cxx_standard: 23,
+            cxx_asan: true,
+          }
+          # GCC-15
+          - {
+            name: "Linux GCC 15 C++17",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:15" },
+            compiler: gcc,
+            cxx_standard: 17,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 15 C++20",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:15" },
+            compiler: gcc,
+            cxx_standard: 20,
+            cxx_asan: true,
+          }
+          - {
+            name: "Linux GCC 15 C++23",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/gcc:15" },
+            compiler: gcc,
+            cxx_standard: 23,
+            cxx_asan: true,
+          }
+
+#          # Clang-3.5
+#          - {
+#            name: "Linux Clang 3.5 C++11 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.5" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          #- {
+#          #  name: "Linux Clang 3.5 C++14 / libstdc++",
+#          #  os: ubuntu-latest,
+#          #  container: { image: "ghcr.io/rollbear/clang:3.5" },
+#          #  compiler: clang,
+#          #  cxx_standard: 14,
+#          #  cxx_asan: false,
+#          #  libcxx: false
+#          #}
+#          - {
+#            name: "Linux Clang 3.5 C++11 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.5" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 3.5 C++14 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.5" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: false,
+#            libcxx: true,
+#            no_coverage: true,
+#          }
+#          # Clang-3.6
+#          - {
+#            name: "Linux Clang 3.6 C++11 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.6" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 3.6 C++14 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.6" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: false,
+#            no_coverage: true
+#          }
+#          - {
+#            name: "Linux Clang 3.6 C++11 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.6" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: false,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 3.6 C++14 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.6" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: false,
+#            libcxx: true,
+#            no_coverage: true
+#          }
+#          # Clang-3.7
+#          - {
+#            name: "Linux Clang 3.7 C++11 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.7" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: false,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 3.7 C++14 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.7" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: false,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 3.7 C++11 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.7" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: false,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 3.7 C++14 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.7" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: false,
+#            libcxx: true,
+#          }
+#          # Clang-3.8
+#          - {
+#            name: "Linux Clang 3.8 C++11 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.8" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 3.8 C++14 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.8" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 3.8 C++11 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.8" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: false,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 3.8 C++14 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.8" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: false,
+#            libcxx: true,
+#          }
+#          # Clang-3.9
+#          - {
+#            name: "Linux Clang 3.9 C++11 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.9" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 3.9 C++14 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.9" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 3.9 C++11 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.9" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: false,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 3.9 C++14 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:3.9" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: true,
+#            no_coverage: true
+#          }
+#          # Clang-4.0
+#          - {
+#            name: "Linux Clang 4.0 C++11 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:4.0" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 4.0 C++14 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:4.0" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 4.0 C++11 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:4.0" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: false,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 4.0 C++14 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:4.0" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: true,
+#            no_coverage: true
+#          }
+#          # Clang-5.0
+#          - {
+#            name: "Linux Clang 5.0 C++11 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:5.0" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 5.0 C++14 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:5.0" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 5.0 C++17 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:5.0" },
+#            compiler: clang,
+#            cxx_standard: 17,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 5.0 C++11 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:5.0" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: false,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 5.0 C++14 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:5.0" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 5.0 C++17 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:5.0" },
+#            compiler: clang,
+#            cxx_standard: 17,
+#            cxx_asan: true,
+#            libcxx: true,
+#          }
+#
+#          # Clang-6.0
+#          - {
+#            name: "Linux Clang 6.0 C++11 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:6.0" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 6.0 C++14 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:6.0" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 6.0 C++17 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:6.0" },
+#            compiler: clang,
+#            cxx_standard: 17,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 6.0 C++11 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:6.0" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: false,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 6.0 C++14 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:6.0" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 6.0 C++17 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:6.0" },
+#            compiler: clang,
+#            cxx_standard: 17,
+#            cxx_asan: true,
+#            libcxx: true,
+#          }
+#
+#          # Clang-7
+#          - {
+#            name: "Linux Clang 7 C++11 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:7" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 7 C++14 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:7" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 7 C++17 / libstdc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:7" },
+#            compiler: clang,
+#            cxx_standard: 17,
+#            cxx_asan: true,
+#            libcxx: false,
+#          }
+#          - {
+#            name: "Linux Clang 7 C++11 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:7" },
+#            compiler: clang,
+#            cxx_standard: 11,
+#            cxx_asan: false,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 7 C++14 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:7" },
+#            compiler: clang,
+#            cxx_standard: 14,
+#            cxx_asan: true,
+#            libcxx: true,
+#          }
+#          - {
+#            name: "Linux Clang 7 C++17 / libc++",
+#            os: ubuntu-latest,
+#            container: { image: "ghcr.io/rollbear/clang:7" },
+#            compiler: clang,
+#            cxx_standard: 17,
+#            cxx_asan: true,
+#            libcxx: true,
+#          }
+
+          # Clang-8
+          - {
+            name: "Linux Clang 8 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:8" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: false,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 8 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:8" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 8 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:8" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 8 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:8" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 8 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:8" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 8 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:8" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: true,
+          }
+
+          # Clang-9
+          - {
+            name: "Linux Clang 9 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:9" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 9 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:9" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 9 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:9" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 9 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:9" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 9 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:9" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 9 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:9" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: true,
+          }
+
+          # Clang-10
+          - {
+            name: "Linux Clang 10 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:10" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 10 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:10" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 10 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:10" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 10 C++20 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:10" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: false,
+            cxx_flags: "-Wno-gnu-zero-variadic-macro-arguments"
+          }
+          - {
+            name: "Linux Clang 10 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:10" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 10 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:10" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 10 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:10" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 10 C++20 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:10" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: true,
+            cxx_flags: "-Wno-gnu-zero-variadic-macro-arguments"
+          }
+
+          # Clang-11
+          - {
+            name: "Linux Clang 11 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:11" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 11 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:11" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 11 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:11" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 11 C++20 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:11" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: false,
+            cxx_flags: "-Wno-gnu-zero-variadic-macro-arguments"
+          }
+          - {
+            name: "Linux Clang 11 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:11" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 11 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:11" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 11 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:11" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 11 C++20 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:11" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: true,
+            cxx_flags: "-Wno-gnu-zero-variadic-macro-arguments"
+          }
+
+          # Clang-12
+          - {
+            name: "Linux Clang 12 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:12" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 12 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:12" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 12 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:12" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 12 C++20 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:12" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: false,
+            cxx_flags: "-Wno-gnu-zero-variadic-macro-arguments"
+          }
+          - {
+            name: "Linux Clang 12 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:12" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 12 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:12" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 12 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:12" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 12 C++20 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:12" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: true,
+            cxx_flags: "-Wno-gnu-zero-variadic-macro-arguments"
+          }
+
+          # Clang-13
+          - {
+            name: "Linux Clang 13 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:13" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 13 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:13" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 13 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:13" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 13 C++20 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:13" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: false,
+            cxx_flags: "-Wno-gnu-zero-variadic-macro-arguments"
+          }
+          - {
+            name: "Linux Clang 13 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:13" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 13 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:13" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 13 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:13" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 13 C++20 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:13" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: true,
+            cxx_flags: "-Wno-gnu-zero-variadic-macro-arguments"
+          }
+
+          # Clang-14
+          - {
+            name: "Linux Clang 14 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:14" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 14 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:14" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 14 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:14" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 14 C++20 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:14" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 14 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:14" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 14 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:14" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 14 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:14" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 14 C++20 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:14" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: true,
+          }
+
+          # Clang-15
+          - {
+            name: "Linux Clang 15 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:15" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 15 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:15" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 15 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:15" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 15 C++20 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:15" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 15 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:15" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 15 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:15" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 15 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:15" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 15 C++20 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:15" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          # Clang-16
+          - {
+            name: "Linux Clang 16 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:16" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 16 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:16" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 16 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:16" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 16 C++20 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:16" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 16 C++23 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:16" },
+            compiler: clang,
+            cxx_standard: 2b,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 16 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:16" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 16 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:16" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 16 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:16" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 16 C++20 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:16" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 16 C++23 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:16" },
+            compiler: clang,
+            cxx_standard: 2b,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          # clang-17
+          - {
+            name: "Linux Clang 17 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:17" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 17 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:17" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 17 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:17" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 17 C++20 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:17" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 17 C++23 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:17" },
+            compiler: clang,
+            cxx_standard: 23,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 17 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:17" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 17 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:17" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 17 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:17" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 17 C++20 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:17" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 17 C++23 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:17" },
+            compiler: clang,
+            cxx_standard: 23,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          # clang-18
+          - {
+            name: "Linux Clang 18 C++11 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:18" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 18 C++14 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:18" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 18 C++17 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:18" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 18 C++20 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:18" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 18 C++23 / libstdc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:18" },
+            compiler: clang,
+            cxx_standard: 23,
+            cxx_asan: true,
+            libcxx: false,
+          }
+          - {
+            name: "Linux Clang 18 C++11 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:18" },
+            compiler: clang,
+            cxx_standard: 11,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 18 C++14 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:18" },
+            compiler: clang,
+            cxx_standard: 14,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 18 C++17 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:18" },
+            compiler: clang,
+            cxx_standard: 17,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 18 C++20 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:18" },
+            compiler: clang,
+            cxx_standard: 20,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          - {
+            name: "Linux Clang 18 C++23 / libc++",
+            os: ubuntu-latest,
+            container: { image: "ghcr.io/rollbear/clang:18" },
+            compiler: clang,
+            cxx_standard: 23,
+            cxx_asan: false,
+            libcxx: true,
+          }
+          # AppleClang
+          - {
+            name: "macOS Clang C++11",
+            os: macos-latest,
+            cc: "clang", cxx: "clang++",
+            cxx_standard: 11,
+            cxx_asan: true
+          }
+          - {
+            name: "macOS Clang C++14",
+            os: macos-latest,
+            cc: "clang", cxx: "clang++",
+            cxx_standard: 14,
+            cxx_asan: true
+          }
+          - {
+            name: "macOS Clang C++17",
+            os: macos-latest,
+            cc: "clang", cxx: "clang++",
+            cxx_standard: 17,
+            cxx_asan: true
+          }
+          - {
+            name: "macOS Clang C++20",
+            os: macos-latest,
+            cc: "clang", cxx: "clang++",
+            cxx_standard: 20,
+            cxx_asan: true
+          }
+          - {
+            name: "macOS Clang C++23",
+            os: macos-latest,
+            cc: "clang", cxx: "clang++",
+            cxx_standard: 2b,
+            cxx_asan: true
+          }
+
+          # MSVC 2022
+          - {
+            name: "Windows MSVC 2022 C++11",
+            os: windows-2022,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 11,
+          }
+          - {
+              name: "Windows MSVC 2022 C++11 preprocessor",
+              os: windows-2022,
+              cc: "cl", cxx: "cl",
+              cxx_standard: 11,
+              cxx_flags: "/Zc:preprocessor"
+          }
+          - {
+            name: "Windows MSVC 2022 C++14",
+            os: windows-2022,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 14,
+          }
+          - {
+            name: "Windows MSVC 2022 C++14 preprocessor",
+            os: windows-2022,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 14,
+            cxx_flags: "/Zc:preprocessor"
+          }
+          - {
+            name: "Windows MSVC 2022 C++17",
+            os: windows-2022,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 17,
+          }
+          - {
+            name: "Windows MSVC 2022 C++17 preprocessor",
+            os: windows-2022,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 17,
+            cxx_flags: "/Zc:preprocessor"
+          }
+          - {
+            name: "Windows MSVC 2022 C++20",
+            os: windows-2022,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 20,
+          }
+          - {
+            name: "Windows MSVC 2022 C++20 __cppstd",
+            os: windows-2022,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 20,
+            cxx_flags: "/Zc:__cplusplus"
+          }
+          - {
+            name: "Windows MSVC 2022 C++20 preprocessor",
+            os: windows-2022,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 20,
+            cxx_flags: "/Zc:preprocessor"
+          }
+
+          # MSVC 2019
+          - {
+            name: "Windows MSVC 2019 C++11",
+            os: windows-2019,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 11,
+          }
+          - {
+            name: "Windows MSVC 2019 C++11 preprocessor",
+            os: windows-2019,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 11,
+            cxx_flags: "/Zc:preprocessor"
+          }
+          - {
+            name: "Windows MSVC 2019 C++14",
+            os: windows-2019,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 14,
+          }
+          - {
+            name: "Windows MSVC 2019 C++14 preprocessor",
+            os: windows-2019,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 14,
+            cxx_flags: "/Zc:preprocessor"
+          }
+          - {
+            name: "Windows MSVC 2019 C++17",
+            os: windows-2019,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 17,
+          }
+          - {
+            name: "Windows MSVC 2019 C++17 preprocessor",
+            os: windows-2019,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 17,
+            cxx_flags: "/Zc:preprocessor"
+          }
+          - {
+            name: "Windows MSVC 2019 C++20",
+            os: windows-2019,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 20,
+          }
+          - {
+            name: "Windows MSVC 2019 C++20 __cppstd",
+            os: windows-2019,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 20,
+            cxx_flags: "/Zc:__cplusplus"
+          }
+          - {
+            name: "Windows MSVC 2019 C++20 preprocessor",
+            os: windows-2019,
+            cc: "cl", cxx: "cl",
+            cxx_standard: 20,
+            cxx_flags: "/Zc:preprocessor"
+          }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure MSVC console (Windows)
+        if: startsWith(matrix.config.os, 'windows')
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set MacOS compiler env
+        id: set_macos_cc_cxx
+        if: startsWith(matrix.config.os, 'macos')
+        shell: bash
+        run: |
+          env brew install parallel
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CXX=clang++" >> $GITHUB_ENV
+
+      - name: Verify compilation errors
+        if: (!startsWith(matrix.config.os, 'windows'))
+        shell: bash
+        run: |
+          CXXFLAGS="-std=c++${{ matrix.config.cxx_standard }}" ./check_errors.sh
+
+      - name: Configure
+        shell: bash
+        run: |
+          STD=${{ matrix.config.cxx_standard }}
+          if [ -n "${{ matrix.config.cxx_flags }}" ]
+          then
+            cxx_flags="${{matrix.config.cxx_flags }}"
+          fi
+          if [ "x${{ matrix.config.libcxx }}" == "xtrue" ]
+          then
+            cxx_flags="${cxx_flags} -stdlib=libc++  -Wno-unused-command-line-argument"
+            link_flags="${link_flags} -lc++abi"
+            STDLIB="libc++"
+          fi
+          if [ "$RUNNER_OS" == "Linux" ]
+          then
+            LINKER=`which mold || which gold`
+            if [ -n "$LINKER" ]
+            then
+              LINKER=`basename $LINKER`
+              # ugly hack for gcc-9
+              echo "" | $CXX -E -fuse-ld=$LINKER - 2>&1 > /dev/null || LINKER=gold
+              link_flags="${link_flags} -fuse-ld=$LINKER"
+            fi
+          fi
+          if [ "x${{ matrix.config.cxx_asan }}" == "xtrue" ]
+          then
+            cxx_flags="${cxx_flags} -fno-omit-frame-pointer"
+          fi
+          [ -n "${{ matrix.config.no_coverage }}" ] || { 
+            echo ${{ matrix.config.name }} | grep -q -e '^Windows' || cxx_flags="${cxx_flags} --coverage"
+          }
+          cmake \
+              -S . \
+              -B build \
+              -D TROMPELOEIL_BUILD_TESTS=yes \
+              -D CMAKE_BUILD_TYPE=Debug \
+              -D CMAKE_VERBOSE_MAKEFILE=ON \
+              -D CXX_STANDARD:STRING=${STD} \
+              -D CMAKE_PREFIX_PATH="/usr/local/lib/c++${STD}${STDLIB}" \
+              -D CMAKE_CXX_FLAGS:STRING="${cxx_flags}" \
+              -D CMAKE_EXE_LINKER_FLAGS:STRING="${link_flags}" \
+              -D SANITIZE=${{matrix.config.cxx_asan}} \
+              ${{ matrix.config.cmake_args }} \
+              ${extra_cmake_args} \
+              -G Ninja
+
+      - name: Build
+        shell: bash
+        run: |
+          cmake --build build --target self_test
+
+      - name: Run tests
+        shell: bash
+        run: |
+          ./build/test/self_test
+
+      - name: Collect coverage
+        if: (!startsWith(matrix.config.name, 'windows') && !matrix.config.no_coverage)
+        run: |
+          COV=`echo "${{ matrix.config.name }}}" | grep -q -e "Linux.*Clang" && echo "llvm-cov gcov"|| echo gcov`
+          ${COV} -abcfup `find build/test -name "*.gcno"`
+          ls *.gcov| grep -v 'include#trompeloeil'|xargs rm
+          find . -name "*test*.gcno" -exec rm {} \;
+
+      - name: Upload coverage
+        if: (!startsWith(matrix.config.name, 'windows') && !matrix.config.no_coverage) && github.repository == 'rollbear/trompeloeil'
+        uses: codecov/codecov-action@v4
+        with:
+          name: "${{ matrix.config.name }}"
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+

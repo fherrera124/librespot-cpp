@@ -1,0 +1,40 @@
+name: Sanitizer
+
+on:
+  push:
+    paths-ignore:
+      - 'README.md'
+      - 'doc/**'
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'doc/**'
+
+jobs:
+  sanitizer:
+    strategy:
+      fail-fast: false
+      matrix:
+        cxx: [g++, clang++]
+        sanitizer: [address, undefined]
+
+    runs-on: ubuntu-latest
+
+    env:
+      CXX: ${{ matrix.cxx }}
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
+    - run: cmake -E make_directory build
+
+    - working-directory: build/
+      run: cmake $GITHUB_WORKSPACE -DCMAKE_CXX_FLAGS="-fsanitize=${{ matrix.sanitizer }}"
+
+    - working-directory: build/
+      run: cmake --build .
+
+    - working-directory: build/
+      run: ctest --output-on-failure

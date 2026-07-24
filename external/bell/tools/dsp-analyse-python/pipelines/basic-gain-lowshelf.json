@@ -1,0 +1,15 @@
+[
+  {
+    "type": "gain",
+    "gain": -4.0,
+    "channel": 0
+  },
+  {
+    "type": "biquad",
+    "channel": 0,
+    "biquad_type": "lowshelf",
+    "freq": 600,
+    "q": 0.707,
+    "gain": 6.0
+  }
+]
