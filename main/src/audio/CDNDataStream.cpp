@@ -19,6 +19,19 @@ const std::array<uint8_t, 16> aesIVBase = {
     0x72, 0xe0, 0x67, 0xfb, 0xdd, 0xcb, 0xcf, 0x77,
     0xeb, 0xe8, 0xbc, 0x64, 0x3f, 0x63, 0x0d, 0x93,
 };
+
+// Every Spotify CDN audio file (confirmed for plain OGG_VORBIS_160, not
+// just Opus, against librespot-cpp's CDNAudioFile - same IV above, same
+// mechanism) is prefixed with a fixed-size proprietary header (loudness
+// normalization gain/peak floats live at offsets 144/148 in there) before
+// the real Ogg container begins - raw byte 0 of the HTTP response is NOT
+// byte 0 of the Ogg stream. Reproduced on real hardware: every attempt to
+// open a real track failed identically with "Not a Vorbis stream" - the
+// Ogg/AES layer below (requestRange/decryptData) stays entirely in RAW
+// (wire) coordinates and is otherwise correct; this offset is applied
+// only at the public seek()/size()/position() boundary so OggContainer
+// and everything above it sees byte 0 as the real start of the Ogg data.
+const size_t kSpotifyHeaderSize = 167;
 }  // namespace
 
 CDNDataStream::CDNDataStream(std::shared_ptr<bell::HTTPClient> httpClient)
@@ -103,18 +116,31 @@ bool CDNDataStream::isInfinite() const {
 }
 
 std::optional<size_t> CDNDataStream::size() const {
-  return totalSize;
+  // totalSize (member) is raw/wire size (includes the header) - expose
+  // the logical, header-excluded size to callers (OggContainer etc).
+  if (!totalSize) {
+    return std::nullopt;
+  }
+  return (*totalSize > kSpotifyHeaderSize) ? (*totalSize - kSpotifyHeaderSize)
+                                           : 0;
 }
 
 size_t CDNDataStream::position() const {
-  return currentPosition;
+  // currentPosition (member) is raw/wire position - expose the logical,
+  // header-excluded position to callers.
+  return (currentPosition > kSpotifyHeaderSize)
+             ? (currentPosition - kSpotifyHeaderSize)
+             : 0;
 }
 
 bell::Result<> CDNDataStream::seek(size_t offset, SeekOrigin origin) {
   // Compute target position first (do not clobber state yet)
   size_t targetPos = currentPosition;
   if (origin == SeekOrigin::Begin) {
-    targetPos = offset;
+    // 'offset' is a logical (header-excluded) position from the caller;
+    // requestRange()/decryptData() below operate purely in raw/wire
+    // coordinates, so translate here at the public boundary.
+    targetPos = offset + kSpotifyHeaderSize;
   } else if (origin == SeekOrigin::Current) {
     targetPos = currentPosition + offset;
   } else {  // End
