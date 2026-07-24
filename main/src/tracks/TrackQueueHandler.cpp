@@ -592,9 +592,16 @@ void DefaultTrackQueueHandler::updateTrackWindows() {
       int32_t trackOffset = x - queueOffset;
       auto offsetIndex = getOffsetIndex(trackOffset + 1);
 
-      auto& gid = contextPages[offsetIndex->page].trackGids[offsetIndex->track];
-
+      // offsetIndex is nullopt whenever the lookahead window runs past the
+      // last fetched context page (getOffsetIndex()'s own "no next page
+      // available" case) - dereferencing it before this check was a real
+      // hardware crash (LoadProhibited, near-null vector access) reproduced
+      // with a short context whose track count didn't fill the whole
+      // nextTracksWindow lookahead.
       if (offsetIndex.has_value()) {
+        auto& gid =
+            contextPages[offsetIndex->page].trackGids[offsetIndex->track];
+
         if (!nextTracksWindow[x].gid || (nextTracksWindow[x].gid != gid)) {
           updated = true;
 
