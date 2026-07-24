@@ -109,6 +109,23 @@ bell::Result<> DefaultSpClient::putConnectState(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
+  // Drain the response body (the full updated cluster state - several KB)
+  // even though nothing here needs its contents. A pooled HTTP/1.1
+  // connection is only safe to reuse once the current response's body has
+  // been fully read - skipping this (removed along with a debug print of
+  // the body size, in an earlier logging cleanup pass) left it sitting
+  // unread on the wire, so the next request to reuse this pooled
+  // connection read this leftover body instead of its own response
+  // headers. Reproduced on real hardware: contextResolve() intermittently
+  // failed to parse what should've been an HTTP response because it was
+  // actually reading a stale PutStateRequest response body.
+  auto bodyRes = httpResponse->bytes();
+  if (!bodyRes) {
+    BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",
+             bodyRes.error());
+    return tl::make_unexpected(bodyRes.error());
+  }
+
   return {};
 }
 
