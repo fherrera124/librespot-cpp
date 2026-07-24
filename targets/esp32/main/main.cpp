@@ -96,7 +96,18 @@ void waitForZeroconfAuth(std::shared_ptr<cspot::AuthInfo> authInfo) {
 // NVS/SPIFFS/WiFi bootstrap instead of a plain file for session persistence.
 class CSpotTask : public bell::Task {
  public:
-  CSpotTask() : bell::Task("cspot", 32 * 1024, 0, bell::TaskCore::Core1) {
+  // espStackOnPsram=false: this task reads/writes /spiffs/session.json
+  // (SPIFFS, backed by flash). ESP-IDF's flash operations briefly disable
+  // the flash cache, which also makes PSRAM unreachable on this SoC -
+  // esp_task_stack_is_sane_cache_disabled() (cache_utils.c) asserts the
+  // calling task's own stack is in internal DRAM specifically because of
+  // this, and a PSRAM-backed stack (bell::Task's own default) fails that
+  // check the moment this task does its first flash read. Confirmed via a
+  // real hardware crash, not assumed - see git history for the exact
+  // backtrace (CSpotTask::runTask() -> std::ifstream -> SPIFFS -> flash).
+  CSpotTask()
+      : bell::Task("cspot", 32 * 1024, 0, bell::TaskCore::Core1,
+                   /*espStackOnPsram=*/false) {
     startTask();
   }
 
