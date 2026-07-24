@@ -136,7 +136,14 @@ class Reader {
   std::istream* getStream() const;
 
  private:
-  static const int maxRequestLen = 4 * 1024;
+  // constexpr (not just const): makes this an implicitly-inline variable
+  // (C++17), so it doesn't need a matching out-of-class definition anymore -
+  // ODR-using it (e.g. passing it as a logging argument, which binds it to a
+  // reference) used to be a real link error otherwise ("undefined reference
+  // to bell::http::Reader::maxRequestLen"), since a plain in-class "static
+  // const int" initializer is only usable in constant expressions, not as
+  // something you can take the address/reference of.
+  static constexpr int maxRequestLen = 4 * 1024;
   Direction readerDirection = Direction::Invalid;
   std::shared_ptr<std::istream> sharedIstream;
   std::istream* istream{};
