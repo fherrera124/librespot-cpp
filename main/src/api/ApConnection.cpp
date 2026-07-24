@@ -52,9 +52,16 @@ bell::Result<> ApConnection::connect(
   // Register writeable / connected listener
   socketPoll->registerSocket(
       apSock, bell::PollEvent::Writeable, [socketPoll, this](auto& /*sock*/) {
-        if (apSock->lastError()) {
-          BELL_LOG(error, LOG_TAG, "AP connection error: {}",
-                   apSock->lastError());
+        // SO_ERROR is get-and-clear (socket(7)): reading it resets the
+        // pending error to 0 as a side effect. Calling lastError() twice
+        // here (once for the check, once for the log) meant the second
+        // call always saw an already-cleared 0/"Success", masking the
+        // real error - reproduced on real hardware ("AP connection
+        // error: Success"). Capture it once, like DealerClient.cpp and
+        // TCPSocket.cpp already do.
+        auto err = apSock->lastError();
+        if (err) {
+          BELL_LOG(error, LOG_TAG, "AP connection error: {}", err);
           state = State::ERROR;
           apSock->close();
           return;
