@@ -5,9 +5,18 @@
 #include <bell/Logger.h>
 #include <bell/io/BinaryStream.h>
 #include <bell/io/MemoryStream.h>
-#include <mbedtls/aes.h>
 #include <mbedtls/base64.h>
+#include <mbedtls/build_info.h>  // for MBEDTLS_VERSION_NUMBER, checked below
+// mbedTLS 4.0 moved these under mbedtls/private/ (still shipped, just
+// relocated - see MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS in
+// targets/esp32/main/CMakeLists.txt for why they're still usable at all).
+#if MBEDTLS_VERSION_NUMBER >= 0x04000000
+#include <mbedtls/private/aes.h>
+#include <mbedtls/private/pkcs5.h>
+#else
+#include <mbedtls/aes.h>
 #include <mbedtls/pkcs5.h>
+#endif
 #include <tao/json.hpp>
 #include "authentication.pb.h"
 #include "bell/Result.h"

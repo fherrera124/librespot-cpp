@@ -6,10 +6,17 @@
 
 #include <bell/Result.h>
 #include <bell/io/BinaryStream.h>
-#include <bell/utils/DigestCrypto.h>
 #include <tao/json.hpp>
 
+// DiffieHellman.h must come before DigestCrypto.h: the former pulls in
+// mbedtls/bignum.h via ESP-IDF's port wrapper (which #defines
+// MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS then #include_nexts the real header),
+// the latter pulls in <psa/crypto.h> - if psa/crypto.h's own chain reaches
+// the same underlying header first, without that define set, its include
+// guard locks it in undeclared for the rest of this file. See
+// CDNDataStream.h's own comment for the full story.
 #include "crypto/DiffieHellman.h"
+#include <bell/utils/DigestCrypto.h>
 #include "proto/AuthenticationPb.h"
 
 namespace cspot {
@@ -32,7 +39,7 @@ class Authenticator {
   const char* LOG_TAG = "Authenticator";
 
   // Used for SHA1 computations
-  bell::utils::DigestCrypto sha1Context{MBEDTLS_MD_SHA1, true};
+  bell::utils::DigestCrypto sha1Context{MBEDTLS_MD_SHA1};
 
   // Used for Diffie-Hellman key exchange
   DH dhPair;

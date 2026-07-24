@@ -35,6 +35,15 @@ endif()
 if(CSPOT_EXTERNAL_BELL)
     list(APPEND EXTRA_LIBS ${CSPOT_EXTERNAL_BELL})
 else()
+    # On ESP32, bell must use ESP-IDF's own mbedtls component instead of
+    # add_subdirectory-ing its vendored copy - the vendored copy's CMake
+    # targets (mbedtls/mbedx509/mbedcrypto/everest/p256m) collide with the
+    # ones ESP-IDF's own mbedtls component already registers. Mirrors
+    # external/bell/tools/dsp-profile-esp/components/bell/CMakeLists.txt,
+    # the one place in this bell fork already proven to build under ESP-IDF.
+    if(ESP_PLATFORM)
+        set(BELL_EXTERNAL_MBEDTLS "mbedtls" CACHE STRING "External mbedtls library target name" FORCE)
+    endif()
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../external/bell ${CMAKE_CURRENT_BINARY_DIR}/bell)
     list(APPEND EXTRA_LIBS bell)
 endif()

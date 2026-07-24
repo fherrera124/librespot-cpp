@@ -5,7 +5,20 @@
 #include <string>
 #include <vector>
 
+#include "mbedtls/build_info.h"  // for MBEDTLS_VERSION_NUMBER, checked below
+// mbedTLS 4.0 moved this under mbedtls/private/ (still shipped, just
+// relocated). ESP-IDF's own port has a wrapper at the classic path
+// (components/mbedtls/port/include/mbedtls/bignum.h) that's meant to
+// redirect here via #include_next, but its search-path continuation
+// doesn't reliably reach tf-psa-crypto/drivers/builtin/include in this
+// build (real, reproduced failure - "mbedtls/private/bignum.h: No such
+// file", raised from inside the wrapper itself) - including the real
+// header directly instead, same as CDNDataStream.h's aes.h.
+#if MBEDTLS_VERSION_NUMBER >= 0x04000000
+#include "mbedtls/private/bignum.h"
+#else
 #include "mbedtls/bignum.h"
+#endif
 
 namespace cspot {
 // Diffie-Hellman key exchange, used for authenticating with Spotify.

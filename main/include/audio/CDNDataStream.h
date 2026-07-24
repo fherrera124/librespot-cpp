@@ -7,8 +7,20 @@
 // Library includes
 #include "bell/http/Client.h"
 #include "bell/io/DataStream.h"
+#include "mbedtls/build_info.h"  // for MBEDTLS_VERSION_NUMBER, checked below
+// mbedTLS 4.0 moved both of these under mbedtls/private/ (still shipped,
+// just relocated). ESP-IDF's own port has a bignum.h wrapper at the
+// classic path meant to redirect via #include_next, but its search-path
+// continuation doesn't reliably reach tf-psa-crypto/drivers/builtin/include
+// in this build (real, reproduced failure) - including both real headers
+// directly instead, same as aes.h (which never had a wrapper to begin with).
+#if MBEDTLS_VERSION_NUMBER >= 0x04000000
+#include "mbedtls/private/aes.h"
+#include "mbedtls/private/bignum.h"
+#else
 #include "mbedtls/aes.h"
 #include "mbedtls/bignum.h"
+#endif
 
 namespace cspot {
 

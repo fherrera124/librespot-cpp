@@ -4,8 +4,17 @@
 #include "fmt/color.h"
 
 #include <mbedtls/base64.h>
+#include <mbedtls/build_info.h>  // for MBEDTLS_VERSION_NUMBER, checked below
+// mbedTLS 4.0 removed the classic entropy/ctr_drbg RNG chain entirely -
+// generatePrivateKey() below draws randomness from PSA directly there
+// instead (see its own comment). mbedTLS <4.0 keeps using the classic
+// chain unchanged.
+#if MBEDTLS_VERSION_NUMBER < 0x04000000
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
+#else
+#include <psa/crypto.h>
+#endif
 
 using namespace cspot;
 
@@ -24,6 +33,15 @@ const std::array<uint8_t, 96> dhPrime = {
 
 // The generator value
 const std::array<uint8_t, 1> dhGenerator = {0x02};
+
+#if MBEDTLS_VERSION_NUMBER >= 0x04000000
+// PSA crypto must be initialized once before first use. A function-local
+// static makes this thread-safe and exactly-once.
+void ensurePsaCryptoInit() {
+  static const psa_status_t status = psa_crypto_init();
+  (void)status;
+}
+#endif
 }  // namespace
 
 DH::DH() {
@@ -129,6 +147,7 @@ std::string DH::getPublicKeyBase64() {
 }
 
 void DH::generatePrivateKey() {
+#if MBEDTLS_VERSION_NUMBER < 0x04000000
   // Generate a random private key
   mbedtls_entropy_context entropy;
   mbedtls_ctr_drbg_context ctrDrbg;
@@ -153,4 +172,13 @@ void DH::generatePrivateKey() {
   // Release memory
   mbedtls_entropy_free(&entropy);
   mbedtls_ctr_drbg_free(&ctrDrbg);
+#else
+  // mbedTLS 4.0 removed the classic entropy/ctr_drbg RNG chain entirely -
+  // PSA's random generator replaces it directly.
+  ensurePsaCryptoInit();
+  if (psa_generate_random(reinterpret_cast<uint8_t*>(privateKey.data()),
+                          privateKey.size()) != PSA_SUCCESS) {
+    throw std::runtime_error("Failed to generate DH private key");
+  }
+#endif
 }

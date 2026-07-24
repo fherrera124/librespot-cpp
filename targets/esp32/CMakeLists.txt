@@ -5,7 +5,17 @@ cmake_minimum_required(VERSION 3.5)
 # Don't override EXTRA_COMPONENT_DIRS as platformio uses it.  Instead we append
 # see https://github.com/platformio/platform-espressif32/issues/341
 list(APPEND EXTRA_COMPONENT_DIRS $ENV{IDF_PATH}/examples/common_components/protocol_examples_common)
-list(APPEND EXTRA_COMPONENT_DIRS $ENV{IDF_PATH}/examples/common_components/led_strip)
+# led_strip moved to the ESP Component Registry in newer ESP-IDF (no longer
+# bundled under examples/common_components/) - dropped along with
+# ESPStatusLed.cpp (see main/CMakeLists.txt), unused by this checkpoint.
+
+# Neither AAC nor Opus nor MQTT are referenced anywhere in cspot's own
+# main/ (Session/api/tracks) - confirmed via grep. fdk-aac (9.6MB source)
+# and opus (5MB source) are real flash budget, not worth carrying for
+# ESP32 unused.
+set(BELL_CODEC_AAC OFF CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
+set(BELL_CODEC_OPUS OFF CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
+set(BELL_DISABLE_MQTT ON CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
 
 if(NOT IDF_NO_INCLUDE)
     include($ENV{IDF_PATH}/tools/cmake/project.cmake)

@@ -210,7 +210,7 @@ bell::Result<> ApConnection::solveHelloChallenge(
   accumulatedExchangeBuffer.push_back(
       std::byte{0x00});  // Add a terminator byte
 
-  bell::utils::DigestCrypto sha1Context{MBEDTLS_MD_SHA1, true};
+  bell::utils::DigestCrypto sha1Context{MBEDTLS_MD_SHA1};
 
   std::array<std::byte, 100> challengeResult{};
   // Solve the hmac challenge
