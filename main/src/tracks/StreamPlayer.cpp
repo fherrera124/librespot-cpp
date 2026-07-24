@@ -152,6 +152,8 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
 
 void StreamPlayer::handlePlayEvent(bool shouldPlay) {
   std::scoped_lock lock(playbackMutex);
+  BELL_LOG(info, LOG_TAG, "Received PLAYER_PLAY event, shouldPlay={}",
+           shouldPlay);
   isPlaying = shouldPlay;
   if (shouldPlay) {
     maybeStartCurrentTrack();

@@ -230,6 +230,13 @@ bell::Result<> ConnectStateHandler::handleTransferCommand(
       transferState.playback.isPaused &&
       options.optional<std::string>("restore_paused") == "restore";
 
+  BELL_LOG(info, LOG_TAG,
+           "Transfer playback state: sourceIsPaused={}, restore_paused={}, "
+           "shouldPause={} (posting PLAYER_PLAY={})",
+           transferState.playback.isPaused,
+           options.optional<std::string>("restore_paused").value_or("<none>"),
+           shouldPause, !shouldPause);
+
   playerState.isPaused = shouldPause;
   playerState.contextUri = transferState.current_session.context.uri;
   playerState.contextUrl = transferState.current_session.context.url;
