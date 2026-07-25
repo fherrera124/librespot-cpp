@@ -9,7 +9,7 @@
 
 #include "test.hpp"
 
-#if defined( _MSC_VER ) || defined( __MINGW32__ )
+#if defined( _MSC_VER )
 #define TAO_PEGTL_TEST_FILENAME u"src/test/pegtl/file_äöü𝄞_data.txt"
 #else
 #define TAO_PEGTL_TEST_FILENAME "src/test/pegtl/file_äöü𝄞_data.txt"

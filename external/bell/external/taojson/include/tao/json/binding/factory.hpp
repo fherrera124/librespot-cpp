@@ -49,6 +49,9 @@ namespace tao::json::binding
       {
          [[nodiscard]] static const std::type_info* type()
          {
+            // Patched for ESP-IDF builds with RTTI disabled
+            // (CONFIG_COMPILER_CXX_RTTI unset) - this project never uses
+            // tao::json::binding::factory, so a dead no-op is fine.
             // return &typeid( T );
             return nullptr;
          }
@@ -170,6 +173,8 @@ namespace tao::json::binding
             return t;
          }();
 
+         // Patched for ESP-IDF builds with RTTI disabled - see type()'s
+         // comment above. Never called by this project.
          // const auto i = m.find( &typeid( *p ) );
          // if( i == m.end() ) {
          //    std::ostringstream oss;
@@ -233,6 +238,8 @@ namespace tao::json::binding
             return t;
          }();
 
+         // Patched for ESP-IDF builds with RTTI disabled - see type()'s
+         // comment above. Never called by this project.
          // const auto i = m.find( &typeid( *p ) );
          // if( i == m.end() ) {
          //    std::ostringstream oss;

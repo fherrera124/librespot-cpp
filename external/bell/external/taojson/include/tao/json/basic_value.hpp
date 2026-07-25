@@ -930,6 +930,10 @@ namespace tao::json
                return a.back();
             }
             const auto i = e->index();
+            // feelfreelinux/taojson@5866220 "Fix json pointer array insert":
+            // i == a.size() is a valid insert position (append via
+            // a.insert(a.begin() + i, ...)), not out of bounds - upstream's
+            // >= wrongly rejects it.
             if( i > a.size() ) {
                throw std::out_of_range( internal::format( "invalid JSON Pointer \"", internal::tokens_to_string( b, std::next( e ) ), "\", array index '", i, "' out of bound '", a.size(), '\'', json::message_extension( *this ) ) );
             }
