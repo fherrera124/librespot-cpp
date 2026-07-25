@@ -213,6 +213,50 @@ struct Optional {
   }
 };
 
+// Wrapper for a signed field that is genuinely a protobuf sint32/sint64 on
+// the wire (zigzag varint) - the common case for a signed C++ field is a
+// plain proto int32/int64 (two's complement varint, same as unsigned,
+// just reinterpreted), which bindField() below already handles by
+// default. Only wrap a field in this when its .proto declares it
+// `sint32`/`sint64` specifically (e.g. Track.duration/Episode.duration in
+// metadata.proto) - using this for a plain int32/int64 field, or leaving
+// a genuine sint32/64 field unwrapped, silently corrupts every decoded/
+// encoded value via zigzag (n>>1)^-(n&1), which isn't the identity
+// transform and doesn't preserve ordering either.
+template <typename T>
+struct ZigZag {
+  T value{};
+
+  ZigZag() = default;
+  ZigZag(T v) : value(v) {}  // NOLINT(google-explicit-constructor)
+  operator T() const { return value; }
+  ZigZag& operator=(T v) {
+    value = v;
+    return *this;
+  }
+
+  static bool decode(pb_istream_t* stream, const pb_field_t* field,
+                     void** arg) {
+    auto* self = static_cast<ZigZag<T>*>(*arg);
+    void* valuePtr = &self->value;
+    return pbDecodeSvarint<T>(stream, field, &valuePtr);
+  }
+
+  static bool encode(pb_ostream_t* stream, const pb_field_t* field,
+                     void* const* arg) {
+    auto* self = static_cast<ZigZag<T>*>(const_cast<void*>(*arg));
+    void* valuePtr = &self->value;
+    return pbEncodeSvarint<T>(stream, field, &valuePtr);
+  }
+};
+
+template <typename>
+struct is_zigzag : std::false_type {};
+template <typename T>
+struct is_zigzag<ZigZag<T>> : std::true_type {};
+template <typename T>
+inline constexpr bool is_zigzag_v = is_zigzag<T>::value;
+
 // Struct handlers
 template <typename StructT>
 struct StructCodec {
@@ -312,6 +356,12 @@ void bindField(pb_callback_t& pbField, FieldT& field, bool isDecode) {
     else
       pbField.funcs.encode = &Optional<T>::encode;
 
+  } else if constexpr (is_zigzag_v<FieldT>) {
+    if (isDecode)
+      pbField.funcs.decode = &FieldT::decode;
+    else
+      pbField.funcs.encode = &FieldT::encode;
+
   } else if constexpr (std::is_same_v<FieldT, std::string>) {
     if (isDecode)
       pbField.funcs.decode = &pbDecodeString;
@@ -371,25 +421,18 @@ void bindField(pb_callback_t& pbField, FieldT& field, bool isDecode) {
 
   } else if constexpr (std::is_integral_v<FieldT>) {
     // --- All integral types (int, uint, bool) ---
-    if constexpr (std::is_same_v<FieldT, bool>) {
-      if (isDecode)
-
-        pbField.funcs.decode = &pbDecodeVarint<bool>;
-      else
-        pbField.funcs.encode = &pbEncodeVarint<bool>;
-    } else if constexpr (std::is_signed_v<FieldT>) {
-      // Catches int32_t, int64_t, etc.
-      if (isDecode)
-        pbField.funcs.decode = &pbDecodeSvarint<FieldT>;
-      else
-        pbField.funcs.encode = &pbEncodeSvarint<FieldT>;
-    } else {
-      // Catches uint32_t, uint64_t, etc.
-      if (isDecode)
-        pbField.funcs.decode = &pbDecodeVarint<FieldT>;
-      else
-        pbField.funcs.encode = &pbEncodeVarint<FieldT>;
-    }
+    // Plain varint for everything, signed included: a signed C++ field
+    // defaults to matching a plain proto int32/int64 (two's complement
+    // varint, same wire representation as unsigned - pbDecodeVarint/
+    // pbEncodeVarint's static_cast<IntegerT> already reinterprets the
+    // bit pattern correctly for a negative value). A field that's
+    // genuinely sint32/sint64 on the wire needs to opt into zigzag
+    // explicitly via the ZigZag<T> wrapper above instead - see its
+    // comment for why this can't be inferred from the C++ type alone.
+    if (isDecode)
+      pbField.funcs.decode = &pbDecodeVarint<FieldT>;
+    else
+      pbField.funcs.encode = &pbEncodeVarint<FieldT>;
   } else if constexpr (std::is_enum_v<FieldT>) {
     if (isDecode)
       pbField.funcs.decode = &pbDecodeVarint<FieldT>;

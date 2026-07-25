@@ -101,7 +101,9 @@ namespace cspot_proto {
 struct Track {
   std::vector<std::byte> gid;
   std::string name;
-  int32_t durationMs;
+  // metadata.proto declares this sint32 (zigzag on the wire), unlike
+  // every other signed field in this codebase's proto wrappers.
+  nanopb_helper::ZigZag<int32_t> durationMs;
   nanopb_helper::Optional<cspot_proto::Album> album;
   std::vector<cspot_proto::Artist> artists;
   std::vector<cspot_proto::Restriction> restrictions;
@@ -119,7 +121,9 @@ namespace cspot_proto {
 struct Episode {
   std::vector<std::byte> gid;
   std::string name;
-  int32_t durationMs;
+  // metadata.proto declares this sint32 (zigzag on the wire) - see
+  // Track::durationMs's comment above.
+  nanopb_helper::ZigZag<int32_t> durationMs;
   std::vector<cspot_proto::Restriction> restrictions;
   std::vector<cspot_proto::AudioFile> audioFiles;
   nanopb_helper::Optional<ImageGroup> coverGroup;
