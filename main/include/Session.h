@@ -47,12 +47,10 @@ class Session {
   // connectDealer()'s own comment for why we retry forever instead of
   // giving up like go-librespot's default ~15min MaxElapsedTime.
   int dealerBackoffMs = 5000;
-  // Earliest time runPoller() may call connectDealer() again. Serves two
-  // purposes: the failure backoff above, and (set by connectDealer() on
-  // success) a grace period for the async WS handshake it just kicked off
-  // to complete before isConnected() is checked again - without it, every
-  // poll tick where the handshake hadn't finished yet would tear it down
-  // and restart it, and isConnected() would never settle to true.
+  // Earliest time runPoller() may call connectDealer() again after seeing
+  // dealerClient in Disconnected/Failed - not consulted while it's
+  // Connecting, since that state itself (not a timer) is what prevents
+  // runPoller() from preempting an in-flight WS handshake.
   std::chrono::steady_clock::time_point nextDealerReconnectAttempt{};
 
   // Resolves the dealer address + access key and connects dealerClient.

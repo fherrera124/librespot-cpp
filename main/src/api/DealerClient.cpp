@@ -16,6 +16,15 @@ const auto pingInterval = std::chrono::seconds(30);
 // (JSON_PING_INTERVAL_MS/JSON_PONG_TIMEOUT_MS) and go-librespot's dealer.go
 // (pingInterval/timeout) - both references agree exactly, nothing to decide.
 const auto pongTimeout = std::chrono::seconds(10);
+
+// Upper bound on how long a Connecting attempt is allowed to sit without
+// resolving to Connected or Failed before doHousekeeping() gives up on it.
+// TCP/TLS connect (see DealerClient::connect()) already has its own 3s
+// timeout and fails synchronously, so this only guards the WS upgrade step
+// itself hanging (e.g. the server accepts the TCP connection but never
+// completes the HTTP Upgrade) - generous relative to the expected 1-2
+// poll-cycle handshake time.
+const auto connectTimeout = std::chrono::seconds(10);
 }  // namespace
 
 DealerClient::DealerClient(std::shared_ptr<cspot::EventLoop> eventLoop)
@@ -38,7 +47,8 @@ DealerClient::DealerClient(std::shared_ptr<cspot::EventLoop> eventLoop)
 bell::Result<> DealerClient::connect(
     const std::string& dealerAddress, const std::string& accessKey,
     const std::shared_ptr<bell::SocketPollListener>& socketPoll) {
-  connectionReady = false;
+  state_ = State::Connecting;
+  connectDeadline = std::chrono::steady_clock::now() + connectTimeout;
   this->socketPoll = socketPoll;
 
   // Reconnecting: the previous websocketpp connection object (if any) is
@@ -71,6 +81,7 @@ bell::Result<> DealerClient::connect(
   auto connectRes = socket->connect(dealerHost, 443, 3000);
   if (!connectRes) {
     BELL_LOG(error, LOG_TAG, "Dealer connect error: {}", connectRes.error());
+    state_ = State::Failed;
     return tl::make_unexpected(connectRes.error());
   }
 
@@ -148,22 +159,19 @@ bell::Result<> DealerClient::connect(
   return {};
 }
 
-void DealerClient::onWSFail(websocketpp::connection_hdl conn) {  // NOLINT
+void DealerClient::onWSFail(websocketpp::connection_hdl /*conn*/) {  // NOLINT
   BELL_LOG(error, LOG_TAG, "Dealer connection failed");
-
-  // Was `connectionReady = true` - inverted, presumably a copy/paste from
-  // onWSOpen(). Harmless as long as nothing ever reconnects (isConnected()
-  // was never checked by anything), but now that Session::runPoller()'s
-  // reconnect loop keys off isConnected() to decide whether an attempt
-  // succeeded, a failed connect wrongly reporting "ready" would make the
-  // loop stop retrying after the first failure.
-  connectionReady = false;
+  // Goes through handleDisconnect() (not just a state flip) so the socket
+  // also gets unregistered here - previously this callback left it
+  // registered on a failed handshake, which could hot-loop the read
+  // callback on a socket that stays "readable" forever.
+  handleDisconnect();
 }
 
 void DealerClient::onWSOpen(websocketpp::connection_hdl /*conn*/) {  // NOLINT
   BELL_LOG(info, LOG_TAG, "Dealer connection success");
 
-  connectionReady = true;
+  state_ = State::Connected;
 }
 
 void DealerClient::onWSClose(websocketpp::connection_hdl /*conn*/) {
@@ -172,15 +180,15 @@ void DealerClient::onWSClose(websocketpp::connection_hdl /*conn*/) {
 }
 
 void DealerClient::handleDisconnect() {
-  // Idempotent: onWSClose() and the read callback's error/EOF branches can
-  // both observe the same disconnect (e.g. peer sends a WS Close frame,
-  // which fires onWSClose() via read_all(), and the next read() then
-  // returns 0) - only unregister once.
-  if (!connectionReady) {
+  // Idempotent: onWSClose(), onWSFail(), the read callback's error/EOF
+  // branches, and doHousekeeping()'s Connecting-timeout/pong-watchdog
+  // checks can all observe the same underlying disconnect - only
+  // transition/unregister once we're not already in a terminal state.
+  if (state_ == State::Disconnected || state_ == State::Failed) {
     return;
   }
 
-  connectionReady = false;
+  state_ = State::Failed;
   // Stops doHousekeeping()'s ping (and replyToRequest(), if a stray dealer
   // request ever arrives after this) from calling send() on a connection
   // websocketpp itself already knows is dead - was spamming "Error sending
@@ -249,7 +257,7 @@ bell::Result<> DealerClient::replyToRequest(bool success,
                                             const std::string& requestKey) {
   std::scoped_lock lock(accessMutex);
 
-  if (!connectionReady) {
+  if (state_ != State::Connected) {
     return bell::make_unexpected_errc(std::errc::not_connected);
   }
 
@@ -271,10 +279,22 @@ bell::Result<> DealerClient::replyToRequest(bool success,
 }
 
 void DealerClient::doHousekeeping() {
+  if (state_ == State::Connecting) {
+    if (std::chrono::steady_clock::now() >= connectDeadline) {
+      BELL_LOG(error, LOG_TAG,
+               "Dealer WS handshake did not complete within {}s, giving up",
+               std::chrono::duration_cast<std::chrono::seconds>(
+                   connectTimeout)
+                   .count());
+      handleDisconnect();
+    }
+    return;
+  }
+
   if (std::chrono::system_clock::now() >= (lastPingTime + pingInterval)) {
     std::scoped_lock lock(accessMutex);
 
-    if (wsConnection && connectionReady) {
+    if (wsConnection && state_ == State::Connected) {
       auto now = std::chrono::system_clock::now();
 
       // Same watchdog as master's DealerSession and go-librespot's

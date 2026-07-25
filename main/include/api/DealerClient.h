@@ -23,6 +23,18 @@
 namespace cspot {
 class DealerClient {
  public:
+  // Disconnected: never connected, or a previous connection ended (peer
+  // close, read error, missed pong watchdog, handshake failure/timeout).
+  // Connecting: connect() was called, TCP/TLS transport is up, WS upgrade
+  // handshake in flight - neither confirmed nor failed yet.
+  // Connected: WS upgrade completed (onWSOpen fired).
+  // Failed: this connect() attempt ended without ever reaching Connected
+  // (handshake rejected, dropped, or timed out).
+  // Callers (Session::runPoller()) are responsible for reconnecting on
+  // anything other than Connected - Disconnected and Failed are handled
+  // identically there, the distinction exists mainly for logging/debugging.
+  enum class State { Disconnected, Connecting, Connected, Failed };
+
   DealerClient(std::shared_ptr<cspot::EventLoop> eventLoop);
 
   bell::Result<> connect(
@@ -31,13 +43,12 @@ class DealerClient {
 
   bell::Result<> replyToRequest(bool success, const std::string& requestKey);
 
-  // Used for keep alive messages
+  // Used for keep alive messages, and to time out a Connecting attempt
+  // whose WS handshake never resolves (see connectTimeout in the .cpp).
   void doHousekeeping();
 
-  // False once the connection has dropped (peer close, read error, or a
-  // missed pong past the watchdog deadline) - callers are responsible for
-  // reconnecting (see Session::runPoller()'s backoff loop).
-  bool isConnected() const { return connectionReady; }
+  State state() const { return state_; }
+  bool isConnected() const { return state_ == State::Connected; }
 
  private:
   const char* LOG_TAG = "DealerClient";
@@ -56,8 +67,11 @@ class DealerClient {
   std::chrono::system_clock::time_point lastPingTime;
   std::chrono::system_clock::time_point lastPongTime;
 
-  // Flag used to notify when the connection was established
-  bool connectionReady = false;
+  State state_ = State::Disconnected;
+  // Only meaningful while state_ == Connecting - deadline for the WS
+  // handshake to resolve (onWSOpen/onWSFail/onWSClose) before
+  // doHousekeeping() gives up on it and moves to Failed.
+  std::chrono::steady_clock::time_point connectDeadline{};
 
   // websocketpp related structs
   WSClient wsClient;

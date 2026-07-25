@@ -13,19 +13,6 @@
 
 using namespace cspot;
 
-namespace {
-// DealerClient::connect() only establishes the TCP/TLS transport
-// synchronously; the actual WebSocket upgrade handshake completes
-// asynchronously over subsequent socketPoll->poll() cycles and is what
-// flips DealerClient::isConnected() to true. This is how long
-// Session::runPoller() waits after a "successful" connectDealer() call
-// before it's allowed to preempt that in-flight handshake with another
-// reconnect attempt - without it, the loop tore the handshake down (via
-// DealerClient::connect()'s wsConnection.reset()) every ~1s tick before it
-// could ever finish, so isConnected() never settled to true.
-constexpr auto kDealerHandshakeGrace = std::chrono::milliseconds(5000);
-}  // namespace
-
 cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo,
                         cspot::AudioOutputCallback audioOutputCallback,
                         cspot::VolumeChangedCallback volumeChangedCallback)
@@ -189,12 +176,6 @@ bell::Result<> cspot::Session::connectDealer() {
     return dealerConnectRes;
   }
 
-  // Transport connected, but the WS handshake it kicked off is still
-  // in-flight (see kDealerHandshakeGrace) - block runPoller() from calling
-  // us again until it's had a chance to complete.
-  nextDealerReconnectAttempt =
-      std::chrono::steady_clock::now() + kDealerHandshakeGrace;
-
   return {};
 }
 
@@ -230,37 +211,53 @@ void cspot::Session::runPoller() {
     socketPoll->poll(1000);
     dealerClient->doHousekeeping();
 
-    if (dealerClient->isConnected()) {
-      if (reconnecting) {
-        BELL_LOG(info, LOG_TAG, "Dealer reconnected");
-        reconnecting = false;
+    switch (dealerClient->state()) {
+      case DealerClient::State::Connected:
+        if (reconnecting) {
+          BELL_LOG(info, LOG_TAG, "Dealer reconnected");
+          reconnecting = false;
+        }
+        dealerBackoffMs = kDealerBackoffBaseMs;
+        break;
+
+      case DealerClient::State::Connecting:
+        // WS handshake in flight from a previous connectDealer() call -
+        // doHousekeeping() applies its own timeout and moves this to
+        // Failed if it never resolves, so there's nothing to do here but
+        // wait for the next tick. Not touching dealerClient in this state
+        // is what actually fixes the original bug: calling connectDealer()
+        // again here would tear down this in-flight attempt via
+        // DealerClient::connect()'s wsConnection.reset() before it could
+        // ever complete.
+        break;
+
+      case DealerClient::State::Disconnected:
+      case DealerClient::State::Failed: {
+        auto now = std::chrono::steady_clock::now();
+        if (now < nextDealerReconnectAttempt) {
+          break;
+        }
+
+        if (!reconnecting) {
+          BELL_LOG(info, LOG_TAG, "Dealer disconnected, reconnecting...");
+          reconnecting = true;
+        }
+
+        auto reconnectRes = connectDealer();
+        if (!reconnectRes) {
+          BELL_LOG(error, LOG_TAG, "Dealer reconnect failed, retrying in {}ms",
+                   dealerBackoffMs);
+          nextDealerReconnectAttempt =
+              now + std::chrono::milliseconds(dealerBackoffMs);
+          dealerBackoffMs = std::min(dealerBackoffMs * 2, kDealerBackoffMaxMs);
+        }
+        // On success, dealerClient is now Connecting - the case above
+        // gates any further attempts until it resolves. Backoff is left
+        // untouched here (only reset once actually Connected) so repeated
+        // WS-level failures still back off even if the transport connects
+        // fine every time.
+        break;
       }
-      dealerBackoffMs = kDealerBackoffBaseMs;
-      continue;
     }
-
-    auto now = std::chrono::steady_clock::now();
-    // Also gates the not-yet-connected window right after a "successful"
-    // connectDealer() call, while its WS handshake is still in flight -
-    // not just the failure backoff.
-    if (now < nextDealerReconnectAttempt) {
-      continue;
-    }
-
-    if (!reconnecting) {
-      BELL_LOG(info, LOG_TAG, "Dealer disconnected, reconnecting...");
-      reconnecting = true;
-    }
-
-    auto reconnectRes = connectDealer();
-    if (!reconnectRes) {
-      BELL_LOG(error, LOG_TAG, "Dealer reconnect failed, retrying in {}ms",
-               dealerBackoffMs);
-      nextDealerReconnectAttempt =
-          now + std::chrono::milliseconds(dealerBackoffMs);
-      dealerBackoffMs = std::min(dealerBackoffMs * 2, kDealerBackoffMaxMs);
-    }
-    // On success, connectDealer() itself advances nextDealerReconnectAttempt
-    // to give the async WS handshake time to complete.
   }
 }
