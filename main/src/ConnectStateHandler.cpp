@@ -1,5 +1,6 @@
 #include "ConnectStateHandler.h"
 
+#include <algorithm>
 #include <iostream>
 #include <random>
 
@@ -9,6 +10,7 @@
 #include "api/SpClient.h"
 #include "bell/Logger.h"
 #include "bell/Result.h"
+#include "bell/utils/Utils.h"
 #include "connect.pb.h"
 #include "events/EventLoop.h"
 #include "events/EventModels.h"
@@ -48,10 +50,18 @@ std::string generateSessionId() {
 
 ConnectStateHandler::ConnectStateHandler(
     std::shared_ptr<cspot::EventLoop> eventLoop,
-    std::shared_ptr<AuthInfo> authInfo, std::shared_ptr<SpClient> spClient)
-    : eventLoop(std::move(eventLoop)),
+    std::shared_ptr<AuthInfo> authInfo, std::shared_ptr<SpClient> spClient,
+    VolumeChangedCallback volumeChangedCallback)
+    // Only ever sleeps and occasionally performs the same HTTPS PUT as
+    // every other handler here - sized like every other network-doing
+    // task in this codebase (cspot_event_loop/cspot_player/
+    // cspot_file_provider), not trimmed down, given this project's own
+    // history of stack-overflow crashes from undersized task stacks.
+    : bell::Task("cspot_connect_state", 32 * 1024),
+      eventLoop(std::move(eventLoop)),
       authInfo(std::move(authInfo)),
-      spClient(std::move(spClient)) {
+      spClient(std::move(spClient)),
+      volumeChangedCallback(std::move(volumeChangedCallback)) {
   trackQueueHandler =
       createDefaultTrackQueueHandler(this->spClient, this->eventLoop);
 
@@ -65,6 +75,7 @@ ConnectStateHandler::ConnectStateHandler(
         playerState.duration = playerStateUpdate.playbackDurationMs;
         playerState.position = playerStateUpdate.positionAsOfTimestamp;
         playerState.isPlaying = playerStateUpdate.isPlaying;
+        playerState.isPaused = playerStateUpdate.isPaused;
         playerState.isBuffering = playerStateUpdate.isBuffering;
         playerState.timestamp = playerStateUpdate.timestamp;
 
@@ -94,6 +105,11 @@ ConnectStateHandler::ConnectStateHandler(
   //     });
 
   initialize();
+  startTask();
+}
+
+ConnectStateHandler::~ConnectStateHandler() {
+  stopTask();
 }
 
 void ConnectStateHandler::initialize() {
@@ -170,6 +186,12 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
   } else if (endpoint == "skip_prev") {
     BELL_LOG(info, LOG_TAG, "Received skip_prev command");
     return handleSkipPrevCommand();
+  } else if (endpoint == "pause") {
+    BELL_LOG(info, LOG_TAG, "Received pause command");
+    return handlePauseCommand(true);
+  } else if (endpoint == "resume") {
+    BELL_LOG(info, LOG_TAG, "Received resume command");
+    return handlePauseCommand(false);
   } else if (endpoint == "play") {
     BELL_LOG(info, LOG_TAG, "Received play command");
     return handlePlayCommand(command);
@@ -182,6 +204,30 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
 }
 
 bell::Result<> ConnectStateHandler::putState(PutStateReason reason) {
+  std::scoped_lock lock(putStateMutex);
+
+  constexpr auto kStatePutMinInterval = std::chrono::milliseconds(200);
+
+  auto now = std::chrono::steady_clock::now();
+  if (now - lastPutStateTime >= kStatePutMinInterval) {
+    return flushStateNowLocked(reason);
+  }
+
+  // Inside the rate-limit window - coalesce into a single deferred PUT
+  // (taskLoop() below), "last reason wins". Don't push the due time out
+  // further on repeated calls within the same window, or a steady stream
+  // of state changes could defer it forever.
+  pendingPutStateReason = reason;
+  if (!putStatePending) {
+    putStatePending = true;
+    putStateDueTime = lastPutStateTime + kStatePutMinInterval;
+  }
+
+  return {};
+}
+
+bell::Result<> ConnectStateHandler::flushStateNowLocked(
+    PutStateReason reason) {
   // get milliseconds since epoch;
   putStateRequestProto.clientSideTimestamp =
       std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -190,8 +236,101 @@ bell::Result<> ConnectStateHandler::putState(PutStateReason reason) {
   putStateRequestProto.memberType = MemberType_CONNECT_STATE;
   putStateRequestProto.putStateReason = reason;
 
+  lastPutStateTime = std::chrono::steady_clock::now();
+  putStatePending = false;
+
   return this->spClient->putConnectState(
       putStateRequestProto, authInfo->deviceId, authInfo->sessionId);
+}
+
+void ConnectStateHandler::taskLoop() {
+  bell::utils::sleepMs(50);
+
+  if (!putStatePending) {
+    return;
+  }
+
+  std::scoped_lock lock(putStateMutex);
+  if (!putStatePending || std::chrono::steady_clock::now() < putStateDueTime) {
+    return;
+  }
+
+  auto res = flushStateNowLocked(pendingPutStateReason);
+  if (!res) {
+    BELL_LOG(error, LOG_TAG, "Deferred put state failed: {}", res.error());
+  }
+}
+
+bell::Result<> ConnectStateHandler::handleClusterUpdate(
+    std::string_view payloadDataStr) {
+  auto decodedData = base64Decode(payloadDataStr);
+  cspot_proto::ClusterUpdate clusterUpdate;
+
+  bool res = nanopb_helper::decodeFromVector(clusterUpdate, decodedData);
+  if (!res) {
+    BELL_LOG(error, LOG_TAG, "Failed to decode cluster update");
+    return bell::make_unexpected_errc(std::errc::bad_message);
+  }
+
+  // Someone else just became the active device while we thought we were -
+  // back off. The lastTransferTimestamp guard (matches go-librespot's
+  // daemon/player.go) stops a stale/reordered ClusterUpdate from
+  // deactivating us right after a legitimate transfer to this device.
+  bool stopBeingActive =
+      putStateRequestProto.isActive &&
+      clusterUpdate.cluster.activeDeviceId != authInfo->deviceId &&
+      clusterUpdate.cluster.playerState.timestamp > lastTransferTimestamp;
+
+  if (!stopBeingActive) {
+    return {};
+  }
+
+  BELL_LOG(info, LOG_TAG, "Playback was transferred to device {}",
+           clusterUpdate.cluster.activeDeviceId);
+
+  putStateRequestProto.isActive = false;
+  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, false);
+
+  auto inactiveRes = spClient->putInactive(authInfo->deviceId,
+                                           authInfo->sessionId);
+  if (!inactiveRes) {
+    BELL_LOG(error, LOG_TAG, "Failed to put inactive state: {}",
+             inactiveRes.error());
+    return inactiveRes;
+  }
+
+  return {};
+}
+
+bell::Result<> ConnectStateHandler::handleSetVolume(
+    std::string_view payloadDataStr) {
+  auto decodedData = base64Decode(payloadDataStr);
+  cspot_proto::SetVolumeCommand setVolumeCommand;
+
+  bool res = nanopb_helper::decodeFromVector(setVolumeCommand, decodedData);
+  if (!res) {
+    BELL_LOG(error, LOG_TAG, "Failed to decode set volume command");
+    return bell::make_unexpected_errc(std::errc::bad_message);
+  }
+
+  // Connect-state volume is 0..65535 (player.MaxStateVolume in
+  // go-librespot) - matches DeviceInfo.volume's own range, no rescaling
+  // needed.
+  uint16_t volume = static_cast<uint16_t>(
+      std::clamp<int32_t>(setVolumeCommand.volume, 0, 65535));
+
+  BELL_LOG(info, LOG_TAG, "Set volume to {}", volume);
+  putStateRequestProto.device.deviceInfo.volume = volume;
+
+  volumeChangedCallback(volume);
+
+  auto putRes = putState(PutStateReason_VOLUME_CHANGED);
+  if (!putRes) {
+    BELL_LOG(error, LOG_TAG, "Failed to put state after volume change: {}",
+             putRes.error());
+    return putRes;
+  }
+
   return {};
 }
 
@@ -225,6 +364,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommand(
   playerState.isPlaying = false;
   playerState.isBuffering = true;
   playerState.timestamp = transferState.playback.timestamp;
+  lastTransferTimestamp = transferState.playback.timestamp;
 
   bool shouldPause =
       transferState.playback.isPaused &&
@@ -420,6 +560,35 @@ bell::Result<> ConnectStateHandler::handleSkipPrevCommand() {
           .count();
 
   (void)putState();
+
+  return {};
+}
+
+bell::Result<> ConnectStateHandler::handlePauseCommand(bool pause) {
+  // Not routed through StreamPlayer::announceState()'s own
+  // PLAYER_STATE_UPDATED flow: maybeStartCurrentTrack() (the only thing
+  // that calls announceState()) is a no-op once the decoder is already
+  // open, which is exactly the common case for pause/resume during
+  // ongoing playback - so this needs its own explicit putState() call,
+  // same as every other command handler here.
+  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !pause);
+
+  auto& playerState = putStateRequestProto.device.playerState;
+  // isPlaying stays true - a session is loaded either way, only isPaused
+  // changes. See PlayerStateUpdate's comment (EventModels.h) for why
+  // conflating the two breaks the real Spotify app.
+  playerState.isPlaying = true;
+  playerState.isPaused = pause;
+  playerState.timestamp =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch())
+          .count();
+
+  auto putRes = putState();
+  if (!putRes) {
+    BELL_LOG(error, LOG_TAG, "Failed to put state after pause/resume");
+    return putRes;
+  }
 
   return {};
 }

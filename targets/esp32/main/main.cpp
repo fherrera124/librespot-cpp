@@ -168,8 +168,11 @@ class CSpotTask : public bell::Task {
           audioSink->feedPCMFrames(
               reinterpret_cast<const uint8_t*>(pcm.data()), pcm.size());
         };
+    cspot::VolumeChangedCallback volumeCallback =
+        [audioSink](uint16_t volume) { audioSink->volumeChanged(volume); };
 
-    auto session = std::make_shared<cspot::Session>(authInfo, audioCallback);
+    auto session = std::make_shared<cspot::Session>(authInfo, audioCallback,
+                                                     volumeCallback);
     auto startRes = session->start();
     if (!startRes) {
       BELL_LOG(error, TAG, "Failed to start session: {}", startRes.error());

@@ -140,7 +140,7 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
     if (providedFile.itemId == playbackQueue[0]) {
       // Still buffering here - the decoder hasn't been opened yet, let
       // alone produced any real audio. See announceState()'s doc comment.
-      announceState(/*isPlaying=*/false, /*isBuffering=*/true);
+      announceState(/*isBuffering=*/true);
     }
   } else {
     // Probably outdated request
@@ -198,18 +198,19 @@ void StreamPlayer::maybeStartCurrentTrack() {
   }
 
   if (file.itemId == playbackQueue[0]) {
-    // Ready now - reflects whatever the current play/pause state actually
-    // is rather than hardcoding true, since "ready but paused" is a real,
-    // valid state distinct from "still buffering".
-    announceState(isPlaying, /*isBuffering=*/false);
+    // Ready now - a session is loaded regardless of the local play/pause
+    // state, since "ready but paused" is a real, valid state distinct
+    // from "still buffering". See announceState()'s doc comment.
+    announceState(/*isBuffering=*/false);
   }
 }
 
-void StreamPlayer::announceState(bool isPlaying, bool isBuffering) {
+void StreamPlayer::announceState(bool isBuffering) {
   std::scoped_lock lock(playbackMutex);
 
   PlayerStateUpdate stateUpdate{
-      .isPlaying = isPlaying,
+      .isPlaying = !isBuffering,
+      .isPaused = !isPlaying,
       .isBuffering = isBuffering,
       .timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::system_clock::now().time_since_epoch())

@@ -415,6 +415,52 @@ struct TransferState {
 NANOPB_STRUCT(cspot_proto::TransferState, TransferState_fields)
 
 namespace cspot_proto {
+struct Cluster {
+  std::string activeDeviceId;
+  cspot_proto::PlayerState playerState;
+
+  static auto bindFields(Cluster* self, bool isDecode) {
+    _Cluster rawProto = Cluster_init_zero;
+    nanopb_helper::bindField(rawProto.active_device_id, self->activeDeviceId,
+                             isDecode);
+    nanopb_helper::bindField(rawProto.player_state, self->playerState,
+                             isDecode);
+    return rawProto;
+  }
+};
+}  // namespace cspot_proto
+
+NANOPB_STRUCT(cspot_proto::Cluster, Cluster_fields)
+
+namespace cspot_proto {
+struct ClusterUpdate {
+  cspot_proto::Cluster cluster;
+
+  static auto bindFields(ClusterUpdate* self, bool isDecode) {
+    _ClusterUpdate rawProto = ClusterUpdate_init_zero;
+    nanopb_helper::bindField(rawProto.cluster, self->cluster, isDecode);
+    return rawProto;
+  }
+};
+}  // namespace cspot_proto
+
+NANOPB_STRUCT(cspot_proto::ClusterUpdate, ClusterUpdate_fields)
+
+namespace cspot_proto {
+struct SetVolumeCommand {
+  int32_t volume = 0;
+
+  static auto bindFields(SetVolumeCommand* self, bool isDecode) {
+    _SetVolumeCommand rawProto = SetVolumeCommand_init_zero;
+    nanopb_helper::bindField(rawProto.volume, self->volume, isDecode);
+    return rawProto;
+  }
+};
+}  // namespace cspot_proto
+
+NANOPB_STRUCT(cspot_proto::SetVolumeCommand, SetVolumeCommand_fields)
+
+namespace cspot_proto {
 struct AutoplayContextRequest {
   std::string contextUrl;
   std::vector<std::string> recentTrackUri;

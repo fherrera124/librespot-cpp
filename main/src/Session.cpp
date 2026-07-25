@@ -13,7 +13,8 @@
 using namespace cspot;
 
 cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo,
-                        cspot::AudioOutputCallback audioOutputCallback)
+                        cspot::AudioOutputCallback audioOutputCallback,
+                        cspot::VolumeChangedCallback volumeChangedCallback)
     : authInfo(std::move(authInfo)) {
   // Prepare the session context
   eventLoop = std::make_shared<cspot::EventLoop>();
@@ -26,7 +27,7 @@ cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo,
   apClient = std::make_unique<ApClient>(eventLoop, this->authInfo);
 
   connectStateHandler = std::make_shared<ConnectStateHandler>(
-      eventLoop, this->authInfo, spClient);
+      eventLoop, this->authInfo, spClient, std::move(volumeChangedCallback));
 
   auto fileProvider = createDefaultFileProvider(eventLoop, spClient, apClient);
   auto audioDecoder = createAudioDecoder(std::move(audioOutputCallback));
@@ -66,12 +67,43 @@ void cspot::Session::handleDealerMessage(EventLoop::Event&& event) {
     authInfo->sessionId = *sessionId;
     BELL_LOG(info, LOG_TAG, "Session ID: {}", *sessionId);
 
-    // Announce spotify connect state
-    auto res = connectStateHandler->putState(PutStateReason_NEW_CONNECTION);
+    // This, not the WS connect itself, is what makes the device
+    // selectable in the app - confirmed against both go-librespot
+    // (daemon/player.go) and this repo's own master branch
+    // (DealerSession.cpp), which both use NEW_DEVICE here, not
+    // NEW_CONNECTION.
+    auto res = connectStateHandler->putState(PutStateReason_NEW_DEVICE);
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Failed to announce connect state: {}",
                res.error());
       return;
+    }
+  } else if (uri->starts_with("hm://connect-state/v1/cluster")) {
+    auto payloadsField = messageJson.find("payloads");
+    auto* payloads = payloadsField ? payloadsField->find(0) : nullptr;
+    if (!payloads) {
+      BELL_LOG(error, LOG_TAG, "Cluster update without a payload");
+      return;
+    }
+
+    auto res =
+        connectStateHandler->handleClusterUpdate(payloads->get_string());
+    if (!res) {
+      BELL_LOG(error, LOG_TAG, "Failed to handle cluster update: {}",
+               res.error());
+    }
+  } else if (uri->starts_with("hm://connect-state/v1/connect/volume")) {
+    auto payloadsField = messageJson.find("payloads");
+    auto* payloads = payloadsField ? payloadsField->find(0) : nullptr;
+    if (!payloads) {
+      BELL_LOG(error, LOG_TAG, "Volume command without a payload");
+      return;
+    }
+
+    auto res = connectStateHandler->handleSetVolume(payloads->get_string());
+    if (!res) {
+      BELL_LOG(error, LOG_TAG, "Failed to handle set volume: {}",
+               res.error());
     }
   } else {
     BELL_LOG(info, LOG_TAG, "Received message with URI: {}", *uri);

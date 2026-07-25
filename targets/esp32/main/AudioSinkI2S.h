@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -34,6 +35,12 @@ class AudioSinkI2S : public bell::Task {
   // that paces AudioDecoderImpl's decode loop against I2S consumption.
   void feedPCMFrames(const uint8_t* data, size_t bytes);
 
+  // volume is 0..65535 (connect-state's own range, see ConnectStateHandler).
+  // Called from whatever thread handles the SetVolumeCommand push -
+  // volumeScale is atomic since feedPCMFrames() (a different thread,
+  // AudioDecoderImpl's decode loop) reads it on every call.
+  void volumeChanged(uint16_t volume);
+
  private:
   const char* LOG_TAG = "AudioSinkI2S";
 
@@ -41,6 +48,8 @@ class AudioSinkI2S : public bell::Task {
   i2s_chan_handle_t txChannel = nullptr;
   bell::io::CircularByteBuffer ringBuffer;
   std::vector<int16_t> downmixScratch;
+  // Squared, not the raw 0..1 fraction - see volumeChanged()'s comment.
+  std::atomic<float> volumeScale{1.0f};
 
   void taskLoop() override;
 };

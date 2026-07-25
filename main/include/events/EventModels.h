@@ -25,7 +25,13 @@ struct TrackQueueUpdate {
 };
 
 struct PlayerStateUpdate {
+  // Whether a session is loaded at all - stays true while paused. NOT the
+  // same as "audio is currently flowing" (see StreamPlayer::announceState
+  // and isPaused below) - conflating the two ("isPlaying = !isPaused")
+  // reports a paused device as having nothing loaded, which reads as
+  // permanently stopped/disconnected in the real Spotify app.
   bool isPlaying;
+  bool isPaused = false;
   bool isBuffering;
   int64_t timestamp;
   int64_t positionAsOfTimestamp;

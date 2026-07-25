@@ -56,15 +56,24 @@ class StreamPlayer : public bell::Task {
   // holding it are fine).
   void maybeStartCurrentTrack();
 
-  // isPlaying/isBuffering are sent to the server as-is (see
-  // ConnectStateHandler's PLAYER_STATE_UPDATED handler) - callers must only
-  // claim isPlaying=true once audio is actually flowing, not merely once a
-  // CDN url/decrypt key are resolved. Confirmed against a real hardware
-  // session: claiming isPlaying=true at file-ready time (before the decoder
-  // was even opened) was read by the real Spotify app as the device never
-  // successfully connecting - librespot-cpp's own PlayerEngine.cpp has the
-  // exact same two-phase buffering->playing split, with a comment
-  // documenting the same client-visible failure from getting this wrong.
-  void announceState(bool isPlaying, bool isBuffering);
+  // Announces PlayerState.isPlaying/isPaused/isBuffering to the server
+  // (see ConnectStateHandler's PLAYER_STATE_UPDATED handler).
+  // isPlaying=false claims no session is loaded at all - callers must
+  // only pass isBuffering=true (which implies isPlaying=false) once for
+  // the very first track, not merely once a CDN url/decrypt key are
+  // resolved. Confirmed against a real hardware session: claiming
+  // isPlaying=false at file-ready time (before the decoder was even
+  // opened) was read by the real Spotify app as the device never
+  // successfully connecting.
+  //
+  // isPlaying itself is derived as !isBuffering, NOT from this class's
+  // own isPlaying member (that member is the local decode gate, toggled
+  // by pause/resume - reporting it directly as PlayerState.isPlaying
+  // conflates "a session is loaded" with "audio is currently flowing",
+  // which makes a paused device read as having nothing loaded in the
+  // real app. isPaused is what reports the local decode gate instead;
+  // this repo's own master branch found and documented this exact
+  // failure mode ("is_playing means 'session active', NOT !is_paused").
+  void announceState(bool isBuffering);
 };
 }  // namespace cspot

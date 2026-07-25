@@ -1,5 +1,7 @@
 #include "AudioSinkI2S.h"
 
+#include <algorithm>
+
 #include "bell/Logger.h"
 #include "freertos/FreeRTOS.h"
 
@@ -56,23 +58,46 @@ AudioSinkI2S::~AudioSinkI2S() {
 
 void AudioSinkI2S::feedPCMFrames(const uint8_t* data, size_t bytes) {
   const std::byte* src = reinterpret_cast<const std::byte*>(data);
+  float scale = volumeScale.load(std::memory_order_relaxed);
 
   if (config.monoOutput) {
     const int16_t* samples = reinterpret_cast<const int16_t*>(data);
     size_t frameCount = (bytes / sizeof(int16_t)) / 2;
     downmixScratch.resize(frameCount);
     for (size_t i = 0; i < frameCount; i++) {
+      float mixed = (static_cast<int32_t>(samples[2 * i]) + samples[2 * i + 1]) /
+                    2.0f;
       downmixScratch[i] = static_cast<int16_t>(
-          (static_cast<int32_t>(samples[2 * i]) + samples[2 * i + 1]) / 2);
+          std::clamp(mixed * scale, -32768.0f, 32767.0f));
     }
     src = reinterpret_cast<const std::byte*>(downmixScratch.data());
     bytes = frameCount * sizeof(int16_t);
+  } else if (scale < 0.999f) {
+    const int16_t* samples = reinterpret_cast<const int16_t*>(data);
+    size_t sampleCount = bytes / sizeof(int16_t);
+    downmixScratch.resize(sampleCount);
+    for (size_t i = 0; i < sampleCount; i++) {
+      downmixScratch[i] = static_cast<int16_t>(
+          std::clamp(samples[i] * scale, -32768.0f, 32767.0f));
+    }
+    src = reinterpret_cast<const std::byte*>(downmixScratch.data());
+    bytes = sampleCount * sizeof(int16_t);
   }
 
   size_t written = 0;
   while (written < bytes) {
     written += ringBuffer.write(src + written, bytes - written);
   }
+}
+
+void AudioSinkI2S::volumeChanged(uint16_t volume) {
+  // Squared, not linear - approximates how humans perceive loudness
+  // (matches go-librespot's software-volume path, output/driver-pipe.go:
+  // "map volume ... to what is perceived as linear by humans"). A
+  // straight linear scale crams most of the audible change into the top
+  // of the range.
+  float linear = static_cast<float>(volume) / static_cast<float>(UINT16_MAX);
+  volumeScale.store(linear * linear, std::memory_order_relaxed);
 }
 
 void AudioSinkI2S::taskLoop() {

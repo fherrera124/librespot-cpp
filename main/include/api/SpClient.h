@@ -30,6 +30,15 @@ class SpClient {
       cspot_proto::PutStateRequest& stateRequest, const std::string& deviceId,
       const std::string& sessionId) = 0;
 
+  /**
+   * @brief Marks this device inactive - a separate endpoint from
+   * putConnectState(), not just a PutStateRequest.is_active=false PUT
+   * (matches both go-librespot's PutConnectStateInactive and this repo's
+   * own master branch's PutStateClient::putInactive).
+   */
+  virtual bell::Result<> putInactive(const std::string& deviceId,
+                                     const std::string& sessionId) = 0;
+
   virtual bell::Result<bell::HTTPResponse> contextResolve(
       const std::string& contextUri) = 0;
 

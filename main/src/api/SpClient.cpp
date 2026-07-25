@@ -26,6 +26,8 @@ class DefaultSpClient : public SpClient {
   bell::Result<> putConnectState(cspot_proto::PutStateRequest& stateRequest,
                                  const std::string& deviceId,
                                  const std::string& sessionId) override;
+  bell::Result<> putInactive(const std::string& deviceId,
+                             const std::string& sessionId) override;
   bell::Result<bell::HTTPResponse> contextResolve(
       const std::string& contextUri) override;
   bell::Result<bell::HTTPResponse> contextAutoplayResolve(
@@ -119,6 +121,50 @@ bell::Result<> DefaultSpClient::putConnectState(
   // headers. Reproduced on real hardware: contextResolve() intermittently
   // failed to parse what should've been an HTTP response because it was
   // actually reading a stale PutStateRequest response body.
+  auto bodyRes = httpResponse->bytes();
+  if (!bodyRes) {
+    BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",
+             bodyRes.error());
+    return tl::make_unexpected(bodyRes.error());
+  }
+
+  return {};
+}
+
+bell::Result<> DefaultSpClient::putInactive(const std::string& deviceId,
+                                            const std::string& sessionId) {
+  auto credentialsRes = updateCredentials();
+  if (!credentialsRes) {
+    return credentialsRes;
+  }
+
+  // Separate endpoint from putConnectState() - not a PutStateRequest body,
+  // matches go-librespot's PutConnectStateInactive and this repo's own
+  // master branch's PutStateClient::putInactive. notify=false matches what
+  // both references pass here.
+  auto httpResponse = httpClient->put(
+      fmt::format(
+          "https://{}/connect-state/v1/devices/{}/inactive?notify=false",
+          spClientAddress, deviceId),
+      {
+          {"X-Spotify-Connection-Id", sessionId},
+          {"Authorization", fmt::format("Bearer {}", accessToken)},
+      });
+
+  if (!httpResponse) {
+    BELL_LOG(error, LOG_TAG, "Error while sending inactive request: {}",
+             httpResponse.error());
+    return tl::make_unexpected(httpResponse.error());
+  }
+
+  if (httpResponse->statusCode != 200) {
+    BELL_LOG(error, LOG_TAG, "Error while sending inactive request: {}",
+             httpResponse->statusCode);
+    return bell::make_unexpected_errc(std::errc::bad_message);
+  }
+
+  // Drain the response body - same pooled-connection reuse hazard as
+  // putConnectState() above.
   auto bodyRes = httpResponse->bytes();
   if (!bodyRes) {
     BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",

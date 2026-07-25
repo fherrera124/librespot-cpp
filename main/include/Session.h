@@ -15,12 +15,14 @@
 namespace cspot {
 class Session {
  public:
-  // audioOutputCallback defaults to a no-op so host targets (no audio
-  // support yet) don't need to pass anything - only ESP32 targets inject
-  // a real one (see targets/esp32/main/main.cpp).
+  // audioOutputCallback/volumeChangedCallback default to no-ops so host
+  // targets (no audio support yet) don't need to pass anything - only
+  // ESP32 targets inject real ones (see targets/esp32/main/main.cpp).
   Session(std::shared_ptr<AuthInfo> authInfo,
           cspot::AudioOutputCallback audioOutputCallback =
-              [](tcb::span<const std::byte>, const SpotifyId&) {});
+              [](tcb::span<const std::byte>, const SpotifyId&) {},
+          cspot::VolumeChangedCallback volumeChangedCallback =
+              [](uint16_t) {});
 
   bell::Result<> start();
 
