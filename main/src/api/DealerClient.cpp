@@ -12,7 +12,10 @@ using namespace cspot;
 
 namespace {
 const auto pingInterval = std::chrono::seconds(30);
-// const auto pongTimeout = std::chrono::seconds(10);
+// Same 30s ping / 10s grace as master's DealerSession
+// (JSON_PING_INTERVAL_MS/JSON_PONG_TIMEOUT_MS) and go-librespot's dealer.go
+// (pingInterval/timeout) - both references agree exactly, nothing to decide.
+const auto pongTimeout = std::chrono::seconds(10);
 }  // namespace
 
 DealerClient::DealerClient(std::shared_ptr<cspot::EventLoop> eventLoop)
@@ -37,6 +40,20 @@ bell::Result<> DealerClient::connect(
     const std::shared_ptr<bell::SocketPollListener>& socketPoll) {
   connectionReady = false;
   this->socketPoll = socketPoll;
+
+  // Reconnecting: the previous websocketpp connection object (if any) is
+  // already dead. Without this reset, the "Writeable" callback below's
+  // `if (!wsConnection)` check would skip creating a fresh one and silently
+  // keep trying to use the stale, closed connection - reconnection would
+  // no-op forever.
+  wsConnection.reset();
+
+  // Give the pong watchdog (doHousekeeping()) a full pingInterval of grace
+  // before it can possibly fire - otherwise a default-constructed/stale
+  // lastPongTime would look "expired" from the very first housekeeping
+  // tick, before any ping/pong cycle has even had a chance to happen.
+  lastPingTime = std::chrono::system_clock::now();
+  lastPongTime = lastPingTime;
 
   std::string connectionUrl =
       fmt::format("{}/?access_token={}", dealerAddress, accessKey);
@@ -85,14 +102,10 @@ bell::Result<> DealerClient::connect(
             // same callback as fast as it can - a real hardware hang
             // reproduced as a task watchdog reset (the hot loop starves
             // the idle task). Stop being polled once the socket's gone.
-            connectionReady = false;
-            this->socketPoll->unregisterSocket(this->socket,
-                                               bell::PollEvent::All);
+            handleDisconnect();
           } else if (*res == 0) {
             BELL_LOG(info, LOG_TAG, "Dealer socket closed by peer");
-            connectionReady = false;
-            this->socketPoll->unregisterSocket(this->socket,
-                                               bell::PollEvent::All);
+            handleDisconnect();
           } else {
             std::scoped_lock lock(accessMutex);
 
@@ -136,9 +149,15 @@ bell::Result<> DealerClient::connect(
 }
 
 void DealerClient::onWSFail(websocketpp::connection_hdl conn) {  // NOLINT
-  connectionReady = true;
+  BELL_LOG(error, LOG_TAG, "Dealer connection failed");
 
-  BELL_LOG(error, LOG_TAG, "Dealer connection failed {}");
+  // Was `connectionReady = true` - inverted, presumably a copy/paste from
+  // onWSOpen(). Harmless as long as nothing ever reconnects (isConnected()
+  // was never checked by anything), but now that Session::runPoller()'s
+  // reconnect loop keys off isConnected() to decide whether an attempt
+  // succeeded, a failed connect wrongly reporting "ready" would make the
+  // loop stop retrying after the first failure.
+  connectionReady = false;
 }
 
 void DealerClient::onWSOpen(websocketpp::connection_hdl /*conn*/) {  // NOLINT
@@ -149,11 +168,29 @@ void DealerClient::onWSOpen(websocketpp::connection_hdl /*conn*/) {  // NOLINT
 
 void DealerClient::onWSClose(websocketpp::connection_hdl /*conn*/) {
   BELL_LOG(info, LOG_TAG, "Websocket connection closed");
-  // Stops doHousekeeping()'s ping (and replyToRequest(), if a stray
-  // dealer request ever arrives after this) from calling send() on a
-  // connection websocketpp itself already knows is dead - was spamming
-  // "Error sending response: invalid state" every 30s after a close.
+  handleDisconnect();
+}
+
+void DealerClient::handleDisconnect() {
+  // Idempotent: onWSClose() and the read callback's error/EOF branches can
+  // both observe the same disconnect (e.g. peer sends a WS Close frame,
+  // which fires onWSClose() via read_all(), and the next read() then
+  // returns 0) - only unregister once.
+  if (!connectionReady) {
+    return;
+  }
+
   connectionReady = false;
+  // Stops doHousekeeping()'s ping (and replyToRequest(), if a stray dealer
+  // request ever arrives after this) from calling send() on a connection
+  // websocketpp itself already knows is dead - was spamming "Error sending
+  // response: invalid state" every 30s after a close.
+  //
+  // A dead socket also stays "readable" forever (reading it just keeps
+  // failing), so without unregistering, the poller would re-invoke the
+  // read callback as fast as it can - a real hardware hang reproduced as a
+  // task watchdog reset (the hot loop starves the idle task).
+  socketPoll->unregisterSocket(socket, bell::PollEvent::All);
 }
 
 std::error_code DealerClient::wsWriteHandler(websocketpp::connection_hdl hdl,
@@ -238,6 +275,26 @@ void DealerClient::doHousekeeping() {
     std::scoped_lock lock(accessMutex);
 
     if (wsConnection && connectionReady) {
+      auto now = std::chrono::system_clock::now();
+
+      // Same watchdog as master's DealerSession and go-librespot's
+      // dealer.go: if a full ping interval plus grace period has passed
+      // with no pong, the connection is stale (a dead WiFi/NAT path can
+      // leave TCP looking fine locally with no FIN/RST ever arriving).
+      // Force it closed so Session::runPoller()'s reconnect loop can
+      // recover it - there'd otherwise be no way to detect this case at
+      // all.
+      if (now - lastPongTime >= pingInterval + pongTimeout) {
+        BELL_LOG(error, LOG_TAG,
+                 "No pong received from dealer in over {}s, treating "
+                 "connection as dead",
+                 std::chrono::duration_cast<std::chrono::seconds>(
+                     pingInterval + pongTimeout)
+                     .count());
+        handleDisconnect();
+        return;
+      }
+
       tao::json::value pingMsg = {{"type", "ping"}};
       std::string responseStr = tao::json::to_string(pingMsg);
       auto err =
@@ -246,7 +303,7 @@ void DealerClient::doHousekeeping() {
       if (err) {
         BELL_LOG(error, LOG_TAG, "Error sending response: {}", err.message());
       } else {
-        lastPingTime = std::chrono::system_clock::now();
+        lastPingTime = now;
       }
     }
   }

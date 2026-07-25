@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 
 #include "AuthInfo.h"
@@ -40,6 +41,19 @@ class Session {
   std::shared_ptr<cspot::ApClient> apClient;
   std::shared_ptr<cspot::ConnectStateHandler> connectStateHandler;
   std::shared_ptr<cspot::StreamPlayer> streamPlayer;
+
+  // Dealer reconnect backoff state, driven from runPoller(). Matches
+  // master's DealerSession constants (5s base, doubling, 60s cap) - see
+  // connectDealer()'s own comment for why we retry forever instead of
+  // giving up like go-librespot's default ~15min MaxElapsedTime.
+  int dealerBackoffMs = 5000;
+  std::chrono::steady_clock::time_point nextDealerReconnectAttempt{};
+
+  // Resolves the dealer address + access key and connects dealerClient.
+  // Used both for the initial connect (start()) and for every reconnect
+  // attempt from runPoller() - re-resolving each time (rather than reusing
+  // stale values) mirrors master's "never cache the URL" dealer reconnect.
+  bell::Result<> connectDealer();
 
   void handleDealerMessage(EventLoop::Event&& event);
   void handleDealerRequest(EventLoop::Event&& event);

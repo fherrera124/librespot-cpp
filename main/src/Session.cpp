@@ -1,5 +1,6 @@
 #include "Session.h"
 
+#include <algorithm>
 #include <string>
 #include <tao/json.hpp>
 #include <tao/json/traits.hpp>
@@ -146,6 +147,38 @@ void cspot::Session::handleDealerRequest(EventLoop::Event&& event) {
   }
 }
 
+bell::Result<> cspot::Session::connectDealer() {
+  // Re-resolved on every call (initial connect and every reconnect alike),
+  // never cached here - both cache internally with their own expiry, so
+  // this is cheap when still valid and self-refreshes when not. Mirrors
+  // master's DealerSession::connectOnce() comment: "Never cache the URL:
+  // re-resolves the host and re-fetches the token every attempt".
+  auto dealerAddressRes = credentialsResolver->getApAddress(
+      CredentialsResolver::AddressType::Dealer);
+  if (!dealerAddressRes) {
+    BELL_LOG(error, LOG_TAG, "Failed to resolve dealer address: {}",
+             dealerAddressRes.error());
+    return tl::make_unexpected(dealerAddressRes.error());
+  }
+
+  auto accessKeyRes = credentialsResolver->getAccessKey();
+  if (!accessKeyRes) {
+    BELL_LOG(error, LOG_TAG, "Failed to resolve access key: {}",
+             accessKeyRes.error());
+    return tl::make_unexpected(accessKeyRes.error());
+  }
+
+  auto dealerConnectRes =
+      dealerClient->connect(*dealerAddressRes, *accessKeyRes, socketPoll);
+  if (!dealerConnectRes) {
+    BELL_LOG(error, LOG_TAG, "Failed to connect to dealer client: {}",
+             dealerConnectRes.error());
+    return dealerConnectRes;
+  }
+
+  return {};
+}
+
 bell::Result<> cspot::Session::start() {
 
   auto apAddressRes = credentialsResolver->getApAddress(
@@ -163,35 +196,34 @@ bell::Result<> cspot::Session::start() {
     return res;
   }
 
-  auto dealerAddressRes = credentialsResolver->getApAddress(
-      CredentialsResolver::AddressType::Dealer);
-  if (!dealerAddressRes) {
-    BELL_LOG(error, LOG_TAG, "Failed to resolve dealer address: {}",
-             dealerAddressRes.error());
-    return tl::make_unexpected(dealerAddressRes.error());
-  }
-
-  auto accessKeyRes = credentialsResolver->getAccessKey();
-  if (!accessKeyRes) {
-    BELL_LOG(error, LOG_TAG, "Failed to resolve access key: {}",
-             accessKeyRes.error());
-    return tl::make_unexpected(accessKeyRes.error());
-  }
-  // Start the dealer client
-  auto dealerConnectRes =
-      dealerClient->connect(*dealerAddressRes, *accessKeyRes, socketPoll);
-  if (!dealerConnectRes) {
-    BELL_LOG(error, LOG_TAG, "Failed to connect to dealer client: {}",
-             dealerConnectRes.error());
-    return dealerConnectRes;
-  }
-
-  return {};
+  return connectDealer();
 }
 
 void cspot::Session::runPoller() {
+  constexpr int kDealerBackoffBaseMs = 5000;
+  constexpr int kDealerBackoffMaxMs = 60000;
+
   while (true) {
     socketPoll->poll(1000);
     dealerClient->doHousekeeping();
+
+    if (!dealerClient->isConnected()) {
+      auto now = std::chrono::steady_clock::now();
+      if (now >= nextDealerReconnectAttempt) {
+        BELL_LOG(info, LOG_TAG, "Dealer disconnected, reconnecting...");
+        auto reconnectRes = connectDealer();
+        if (reconnectRes) {
+          BELL_LOG(info, LOG_TAG, "Dealer reconnected");
+          dealerBackoffMs = kDealerBackoffBaseMs;
+        } else {
+          BELL_LOG(error, LOG_TAG, "Dealer reconnect failed, retrying in {}ms",
+                   dealerBackoffMs);
+          nextDealerReconnectAttempt =
+              now + std::chrono::milliseconds(dealerBackoffMs);
+          dealerBackoffMs =
+              std::min(dealerBackoffMs * 2, kDealerBackoffMaxMs);
+        }
+      }
+    }
   }
 }

@@ -34,6 +34,11 @@ class DealerClient {
   // Used for keep alive messages
   void doHousekeeping();
 
+  // False once the connection has dropped (peer close, read error, or a
+  // missed pong past the watchdog deadline) - callers are responsible for
+  // reconnecting (see Session::runPoller()'s backoff loop).
+  bool isConnected() const { return connectionReady; }
+
  private:
   const char* LOG_TAG = "DealerClient";
   using WSClient = websocketpp::client<websocketpp::config::core>;
@@ -65,5 +70,11 @@ class DealerClient {
   void onWSClose(websocketpp::connection_hdl conn);
   std::error_code wsWriteHandler(websocketpp::connection_hdl hdl,
                                  char const* data, size_t size);
+
+  // Common teardown for every "the connection is gone" path (read error,
+  // peer EOF, missed pong watchdog) - marks us disconnected and stops the
+  // poller from touching this socket again. Does not reconnect; that's
+  // Session::runPoller()'s job once isConnected() reports false.
+  void handleDisconnect();
 };
 }  // namespace cspot
