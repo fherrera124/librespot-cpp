@@ -179,8 +179,7 @@ bell::Result<> cspot::Session::connectDealer() {
   return {};
 }
 
-bell::Result<> cspot::Session::start() {
-
+bell::Result<> cspot::Session::connectAp() {
   auto apAddressRes = credentialsResolver->getApAddress(
       CredentialsResolver::AddressType::AccessPoint);
   if (!apAddressRes) {
@@ -189,10 +188,18 @@ bell::Result<> cspot::Session::start() {
     return tl::make_unexpected(apAddressRes.error());
   }
 
-  // Start the ap client
   auto res = apClient->connectAndAuthenticate(*apAddressRes, socketPoll);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to connect to AP: {}", res.error());
+    return res;
+  }
+
+  return {};
+}
+
+bell::Result<> cspot::Session::start() {
+  auto res = connectAp();
+  if (!res) {
     return res;
   }
 
@@ -202,14 +209,59 @@ bell::Result<> cspot::Session::start() {
 void cspot::Session::runPoller() {
   constexpr int kDealerBackoffBaseMs = 5000;
   constexpr int kDealerBackoffMaxMs = 60000;
+  constexpr int kApBackoffBaseMs = 5000;
+  constexpr int kApBackoffMaxMs = 60000;
 
   // Tracks whether we're mid-reconnect, so the "disconnected"/"reconnected"
   // log lines fire once per state transition instead of every poll tick.
   bool reconnecting = false;
+  bool apReconnecting = false;
 
   while (true) {
     socketPoll->poll(1000);
     dealerClient->doHousekeeping();
+    apClient->doHousekeeping();
+
+    switch (apClient->state()) {
+      case ApClient::State::Connected:
+        if (apReconnecting) {
+          BELL_LOG(info, LOG_TAG, "AP reconnected");
+          apReconnecting = false;
+        }
+        apBackoffMs = kApBackoffBaseMs;
+        break;
+
+      case ApClient::State::Connecting:
+        // Handshake/auth in flight from a previous connectAp() call -
+        // nothing to do but wait for it to resolve or error out on its
+        // own (see ApConnection::handleRead()/disconnect()).
+        break;
+
+      case ApClient::State::Failed: {
+        auto now = std::chrono::steady_clock::now();
+        if (now < nextApReconnectAttempt) {
+          break;
+        }
+
+        if (!apReconnecting) {
+          BELL_LOG(info, LOG_TAG, "AP disconnected, reconnecting...");
+          apReconnecting = true;
+        }
+
+        auto reconnectRes = connectAp();
+        if (!reconnectRes) {
+          BELL_LOG(error, LOG_TAG, "AP reconnect failed, retrying in {}ms",
+                   apBackoffMs);
+          nextApReconnectAttempt = now + std::chrono::milliseconds(apBackoffMs);
+          apBackoffMs = std::min(apBackoffMs * 2, kApBackoffMaxMs);
+        }
+        // On success, apClient is now Connecting - the case above gates
+        // any further attempts until it resolves. Backoff is left
+        // untouched here (only reset once actually Connected), same
+        // rationale as the dealer's.
+        break;
+      }
+    }
 
     switch (dealerClient->state()) {
       case DealerClient::State::Connected:

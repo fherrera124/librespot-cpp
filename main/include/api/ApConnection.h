@@ -71,13 +71,31 @@ class ApConnection {
    */
   std::shared_ptr<bell::net::TCPSocket> getSocket() { return apSock; }
 
+  bool isConnected() const { return state == State::CONNECTED_SHANNON; }
+  bool hasFailed() const { return state == State::ERROR; }
+
+  /**
+   * @brief Tears down the connection (closes the socket, unregisters it from
+   * the poller) and marks the connection failed, same as an internal error
+   * would. Used by ApClient's ping watchdog to force a reconnect when the AP
+   * has gone silently dead (socket still looks fine, no error ever fires).
+   */
+  void disconnect();
+
  private:
   const char* LOG_TAG = "ApConnection";
   const static uint32_t operationTimeout = 3000;
 
   std::shared_ptr<cspot::AuthInfo> authInfo;
   std::shared_ptr<bell::net::TCPSocket> apSock;
-  DH dhPair;
+  std::shared_ptr<bell::SocketPollListener> socketPoll;
+
+  // unique_ptr, not a plain member: DH wraps mbedtls_mpi structs freed in
+  // its destructor with no user-defined move/copy, so regenerating it on
+  // every (re)connect via plain assignment (`dhPair = DH()`) would
+  // shallow-copy those pointers and double-free/dangle. Replacing the
+  // pointer instead destroys the old instance cleanly.
+  std::unique_ptr<DH> dhPair = std::make_unique<DH>();
 
   // Nonce counters for Shannon ciphers
   uint32_t shanRecvNonce = 0;

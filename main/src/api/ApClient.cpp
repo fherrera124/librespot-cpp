@@ -26,6 +26,14 @@ enum class ApCommandType : std::uint8_t {
   MercuryEvent = 0x5b,
   PongAck = 0x4a,
 };
+
+// Real Spotify APs send a keep-alive Ping roughly every ~2 minutes even on
+// an otherwise idle connection - same signal master's MercurySession uses
+// for its own triggerTimeout()/PING_TIMEOUT_MS watchdog (125s there).
+// Kept identical here: generous enough not to false-positive on a slightly
+// late ping, tight enough to notice a silently-dead link well before a
+// user would give up waiting for playback to recover.
+const auto pingTimeout = std::chrono::seconds(125);
 }  // namespace
 
 ApClient::ApClient(std::shared_ptr<cspot::EventLoop> eventLoop,
@@ -47,7 +55,43 @@ bell::Result<> ApClient::connectAndAuthenticate(
     return bell::make_unexpected_errc(std::errc::permission_denied);
   }
 
+  // Orphaned by whatever connection attempt preceded this one - the AP
+  // never got (or never will get) a chance to respond to these, and the
+  // sequence IDs aren't reused, so nothing will ever claim them.
+  audioKeyRequests.clear();
+
+  // Full grace period before doHousekeeping() can decide the link is
+  // dead, same as DealerClient::connect() does for its own pong watchdog -
+  // otherwise a default-constructed/stale lastPingTime would look
+  // "expired" immediately, before the AP has had any chance to send one.
+  lastPingTime = std::chrono::steady_clock::now();
+
   return apConnection->connect(apAddress, socketPoll);
+}
+
+void ApClient::doHousekeeping() {
+  if (!apConnection->isConnected()) {
+    return;
+  }
+
+  if (std::chrono::steady_clock::now() - lastPingTime > pingTimeout) {
+    BELL_LOG(error, LOG_TAG,
+             "No ping received from AP in over {}s, treating connection as "
+             "dead",
+             std::chrono::duration_cast<std::chrono::seconds>(pingTimeout)
+                 .count());
+    apConnection->disconnect();
+  }
+}
+
+ApClient::State ApClient::state() const {
+  if (apConnection->isConnected()) {
+    return State::Connected;
+  }
+  if (apConnection->hasFailed()) {
+    return State::Failed;
+  }
+  return State::Connecting;
 }
 
 bell::Result<> ApClient::requestAudioKey(const SpotifyId& trackId,
@@ -108,6 +152,7 @@ void ApClient::apPacketHandler(uint8_t packetType, const std::byte* data,
     case ApCommandType::Ping: {
       // Handle ping packet
       BELL_LOG(info, LOG_TAG, "Received ping request from AP");
+      lastPingTime = std::chrono::steady_clock::now();
 
       auto res = apConnection->sendPacket(
           static_cast<uint8_t>(ApCommandType::Pong), data, len);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <unordered_map>
 #include <utility>
 #include "AuthInfo.h"
@@ -10,6 +11,16 @@
 namespace cspot {
 class ApClient {
  public:
+  // Connecting: connectAndAuthenticate() was called, handshake/auth is in
+  // flight - neither confirmed nor failed yet.
+  // Connected: APWelcome path completed (ApConnection reached
+  // CONNECTED_SHANNON and authenticate() succeeded).
+  // Failed: the connection ended (read/write error, or doHousekeeping()'s
+  // ping watchdog gave up on a silently dead link).
+  // Callers (Session::runPoller()) are responsible for reconnecting on
+  // Failed, mirroring DealerClient::State.
+  enum class State { Connecting, Connected, Failed };
+
   ApClient(std::shared_ptr<cspot::EventLoop> eventLoop,
            std::shared_ptr<cspot::AuthInfo> authInfo);
 
@@ -20,7 +31,15 @@ class ApClient {
   bell::Result<> requestAudioKey(const SpotifyId& trackId,
                                  const std::vector<std::byte>& fileId);
 
+  // Times out a connection the AP has gone silent on (no Ping packet in
+  // over pingTimeout - see the .cpp), forcing it into Failed so
+  // Session::runPoller() can reconnect. A dead peer that never sends a
+  // TCP FIN/RST (common on a flaky WiFi/NAT path) would otherwise look
+  // connected forever, since nothing else here reads from the AP unless
+  // handleRead() actually fires.
   void doHousekeeping();
+
+  State state() const;
 
   // Empty until the AP sends its CountryCode packet, shortly after
   // connecting. Used to resolve region-restricted tracks to a playable
@@ -35,6 +54,12 @@ class ApClient {
   std::unique_ptr<ApConnection> apConnection;
 
   std::string countryCode;
+
+  // Updated whenever a Ping packet arrives (apPacketHandler) and reset with
+  // a full grace period at the start of every (re)connect attempt in
+  // connectAndAuthenticate() - same pattern as DealerClient's
+  // lastPingTime/lastPongTime.
+  std::chrono::steady_clock::time_point lastPingTime{};
 
   uint32_t audioKeySequence = 0;
 

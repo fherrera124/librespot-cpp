@@ -25,6 +25,21 @@ bell::Result<> ApConnection::connect(
     const std::string& apAddress,
     const std::shared_ptr<bell::SocketPollListener>& socketPoll) {
   BELL_LOG(debug, LOG_TAG, "Connecting to AP");
+
+  // Reset per-attempt handshake state. This instance is reused across
+  // reconnects (Session::runPoller() calls connect() again after a
+  // failure), and without this reset: state would still read ERROR from
+  // the previous attempt, so the Writeable callback below (which only
+  // sends ClientHello when state == INITIAL) would silently never do
+  // anything again; accumulatedExchangeBuffer would keep the previous
+  // attempt's bytes; and dhPair would reuse the same ephemeral key for
+  // every reconnect for the life of the device instead of a fresh one per
+  // handshake.
+  state = State::INITIAL;
+  accumulatedExchangeBuffer.clear();
+  dhPair = std::make_unique<DH>();
+
+  this->socketPoll = socketPoll;
   apSock = std::make_unique<bell::net::TCPSocket>();
 
   // Split the address into hostname and port
@@ -42,6 +57,7 @@ bell::Result<> ApConnection::connect(
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Could not connect to AP at {}: {}", apAddress,
              res.error());
+    state = State::ERROR;
     return tl::make_unexpected(res.error());
   }
 
@@ -62,8 +78,7 @@ bell::Result<> ApConnection::connect(
         auto err = apSock->lastError();
         if (err) {
           BELL_LOG(error, LOG_TAG, "AP connection error: {}", err);
-          state = State::ERROR;
-          apSock->close();
+          disconnect();
           return;
         }
 
@@ -73,10 +88,10 @@ bell::Result<> ApConnection::connect(
           if (!res) {
             BELL_LOG(error, LOG_TAG, "Could not send ClientHello packet: {}",
                      res.error());
-            state = State::ERROR;
-          } else {
-            state = State::SENT_HELLO;
+            disconnect();
+            return;
           }
+          state = State::SENT_HELLO;
         }
 
         // We are connected, unregister the writeable event
@@ -88,8 +103,8 @@ bell::Result<> ApConnection::connect(
 
 void ApConnection::handleRead() {
   if (state == State::ERROR) {
-    BELL_LOG(error, LOG_TAG, "Connection is in error state, cannot read");
-    apSock->close();
+    // Already torn down (disconnect() already closed/unregistered the
+    // socket) - nothing to do until Session reconnects.
     return;
   }
 
@@ -102,7 +117,7 @@ void ApConnection::handleRead() {
     if (!packetResult) {
       BELL_LOG(error, LOG_TAG, "Could not receive packet: {}",
                packetResult.error());
-      state = State::ERROR;
+      disconnect();
       return;
     }
 
@@ -118,7 +133,7 @@ void ApConnection::handleRead() {
     if (!packetResult) {
       BELL_LOG(error, LOG_TAG, "Could not receive packet: {}",
                packetResult.error());
-      state = State::ERROR;
+      disconnect();
       return;
     }
 
@@ -127,7 +142,7 @@ void ApConnection::handleRead() {
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Could not solve hello challenge: {}",
                res.error());
-      state = State::ERROR;
+      disconnect();
       return;
     }
 
@@ -140,15 +155,25 @@ void ApConnection::handleRead() {
       if (!res) {
         BELL_LOG(error, LOG_TAG, "Could not authenticate with AP: {}",
                  res.error());
-        state = State::ERROR;
+        disconnect();
         return;
       }
     } else {
       BELL_LOG(error, LOG_TAG,
                "No login credentials available for authentication");
-      state = State::ERROR;
+      disconnect();
       return;
     }
+  }
+}
+
+void ApConnection::disconnect() {
+  state = State::ERROR;
+  if (socketPoll && apSock) {
+    socketPoll->unregisterSocket(apSock, bell::PollEvent::All);
+  }
+  if (apSock) {
+    apSock->close();
   }
 }
 
@@ -168,7 +193,7 @@ bell::Result<> ApConnection::sendClientHelloPacket() {
   pbClientHello.padding.push_back(std::byte{0x1E});
 
   // Copy the public key into the ClientHello message
-  auto publicKey = dhPair.getPublicKey();
+  auto publicKey = dhPair->getPublicKey();
   auto& pbGcArr = pbClientHello.loginCryptoHello.diffieHellman.value.gc;
   assert(publicKey.size() == pbGcArr.size());
   std::copy(publicKey.begin(), publicKey.end(), pbGcArr.begin());
@@ -212,7 +237,7 @@ bell::Result<> ApConnection::solveHelloChallenge(
   std::array<std::byte, 96> sharedKey{};
 
   // Compute the diffie hellman shared key based on the response
-  dhPair.computeSharedKey(pbApResponse.challenge.value.loginCryptoChallenge
+  dhPair->computeSharedKey(pbApResponse.challenge.value.loginCryptoChallenge
                               .diffieHellman.value.gs.data(),
                           96, sharedKey.data());
 

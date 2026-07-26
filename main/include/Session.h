@@ -53,11 +53,21 @@ class Session {
   // runPoller() from preempting an in-flight WS handshake.
   std::chrono::steady_clock::time_point nextDealerReconnectAttempt{};
 
+  // Same backoff pattern as the dealer's, applied to the AP connection -
+  // see ApClient::State/doHousekeeping() and ApConnection::disconnect().
+  int apBackoffMs = 5000;
+  std::chrono::steady_clock::time_point nextApReconnectAttempt{};
+
   // Resolves the dealer address + access key and connects dealerClient.
   // Used both for the initial connect (start()) and for every reconnect
   // attempt from runPoller() - re-resolving each time (rather than reusing
   // stale values) mirrors master's "never cache the URL" dealer reconnect.
   bell::Result<> connectDealer();
+
+  // Resolves the AP address and connects/authenticates apClient. Used both
+  // for the initial connect (start()) and for every reconnect attempt from
+  // runPoller(), same shape as connectDealer().
+  bell::Result<> connectAp();
 
   void handleDealerMessage(EventLoop::Event&& event);
   void handleDealerRequest(EventLoop::Event&& event);
