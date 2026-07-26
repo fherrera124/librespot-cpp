@@ -20,9 +20,12 @@ bool countryListContains(const std::string& countryList,
   return false;
 }
 
-// Mirrors librespot-cpp's TrackDataUtils::doRestrictionsApply() (a real,
-// hardware-proven implementation in our other project) - true if the
-// given country can NOT play a track/alternative with these restrictions.
+// Mirrors go-librespot's isMediaRestricted (player/restriction.go): country
+// restriction is a oneof on the wire, so presence (which field was set),
+// not emptiness, is what selects the branch. countries_allowed present but
+// empty means "allowed nowhere" - true even though the string itself is
+// empty. True if the given country can NOT play a track/alternative with
+// these restrictions.
 bool doRestrictionsApply(const std::vector<cspot_proto::Restriction>& restrictions,
                          const std::string& country) {
   if (country.empty()) {
@@ -31,11 +34,14 @@ bool doRestrictionsApply(const std::vector<cspot_proto::Restriction>& restrictio
     return false;
   }
   for (auto& restriction : restrictions) {
-    if (!restriction.countriesAllowed.empty()) {
-      return !countryListContains(restriction.countriesAllowed, country);
+    if (restriction.countriesAllowed.hasValue) {
+      if (restriction.countriesAllowed.value.empty()) {
+        return true;
+      }
+      return !countryListContains(restriction.countriesAllowed.value, country);
     }
-    if (!restriction.countriesForbidden.empty()) {
-      return countryListContains(restriction.countriesForbidden, country);
+    if (restriction.countriesForbidden.hasValue) {
+      return countryListContains(restriction.countriesForbidden.value, country);
     }
   }
   return false;

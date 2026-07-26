@@ -81,8 +81,16 @@ NANOPB_STRUCT(cspot_proto::AudioFile, AudioFile_fields)
 
 namespace cspot_proto {
 struct Restriction {
-  std::string countriesAllowed;
-  std::string countriesForbidden;
+  // Wrapped in Optional so a present-but-empty countries_allowed (Spotify's
+  // way of saying "allowed in zero countries", used together with an
+  // `alternative` track for region relinking) can be told apart from the
+  // field never being set on the wire - go-librespot's proto models this
+  // pair as a real oneof (player/restriction.go) and switches on which
+  // case is set rather than on emptiness; a plain std::string here can't
+  // make that distinction and silently treated "restricted everywhere" the
+  // same as "no restriction info", missing the relink entirely.
+  nanopb_helper::Optional<std::string> countriesAllowed;
+  nanopb_helper::Optional<std::string> countriesForbidden;
 
   static auto bindFields(Restriction* self, bool isDecode) {
     _Restriction rawProto = Restriction_init_zero;
