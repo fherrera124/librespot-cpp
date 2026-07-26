@@ -1,16 +1,20 @@
 #include "proto/SpotifyId.h"
 
 #include <crypto/Base62.h>
-#include <cassert>
+#include <algorithm>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 
+#include "bell/Logger.h"
+
 using namespace cspot;
 
 namespace {
+const char* LOG_TAG = "SpotifyId";
+
 // Returns uri-prefix based on SpotifyIdType
 const char* typeToPrefix(SpotifyIdType type) {
   switch (type) {
@@ -53,13 +57,25 @@ cspot::SpotifyId::SpotifyId(SpotifyIdType type,
 cspot::SpotifyId::SpotifyId(SpotifyIdType type, const std::byte* gid,
                             size_t size)
     : type(type) {
-  assert(size == 16);
-  std::copy(gid, gid + size, this->gid.begin());
+  // Every real Spotify GID is 16 bytes; this->gid is a fixed array, so a
+  // gid of any other length (malformed/corrupted metadata, protocol
+  // drift) must never be allowed to copy more than 16 bytes into it -
+  // that would be a buffer overflow, not just a wrong ID. Clamp instead
+  // of trusting the caller.
+  if (size != 16) {
+    BELL_LOG(error, LOG_TAG,
+             "Spotify GID has unexpected size {} (expected 16), truncating",
+             size);
+  }
+  this->gid.fill(std::byte{0});
+  std::copy(gid, gid + std::min(size, this->gid.size()), this->gid.begin());
 
   this->type = type;
 
-  // Convert GID to Base62
-  this->base62Gid = base62Encode(gid, size);
+  // Convert GID to Base62 (from the same clamped 16 bytes now in this->gid,
+  // so base62Gid/uri stay consistent with gid rather than reflecting
+  // whatever extra bytes the caller passed in).
+  this->base62Gid = base62Encode(this->gid.data(), this->gid.size());
   // Pad Base62 GID to 22 characters
   this->base62Gid =
       std::string(22 - this->base62Gid.size(), '0') + this->base62Gid;
