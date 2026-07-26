@@ -44,6 +44,11 @@ struct AuthInfo {
 
   std::optional<cspot_proto::LoginCredentials> loginCredentials;
 
+  // False until assignDataFromJson() overwrites deviceId with a value
+  // loaded from a persisted session - lets logDeviceIdOrigin() below tell
+  // a freshly-generated device id apart from a reused/persisted one.
+  bool deviceIdWasPersisted = false;
+
   inline std::string toJson() const {
     tao::json::value json;
     json["deviceName"] = deviceName;
@@ -63,6 +68,7 @@ struct AuthInfo {
     auto json = tao::json::from_string(jsonString);
     deviceName = json.at("deviceName").get_string();
     deviceId = json.at("deviceId").get_string();
+    deviceIdWasPersisted = true;
     auto username = json.optional<std::string>("username");
     auto blob = json.optional<std::string>("blob");
     auto authType = json.optional<int>("authType");
@@ -74,6 +80,21 @@ struct AuthInfo {
       credentials.authData.insert(credentials.authData.end(),
                                   decodedBlob.begin(), decodedBlob.end());
       loginCredentials = credentials;
+    }
+  }
+
+  // Call once per boot, after attempting to load a persisted session
+  // (whether or not one was actually found) - mirrors go-librespot logging
+  // this same fact (daemon/app.go: "generated new device id: %s"). A
+  // device id that silently changes across boots looks, from the outside,
+  // exactly like the "hash of a fixed string" bug this replaced - this
+  // makes which case happened unambiguous in every log instead of having
+  // to infer it by comparing device ids across runs by hand.
+  inline void logDeviceIdOrigin() const {
+    if (deviceIdWasPersisted) {
+      BELL_LOG(info, "AuthInfo", "Using persisted device id: {}", deviceId);
+    } else {
+      BELL_LOG(info, "AuthInfo", "Generated new device id: {}", deviceId);
     }
   }
 };
