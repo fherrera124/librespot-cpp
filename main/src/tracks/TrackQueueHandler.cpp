@@ -330,7 +330,9 @@ bell::Result<> DefaultTrackQueueHandler::fetchContextPage(
 
   std::string pageUrl = *page.url;
   // Strip hm:// from pageurl
-  pageUrl = pageUrl.substr(5);
+  if (pageUrl.starts_with("hm://")) {
+    pageUrl = pageUrl.substr(5);
+  }
 
   auto itr = std::find(contextPages.begin(), contextPages.end(), page);
   if (itr == contextPages.end()) {
@@ -353,6 +355,14 @@ bell::Result<> DefaultTrackQueueHandler::fetchContextPage(
 bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
     bell::HTTPResponse& response) {
   if (response.statusCode != 200) {
+    // Drain before returning - a pooled HTTP/1.1 connection is only safe
+    // to reuse once the body's been read, error responses included. Real
+    // hardware failure: skipping this on an error path (SpClient's own
+    // putConnectState/putInactive/extendedMetadataRaw had the same bug)
+    // left the error body sitting unread on the wire, so the next request
+    // to reuse this connection - here, spClient's own contextResolve() -
+    // read that leftover body instead of its own response headers.
+    (void)response.bytes();
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
@@ -549,16 +559,30 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
 
   int32_t totalOffset = static_cast<int32_t>(contextIndex->track) + offset;
   if (totalOffset < 0) {
-    if (contextIndex->page == 0) {
-      return std::nullopt;  // No previous track available
+    // Walk back as many previous pages as needed - a single-page step
+    // isn't enough once the lookahead window (up to trackWindowLen tracks)
+    // reaches past a short page. Without this loop a still-negative
+    // totalOffset got cast straight to uint32_t (a huge number) and used
+    // to index trackGids, an out-of-bounds vector access/crash near short
+    // pages - mirrors the while loop already used below for positive
+    // offsets crossing page boundaries.
+    uint32_t remaining = static_cast<uint32_t>(-totalOffset);
+    uint32_t page = contextIndex->page;
+
+    while (remaining > 0) {
+      if (page == 0) {
+        return std::nullopt;  // No previous track available
+      }
+      page -= 1;
+
+      auto pageSize = static_cast<uint32_t>(contextPages[page].trackGids.size());
+      if (remaining <= pageSize) {
+        return cspot_proto::ContextIndex{page, pageSize - remaining};
+      }
+      remaining -= pageSize;
     }
 
-    return cspot_proto::ContextIndex{
-        static_cast<uint32_t>(contextIndex->page - 1),
-        static_cast<uint32_t>(
-            contextPages[contextIndex->page - 1].trackGids.size() +
-            totalOffset),
-    };
+    return std::nullopt;
   }
 
   if (totalOffset >=
