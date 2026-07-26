@@ -6,6 +6,7 @@
 #include "AuthInfo.h"
 #include "Authenticator.h"
 #include "Session.h"
+#include "Utils.h"
 #include "bell/Logger.h"
 #include "bell/http/Server.h"
 #include "bell/mdns/Manager.h"
@@ -36,25 +37,45 @@ constexpr gpio_num_t kI2sWsGpio = GPIO_NUM_2;
 constexpr gpio_num_t kI2sDoutGpio = GPIO_NUM_41;
 constexpr gpio_num_t kI2sMclkGpio = GPIO_NUM_0;  // boot-strap pin, safe once running
 
-// Mirrors targets/cli/main.cpp's waitForZeroconfAuth() - same ZeroConf
-// pairing flow, same bell::http::Server/bell::mdns API (portable, no
-// ESP32-specific bits needed here).
-void waitForZeroconfAuth(std::shared_ptr<cspot::AuthInfo> authInfo) {
-  auto httpServer = std::make_shared<bell::http::Server>();
-  auto authenticator = std::make_unique<cspot::Authenticator>();
-  bell::Semaphore authSemaphore;
-
+// Always started from runTask() regardless of whether a saved session
+// already exists - the Spotify app's device picker discovers devices on
+// the LAN via this same "_spotify-connect._tcp" mDNS advertisement + HTTP
+// endpoint no matter our auth state. This used to only run while there was
+// no saved session yet, which meant an already-paired device never
+// advertised again on any later boot and stayed invisible in the picker -
+// confirmed on real hardware. httpServer, authenticator and authSemaphore
+// are runTask()'s own locals, passed in here by reference/pointer -
+// runTask() never returns before the task is torn down (the while(true)
+// loop below), so they outlive every use the registered handlers make of
+// them, including a re-pairing POST that arrives long after this function
+// itself returns.
+//
+// The returned Advertiser must be kept alive by the caller for as long as
+// the device should stay discoverable: EspressifMDNAdvertiser's destructor
+// calls mdns_service_remove() (stopAdvertising()), so letting it fall out
+// of scope right after this function returns - as a local `auto service =
+// ...` here used to - tears the announcement back down within
+// microseconds of registering it. mdns_service_add() itself still reports
+// success, so this was invisible from the return value alone: confirmed
+// via `avahi-browse -a` on a real network showing every other
+// _spotify-connect._tcp device (a Sangean radio) but never this one.
+std::unique_ptr<bell::mdns::Advertiser> startZeroconfService(
+    std::shared_ptr<cspot::AuthInfo> authInfo,
+    std::shared_ptr<bell::http::Server> httpServer,
+    cspot::Authenticator& authenticator, bell::Semaphore& authSemaphore) {
   httpServer->registerGet(
       "/spotify_handler",
-      [&](const std::unique_ptr<bell::http::Reader>& requestReader,
+      [&authenticator, authInfo](
+          const std::unique_ptr<bell::http::Reader>& requestReader,
           const std::unique_ptr<bell::http::Writer>& responseWriter,
           const auto& routeParams) {
         auto queryParams = *requestReader->getQueryParams();
         BELL_LOG(info, "Zeroconf", "Received GET Request");
+        cspot::logHeapStatus("Zeroconf", "GET /spotify_handler entry");
 
         if (queryParams.find("action") != queryParams.end() &&
             queryParams["action"] == "getInfo") {
-          auto zeroConfString = authenticator->buildZeroconfJSONResponse(
+          auto zeroConfString = authenticator.buildZeroconfJSONResponse(
               authInfo->deviceName, authInfo->deviceId, "");
           (void)responseWriter->writeResponseWithBody(
               200, {{"Content-Type", "application/json"}}, zeroConfString);
@@ -62,13 +83,18 @@ void waitForZeroconfAuth(std::shared_ptr<cspot::AuthInfo> authInfo) {
           (void)responseWriter->writeResponseWithBody(500, {},
                                                       "Invalid action");
         }
+        cspot::logHeapStatus("Zeroconf", "GET /spotify_handler exit");
       });
 
   httpServer->registerPost(
       "/spotify_handler",
-      [&](const std::unique_ptr<bell::http::Reader>& requestReader,
+      [&authenticator, &authSemaphore, authInfo](
+          const std::unique_ptr<bell::http::Reader>& requestReader,
           const std::unique_ptr<bell::http::Writer>& responseWriter,
           const auto& routeParams) {
+        BELL_LOG(info, "Zeroconf", "Received POST Request");
+        cspot::logHeapStatus("Zeroconf", "POST /spotify_handler entry");
+
         auto bodyStr = *requestReader->getBodyStringView();
         tao::json::value responseJson;
         responseJson["status"] = 101;
@@ -79,7 +105,7 @@ void waitForZeroconfAuth(std::shared_ptr<cspot::AuthInfo> authInfo) {
         (void)responseWriter->writeResponseWithBody(
             200, {{"Content-Type", "application/json"}}, responseString);
 
-        auto res = authenticator->authenticateZeroconfString(authInfo->deviceId,
+        auto res = authenticator.authenticateZeroconfString(authInfo->deviceId,
                                                              bodyStr);
         if (res) {
           BELL_LOG(info, "Zeroconf", "authenticated with spotify");
@@ -88,6 +114,7 @@ void waitForZeroconfAuth(std::shared_ptr<cspot::AuthInfo> authInfo) {
           BELL_LOG(error, "Zeroconf", "failed to authenticate with spotify");
         }
 
+        cspot::logHeapStatus("Zeroconf", "POST /spotify_handler exit");
         authSemaphore.give();
       });
 
@@ -98,9 +125,9 @@ void waitForZeroconfAuth(std::shared_ptr<cspot::AuthInfo> authInfo) {
   if (!service) {
     BELL_LOG(error, "Zeroconf", "mDNS advertise failed - device won't be "
                                 "discoverable by the Spotify app");
+    return nullptr;
   }
-
-  authSemaphore.take();
+  return std::move(*service);
 }
 }  // namespace
 
@@ -137,9 +164,22 @@ class CSpotTask : public bell::Task {
         authInfo->assignDataFromJson(sessionString);
       }
     }
+    authInfo->logDeviceIdOrigin();
+
+    // These are runTask()'s own locals (not nested inside an if/else scope)
+    // so they stay alive for the task's entire lifetime, matching the
+    // handlers' own lifetime - see startZeroconfService()'s comment.
+    auto httpServer = std::make_shared<bell::http::Server>();
+    cspot::Authenticator authenticator;
+    bell::Semaphore authSemaphore;
+    // Must also outlive this scope, same reasoning as the three above -
+    // see startZeroconfService()'s comment on why letting this fall out of
+    // scope silently tears the mDNS announcement back down.
+    auto mdnsService =
+        startZeroconfService(authInfo, httpServer, authenticator, authSemaphore);
 
     if (!authInfo->loginCredentials.has_value()) {
-      waitForZeroconfAuth(authInfo);
+      authSemaphore.take();
       if (!authInfo->loginCredentials.has_value() ||
           authInfo->loginCredentials->authData.empty()) {
         BELL_LOG(error, TAG, "No login credentials, halting");
