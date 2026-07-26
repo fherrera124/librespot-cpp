@@ -1,5 +1,7 @@
 #include "tracks/AudioDecoder.h"
 
+#include <atomic>
+
 #include "audio/CDNDataStream.h"
 #include "bell/Logger.h"
 #include "bell/audio/OggContainer.h"
@@ -127,8 +129,14 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
   std::unique_ptr<bell::audio::OggContainer> container;
   std::unique_ptr<bell::TremorVorbisCodec> codec;
   SpotifyId currentTrackId;
-  bool isOpenFlag = false;
-  bool eof = false;
+  // isOpen()/isEOF() are read from StreamPlayer's player thread without
+  // holding playbackMutex (deliberately, to avoid blocking flush/queue
+  // handling on the EventLoop thread during a blocking processPacket()
+  // call) while being written from whichever thread calls openStream()/
+  // resetStream() under that same mutex - atomic for cross-thread
+  // visibility, not for compound-operation safety.
+  std::atomic<bool> isOpenFlag{false};
+  std::atomic<bool> eof{false};
 };
 
 std::unique_ptr<AudioDecoder> cspot::createAudioDecoder(
