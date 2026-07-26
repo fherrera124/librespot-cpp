@@ -27,7 +27,13 @@ class EventLoop : public bell::Task {
     QUEUE_UPDATED,
     PLAYER_PLAY,
     PLAYER_FLUSH,
-    PLAYER_STATE_UPDATED
+    PLAYER_STATE_UPDATED,
+    // Posted by StreamPlayer on natural end-of-track (taskLoop()'s EOF
+    // check) - handled by ConnectStateHandler, which is the sole owner of
+    // "what's the next track" (TrackQueueHandler's context/queue/shuffle
+    // state). Carries no payload (std::monostate): it's a pure signal, same
+    // "cuál es el próximo" decision as a remote skip_next command.
+    TRACK_ENDED
   };
 
   // Define all possible event payload types

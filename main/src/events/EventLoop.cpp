@@ -50,12 +50,22 @@ void EventLoop::processEvents(int timeoutMs) {
     Event event = std::move(processingQueue.front());
     processingQueue.pop();
 
-    // Call the appropriate handler for the event type
-    std::scoped_lock lock(handlersMutex);
-    auto it = handlers.find(event.type);
-    if (it != handlers.end()) {
+    // Copy the handler out and release handlersMutex before invoking it -
+    // holding it across the call would deadlock any handler (or callee in
+    // its call tree) that itself calls registerHandler/unregisterHandler on
+    // this same thread, since std::mutex isn't recursive.
+    EventHandler handlerToExecute;
+    {
+      std::scoped_lock lock(handlersMutex);
+      auto it = handlers.find(event.type);
+      if (it != handlers.end()) {
+        handlerToExecute = it->second;
+      }
+    }
+
+    if (handlerToExecute) {
       try {
-        it->second(std::move(event));
+        handlerToExecute(std::move(event));
       } catch (const std::exception& e) {
         BELL_LOG(error, LOG_TAG, "Error in event handler: {}", e.what());
       }
