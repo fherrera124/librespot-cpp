@@ -62,7 +62,17 @@ bell::Result<> http::Writer::writeHeaders() {
     *ostream << header.first << ": " << header.second << "\r\n";
   }
 
-  if (contentLength > 0) {
+  // PUT/POST need Content-Length even when the body is empty (e.g.
+  // ConnectStateHandler's inactive PUT, putInactive()) - Spotify's
+  // spclient replies 411 Length Required without it (confirmed on real
+  // hardware). GET/other methods and responses keep the old behavior
+  // (omit the header when there's no body) - matches this repo's own
+  // master branch, which hit and fixed this exact 411 (commit 7ef71b4).
+  bool requestNeedsContentLength =
+      writerDirection == Direction::Request && method &&
+      (*method == Method::POST || *method == Method::PUT);
+
+  if (contentLength > 0 || requestNeedsContentLength) {
     *ostream << "content-length: " << contentLength << "\r\n";
   }
 

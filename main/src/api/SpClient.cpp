@@ -84,15 +84,24 @@ bell::Result<> DefaultSpClient::putConnectState(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  uint32_t salt = std::rand();
+  // No ?product=/salt= query params and Client-Token now included - matches
+  // this repo's own master branch (PutStateClient::put()) and
+  // go-librespot's PutConnectState(), neither of which use those query
+  // params; Client-Token was the one header every OTHER call in this file
+  // already sends but this one didn't, matching master's reference PUT.
+  // A device whose connect-state write returns 200 but whose cluster
+  // never actually transfers "active" to it (server accepts the write,
+  // never applies the transition) is consistent with the server
+  // distrusting/deprioritizing a request missing this token.
   auto httpResponse = httpClient->put(
-      fmt::format("https://{}/connect-state/v1/devices/{}?product=0&salt={}",
-                  spClientAddress, deviceId, salt),
+      fmt::format("https://{}/connect-state/v1/devices/{}", spClientAddress,
+                  deviceId),
       {
           {
               "Content-Type",
               "application/x-protobuf",
           },
+          {"Client-Token", clientToken},
           {"X-Spotify-Connection-Id", sessionId},
           {"Authorization", fmt::format("Bearer {}", accessToken)},
       },
@@ -105,27 +114,64 @@ bell::Result<> DefaultSpClient::putConnectState(
     return tl::make_unexpected(httpResponse.error());
   }
 
+  // Drain the response body (on success, the full updated cluster state -
+  // several KB) unconditionally, before even looking at the status code.
+  // A pooled HTTP/1.1 connection is only safe to reuse once the current
+  // response's body has been fully read, regardless of whether that
+  // response was a 200 or an error - draining only the success case
+  // (as this used to) left an error response's body (e.g. a 411/429) sitting
+  // unread on the wire, so the next request to reuse this pooled connection
+  // read that leftover error body instead of its own response headers.
+  // Reproduced on real hardware: contextResolve() intermittently failed to
+  // parse what should've been an HTTP response because it was actually
+  // reading a stale error response body from an earlier, unrelated PUT.
+  auto bodyRes = httpResponse->bytes();
+  if (!bodyRes) {
+    BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",
+             bodyRes.error());
+    return tl::make_unexpected(bodyRes.error());
+  }
+
   if (httpResponse->statusCode != 200) {
     BELL_LOG(error, LOG_TAG, "Error while sending request: {}",
              httpResponse->statusCode);
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  // Drain the response body (the full updated cluster state - several KB)
-  // even though nothing here needs its contents. A pooled HTTP/1.1
-  // connection is only safe to reuse once the current response's body has
-  // been fully read - skipping this (removed along with a debug print of
-  // the body size, in an earlier logging cleanup pass) left it sitting
-  // unread on the wire, so the next request to reuse this pooled
-  // connection read this leftover body instead of its own response
-  // headers. Reproduced on real hardware: contextResolve() intermittently
-  // failed to parse what should've been an HTTP response because it was
-  // actually reading a stale PutStateRequest response body.
-  auto bodyRes = httpResponse->bytes();
-  if (!bodyRes) {
-    BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",
-             bodyRes.error());
-    return tl::make_unexpected(bodyRes.error());
+  // Temp diagnostic: this response body IS the server's own updated cluster
+  // state (per the comment above) - decoding it here gives ground truth,
+  // right at the moment we succeed, on whether Spotify's backend actually
+  // recorded us as the active device, instead of inferring it indirectly
+  // from a later pubsub cluster update (which may never arrive addressed
+  // to the device that just changed, or may lag behind).
+  {
+    cspot_proto::Cluster cluster;
+    if (nanopb_helper::decodeFromVector(cluster, *bodyRes)) {
+      BELL_LOG(info, LOG_TAG,
+               "PUT response cluster: activeDeviceId={} (ours={})",
+               cluster.activeDeviceId, deviceId);
+    } else {
+      BELL_LOG(warn, LOG_TAG,
+               "Could not decode PUT response body as a Cluster ({} bytes)",
+               bodyRes->size());
+    }
+
+    // Cluster.device (tag 4) is actually a map<string, DeviceInfo> in
+    // Spotify's real schema (go-librespot's connect.proto) - every device
+    // currently registered in the cluster, keyed by device id. Our own
+    // generated Cluster struct still treats it as a single embedded
+    // message (a schema gap, not yet fixed), so cluster.activeDeviceId
+    // above can't tell us whether we're actually listed, only who's
+    // active. Cheap substring search on the raw bytes as a stand-in until
+    // proper map decoding is added: our own device id is a fixed hex
+    // string, so if it's anywhere in this response, we're in that map.
+    std::string_view rawBody(reinterpret_cast<const char*>(bodyRes->data()),
+                             bodyRes->size());
+    bool listedInResponse = rawBody.find(deviceId) != std::string_view::npos;
+    BELL_LOG(info, LOG_TAG,
+             "PUT response raw bytes contain our own device id: {} ({} "
+             "bytes total)",
+             listedInResponse, bodyRes->size());
   }
 
   return {};
@@ -157,19 +203,26 @@ bell::Result<> DefaultSpClient::putInactive(const std::string& deviceId,
     return tl::make_unexpected(httpResponse.error());
   }
 
-  if (httpResponse->statusCode != 200) {
-    BELL_LOG(error, LOG_TAG, "Error while sending inactive request: {}",
-             httpResponse->statusCode);
-    return bell::make_unexpected_errc(std::errc::bad_message);
-  }
-
-  // Drain the response body - same pooled-connection reuse hazard as
-  // putConnectState() above.
+  // Drain unconditionally, before checking status - same pooled-connection
+  // reuse hazard as putConnectState() above, and it applies on the error
+  // path too, not just success.
   auto bodyRes = httpResponse->bytes();
   if (!bodyRes) {
     BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",
              bodyRes.error());
     return tl::make_unexpected(bodyRes.error());
+  }
+
+  // This endpoint replies 204 No Content on success, not 200 (it's a
+  // state-change acknowledgment with no body to return, unlike
+  // putConnectState()'s 200 + full cluster state) - matches go-librespot's
+  // own PutConnectStateInactive (spclient/spclient.go: "resp.StatusCode !=
+  // 204"). Checking for 200 here treated every successful call as an
+  // error.
+  if (httpResponse->statusCode != 204) {
+    BELL_LOG(error, LOG_TAG, "Error while sending inactive request: {}",
+             httpResponse->statusCode);
+    return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
   return {};
@@ -282,15 +335,19 @@ bell::Result<std::vector<std::byte>> DefaultSpClient::extendedMetadataRaw(
     return tl::make_unexpected(response.error());
   }
 
-  if (response->statusCode != 200) {
-    BELL_LOG(error, LOG_TAG, "Extended metadata request failed: {}",
-             response->statusCode);
+  // Drain unconditionally, before checking status - a pooled connection is
+  // only safe to reuse once the body's been read, error responses
+  // included (see putConnectState()'s comment for the real-hardware
+  // failure this caused when skipped on the error path).
+  auto resultBytes = response->bytes();
+  if (!resultBytes) {
     return bell::make_unexpected_errc<std::vector<std::byte>>(
         std::errc::bad_message);
   }
 
-  auto resultBytes = response->bytes();
-  if (!resultBytes) {
+  if (response->statusCode != 200) {
+    BELL_LOG(error, LOG_TAG, "Extended metadata request failed: {}",
+             response->statusCode);
     return bell::make_unexpected_errc<std::vector<std::byte>>(
         std::errc::bad_message);
   }
@@ -425,14 +482,20 @@ bell::Result<cspot_proto::Episode> DefaultSpClient::episodeMetadata(
     return tl::make_unexpected(response.error());
   }
 
+  // Drain unconditionally, before checking status - same pooled-connection
+  // reuse hazard as putConnectState() above.
+  auto resultBytes = response->bytes();
+  if (!resultBytes) {
+    return bell::make_unexpected_errc<cspot_proto::Episode>(
+        std::errc::bad_message);
+  }
+
   if (response->statusCode != 200) {
     BELL_LOG(error, LOG_TAG, "Error while fetching episode metadata: {}",
              response->statusCode);
     return bell::make_unexpected_errc<cspot_proto::Episode>(
         std::errc::bad_message);
   }
-
-  auto resultBytes = response->bytes();
 
   cspot_proto::Episode episodeProto;
 
@@ -487,9 +550,15 @@ bell::Result<std::string> DefaultSpClient::resolveStorageInteractive(
     return tl::make_unexpected(response.error());
   }
 
-  auto responseBody = *response->text();
+  auto textRes = response->text();
+  if (!textRes) {
+    BELL_LOG(error, LOG_TAG, "Error while reading response body: {}",
+             textRes.error());
+    return tl::make_unexpected(textRes.error());
+  }
+  auto responseBody = *textRes;
 
-  BELL_LOG(info, LOG_TAG, "Response body: {}", responseBody);
+  // BELL_LOG(debug, LOG_TAG, "Response body: {}", responseBody);
   tao::json::value obj = tao::json::from_string(responseBody);
 
   if (obj.at("cdnurl").is_array()) {

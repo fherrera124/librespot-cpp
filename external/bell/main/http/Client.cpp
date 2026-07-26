@@ -67,16 +67,20 @@ void ConnectionPool::insert(const std::string& host, int port,
 void ConnectionPool::PoolDeleter::operator()(bell::Socket* s) const noexcept {
   if (!s)
     return;
-  // Try to reinsert back into the pool; if pool is gone, delete the socket.
-  auto p = pool.lock();
-  if (p) {
-    try {
-      p->reinsert(key, std::unique_ptr<bell::Socket>(s));
-      return;
-    } catch (...) {
-      // Fall through and delete on exception to avoid leaks.
+  // A socket explicitly closed by execute() (write failed on it, see
+  // DefaultTransport::execute()'s stale-pooled-connection retry) must not
+  // go back into the pool looking healthy - the next acquire() would just
+  // hand it out again and fail the same way. Only reinsert live sockets.
+  if (s->isValid()) {
+    auto p = pool.lock();
+    if (p) {
+      try {
+        p->reinsert(key, std::unique_ptr<bell::Socket>(s));
+        return;
+      } catch (...) {
+        // Fall through and delete on exception to avoid leaks.
+      }
     }
-  } else {
   }
   delete s;
 }
@@ -157,131 +161,178 @@ DefaultTransport::DefaultTransport(
   }
 }
 
-bell::Result<Response> DefaultTransport::execute(const Request& req) {
-  std::shared_ptr<net::SocketStream> socketStream;
+namespace {
+bell::Result<std::shared_ptr<bell::net::Socket>> connectFresh(
+    ConnectionPool& pool, const std::optional<std::string>& scheme,
+    const std::string& host, int port,
+    std::optional<int> operationTimeoutMs) {
+  std::unique_ptr<bell::net::Socket> socket;
+  bell::Result<> connectRes = bell::make_unexpected_errc(std::errc::io_error);
 
+  if (scheme == "https") {
+    auto tlsSocket = std::make_unique<bell::net::TLSSocket>();
+    connectRes =
+        tlsSocket->connect(host, port, operationTimeoutMs.value_or(0));
+    socket = std::move(tlsSocket);
+  } else {
+    auto tcpSocket = std::make_unique<bell::net::TCPSocket>();
+    (void)tcpSocket->setOption(IPPROTO_TCP, TCP_NODELAY, 1);
+    connectRes =
+        tcpSocket->connect(host, port, operationTimeoutMs.value_or(0));
+    socket = std::move(tcpSocket);
+  }
+
+  if (!connectRes) {
+    return tl::make_unexpected(connectRes.error());
+  }
+
+  pool.insert(host, port, std::move(socket));
+  auto connection = pool.acquire(host, port);
+  if (!connection) {
+    return tl::make_unexpected(connection.error());
+  }
+  return connection;
+}
+}  // namespace
+
+bell::Result<Response> DefaultTransport::execute(const Request& req) {
   int port = req.uri.port.value_or(req.uri.scheme == "https" ? 443 : 80);
 
-  auto connection = connectionPool->acquire(*req.uri.host, port);
+  // A connection popped from the pool may have been silently closed by the
+  // peer (server-side keep-alive idle timeout, commonly well under this
+  // pool's own 5-minute connectionIdleTimeoutSec) since it was last used -
+  // writing to it then fails at the TCP level ("Write failed: I/O error"),
+  // even though nothing else is wrong. Reproduced on real hardware: a
+  // Connect-state PUT silently never reached the server this way, and
+  // since nothing above this layer retried, the app just moved on as if
+  // the PUT had gone out. Retrying once on a brand-new (non-pooled)
+  // connection is safe here because a write failure at this point means
+  // the request was never received by the peer - nothing to duplicate.
+  for (int attempt = 0; attempt < 2; attempt++) {
+    bool reusedFromPool = false;
+    std::shared_ptr<bell::net::Socket> connection;
 
-  if (connection) {
-    socketStream = std::make_shared<net::SocketStream>(*connection);
-  } else {
-    if (req.uri.scheme == "https") {
-      auto socket = std::make_unique<net::TLSSocket>();
-      auto res = socket->connect(*req.uri.host, port,
-                                 req.operationTimeoutMs.value_or(0));
-      if (!res) {
-        return tl::make_unexpected(res.error());
-      }
-
-      connectionPool->insert(*req.uri.host, port, std::move(socket));
-      auto connection = connectionPool->acquire(*req.uri.host, port);
-      if (!connection) {
-        return tl::make_unexpected(connection.error());
-      }
-      socketStream = std::make_shared<net::SocketStream>(*connection);
+    auto pooled = connectionPool->acquire(*req.uri.host, port);
+    if (pooled) {
+      connection = *pooled;
+      reusedFromPool = true;
     } else {
-      auto socket = std::make_unique<net::TCPSocket>();
-      // Set nodelay on socket
-      (void)socket->setOption(IPPROTO_TCP, TCP_NODELAY, 1);
-      auto res = socket->connect(*req.uri.host, port,
-                                 req.operationTimeoutMs.value_or(0));
-      if (!res) {
-        return tl::make_unexpected(res.error());
+      auto fresh = connectFresh(*connectionPool, req.uri.scheme, *req.uri.host,
+                                port, req.operationTimeoutMs);
+      if (!fresh) {
+        return tl::make_unexpected(fresh.error());
       }
-
-      connectionPool->insert(*req.uri.host, port, std::move(socket));
-      auto connection = connectionPool->acquire(*req.uri.host, port);
-      if (!connection) {
-        return tl::make_unexpected(connection.error());
-      }
-      socketStream = std::make_shared<net::SocketStream>(*connection);
+      connection = *fresh;
     }
-  }
 
-  // Create a writer for the request
-  http::Writer writer(Direction::Request, socketStream);
-  // Set the host header
-  writer.setHeader("Host", *req.uri.host);
+    // req.operationTimeoutMs (via connectFresh) only bounds the initial
+    // connect() - without this, a peer that stops responding mid-transfer
+    // (e.g. a WiFi stall after the connection is already up) leaves the
+    // blocking read()/recv() below with no timeout at all, hanging forever.
+    // Re-applied on every request (not just fresh connections) since a
+    // pooled socket may carry a stale timeout from a previous request.
+    (void)connection->setReceiveTimeout(req.operationTimeoutMs.value_or(0));
 
-  std::string requestPath = *req.uri.path;
-  // Handle query parameters if present
-  if (req.uri.query.has_value()) {
-    requestPath += "?" + *req.uri.query;
-  }
+    auto socketStream = std::make_shared<net::SocketStream>(connection);
 
-  // Write the request
-  auto res = writer.writeRequest(req.method, requestPath, req.headers,
-                                 req.contentLength.value_or(0));
+    // Create a writer for the request
+    http::Writer writer(Direction::Request, socketStream);
+    // Set the host header
+    writer.setHeader("Host", *req.uri.host);
 
-  if (!res) {
-    BELL_LOG(error, LOG_TAG, "Error during request write: {}", res.error());
-    return tl::make_unexpected(res.error());
-  }
+    std::string requestPath = *req.uri.path;
+    // Handle query parameters if present
+    if (req.uri.query.has_value()) {
+      requestPath += "?" + *req.uri.query;
+    }
 
-  // Process a body, if its present
-  if (req.contentLength.value_or(0) > 0) {
-    // Get the underlying output stream from your writer
-    std::ostream& outStream = *writer.getStream();
+    // Write the request
+    auto res = writer.writeRequest(req.method, requestPath, req.headers,
+                                   req.contentLength.value_or(0));
 
-    std::visit(
-        [&outStream](auto&& bodyContent) {
-          using T = std::decay_t<decltype(bodyContent)>;
+    if (res) {
+      // Process a body, if its present
+      if (req.contentLength.value_or(0) > 0) {
+        // Get the underlying output stream from your writer
+        std::ostream& outStream = *writer.getStream();
 
-          // Case 1: The body is a pre-buffered vector of bytes
-          if constexpr (std::is_same_v<T, std::vector<std::byte>> ||
-                        std::is_same_v<T, std::string_view> ||
-                        std::is_same_v<T, tcb::span<std::byte>>) {
-            if (!bodyContent.empty()) {
-              outStream.write(reinterpret_cast<const char*>(bodyContent.data()),
-                              bodyContent.size());
-            }
-          }
-          // Case 2: The body is a stream (the zero-copy path)
-          else if constexpr (std::is_same_v<T, std::istream*>) {
-            if (bodyContent) {  // Check for non-null pointer
-              std::istream& inStream = *bodyContent;
-              std::array<char, 1024> buffer{};
+        std::visit(
+            [&outStream](auto&& bodyContent) {
+              using T = std::decay_t<decltype(bodyContent)>;
 
-              while (!inStream.eof()) {
-                inStream.read(buffer.data(), sizeof(buffer));
-                std::streamsize bytesRead = inStream.gcount();
-                if (bytesRead > 0) {
-                  outStream.write(buffer.data(), bytesRead);
+              // Case 1: The body is a pre-buffered vector of bytes
+              if constexpr (std::is_same_v<T, std::vector<std::byte>> ||
+                            std::is_same_v<T, std::string_view> ||
+                            std::is_same_v<T, tcb::span<std::byte>>) {
+                if (!bodyContent.empty()) {
+                  outStream.write(
+                      reinterpret_cast<const char*>(bodyContent.data()),
+                      bodyContent.size());
                 }
               }
-            }
-          }
-          // Case 3 (std::monostate): Do nothing, there is no body.
-        },
-        req.body);
+              // Case 2: The body is a stream (the zero-copy path)
+              else if constexpr (std::is_same_v<T, std::istream*>) {
+                if (bodyContent) {  // Check for non-null pointer
+                  std::istream& inStream = *bodyContent;
+                  std::array<char, 1024> buffer{};
+
+                  while (!inStream.eof()) {
+                    inStream.read(buffer.data(), sizeof(buffer));
+                    std::streamsize bytesRead = inStream.gcount();
+                    if (bytesRead > 0) {
+                      outStream.write(buffer.data(), bytesRead);
+                    }
+                  }
+                }
+              }
+              // Case 3 (std::monostate): Do nothing, there is no body.
+            },
+            req.body);
+      }
+
+      socketStream->flush();
+    }
+
+    bool writeFailed = !res || socketStream->bad();
+
+    if (writeFailed) {
+      // Make sure a dead connection can't go back into the pool looking
+      // healthy - close it before the SocketStream/connection shared_ptr
+      // drops and PoolDeleter reinserts it.
+      connection->close();
+
+      if (reusedFromPool && attempt == 0) {
+        BELL_LOG(warn, LOG_TAG,
+                 "Write failed on a pooled connection, retrying fresh: {}",
+                 res ? "stream bad after flush" : res.error().message());
+        continue;
+      }
+
+      if (!res) {
+        BELL_LOG(error, LOG_TAG, "Error during request write: {}",
+                 res.error());
+        return tl::make_unexpected(res.error());
+      }
+
+      BELL_LOG(error, LOG_TAG, "Stream bad after flush");
+      return bell::make_unexpected_errc<Response>(std::errc::io_error);
+    }
+
+    // Create a reader for the response
+    http::Reader reader(Direction::Response, socketStream);
+
+    // Try to read the headers
+    res = reader.readHeaders();
+    if (!res) {
+      BELL_LOG(error, LOG_TAG, "Error during headers read: {}", res.error());
+      return tl::make_unexpected(res.error());
+    }
+
+    // Move the reader into the response
+    return {std::move(reader)};
   }
 
-  socketStream->flush();
-
-  if (socketStream->bad()) {
-    BELL_LOG(error, LOG_TAG, "Stream bad after flush");
-
-    return bell::make_unexpected_errc<Response>(std::errc::io_error);
-  }
-
-  // Create a reader for the response
-  http::Reader reader(Direction::Response, socketStream);
-
-  // Try to read the headers
-  res = reader.readHeaders();
-  if (!res) {
-    BELL_LOG(error, LOG_TAG, "Error during headers read: {}", res.error());
-    return tl::make_unexpected(res.error());
-  }
-
-  // for (const auto& header : reader.getAllHeaders()) {
-  //   std::cout << header.first << ": " << header.second << std::endl;
-  // }
-
-  // Move the reader into the response
-  return {std::move(reader)};
+  return bell::make_unexpected_errc<Response>(std::errc::io_error);
 }
 
 bell::Result<Request> Request::create(http::Method method,
@@ -323,8 +374,10 @@ std::istream* Response::stream() const {
 }
 
 bell::Result<Response> Client::rawRequest(Request& req) {
+  bell::Result<> bodyRes = {};
+
   std::visit(
-      [&req](auto&& bodyContent) {
+      [&req, &bodyRes](auto&& bodyContent) {
         using T = std::decay_t<decltype(bodyContent)>;
 
         if constexpr (std::is_same_v<T, std::vector<std::byte>> ||
@@ -335,9 +388,21 @@ bell::Result<Response> Client::rawRequest(Request& req) {
         } else if constexpr (std::is_same_v<T, std::monostate>) {
           // No body, no content length
           req.contentLength = 0;
+        } else if constexpr (std::is_same_v<T, std::istream*>) {
+          // execute() only writes the body once it's already committed
+          // Content-Length to the wire (this writer has no chunked-request
+          // support), so a stream body with no length would otherwise be
+          // silently sent as an empty request instead of erroring out.
+          if (bodyContent && !req.contentLength.has_value()) {
+            bodyRes = bell::make_unexpected_errc(std::errc::invalid_argument);
+          }
         }
       },
       req.body);
+
+  if (!bodyRes) {
+    return tl::make_unexpected(bodyRes.error());
+  }
 
   return transport->execute(req);
 }
