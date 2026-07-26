@@ -1,6 +1,6 @@
 #pragma once
 
-#include <unordered_map>
+#include <optional>
 
 #include "FileProvider.h"
 #include "api/ApClient.h"
@@ -30,10 +30,27 @@ class StreamPlayer : public bell::Task {
 
   std::recursive_mutex playbackMutex;
 
-  std::vector<SpotifyId> playbackQueue;
-  std::unordered_map<SpotifyId, ProvidedFile> providedTracks;
+  // What's playing (or about to). TrackQueueHandler is the sole authority on
+  // *which* track this is - StreamPlayer only ever gets told via
+  // handleQueueUpdate()'s TrackQueueUpdate, never decides order itself.
+  std::optional<SpotifyId> currentTrackId;
+  std::optional<ProvidedFile> currentFile;
 
-  int currentTrackIndex = 0;
+  // At most one track prefetched ahead - a cache/hint to avoid a redundant
+  // fetch if the next official advance (natural EOF or a remote skip) lands
+  // on exactly this track, never itself the authority on what's next.
+  // Mirrors go-librespot's single secondaryStream (daemon/player.go), not a
+  // preloaded window: fetching several tracks' worth of metadata/audio-key/
+  // CDN at once was the real cause of a dealer WebSocket getting dropped
+  // under the resulting network burst (real hardware logs, transfer path).
+  std::optional<SpotifyId> nextTrackId;
+  std::optional<ProvidedFile> nextFile;
+  // Guards against calling fileProvider->provideTrack() more than once for
+  // the same nextTrackId while its fetch is still in flight (nextFile stays
+  // nullopt until FILE_PROVIDED lands - this flag is what distinguishes
+  // "not requested yet" from "requested, waiting").
+  bool nextFetchStarted = false;
+
   bool flushRequested = false;
   bool isPlaying = false;
   std::unique_ptr<AudioDecoder> audioDecoder;
@@ -56,6 +73,14 @@ class StreamPlayer : public bell::Task {
   // holding it are fine).
   void maybeStartCurrentTrack();
 
+  // Requests the single next-track prefetch (see nextTrackId/nextFile above)
+  // once the current track is actually open - not at queue-update time, so
+  // a transfer/skip never fetches more than one track's worth of metadata/
+  // audio-key/CDN at once. Idempotent (nextFetchStarted guards re-requesting
+  // the same track); a no-op if there's nothing to prefetch or it's already
+  // in flight/resolved.
+  void maybePrefetchNext();
+
   // Announces PlayerState.isPlaying/isPaused/isBuffering to the server
   // (see ConnectStateHandler's PLAYER_STATE_UPDATED handler).
   // isPlaying=false claims no session is loaded at all - callers must
@@ -74,6 +99,15 @@ class StreamPlayer : public bell::Task {
   // real app. isPaused is what reports the local decode gate instead;
   // this repo's own master branch found and documented this exact
   // failure mode ("is_playing means 'session active', NOT !is_paused").
-  void announceState(bool isBuffering);
+  //
+  // playbackId: only meaningful (and only ever passed) on the isBuffering=
+  // false call, once audioDecoder->openStream() actually succeeded - a
+  // fresh random id per track, never reused. Left empty on the earlier
+  // isBuffering=true announce, since it isn't known yet; ConnectStateHandler
+  // leaves the previous value untouched in that case rather than clearing
+  // it (matches this repo's own PlayerEngine.cpp precedent: "playback_id
+  // deliberately not touched here - not known until the stream actually
+  // opens").
+  void announceState(bool isBuffering, const std::string& playbackId = "");
 };
 }  // namespace cspot

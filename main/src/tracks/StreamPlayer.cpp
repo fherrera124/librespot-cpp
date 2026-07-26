@@ -1,12 +1,28 @@
 #include "tracks/StreamPlayer.h"
+#include <algorithm>
+#include <random>
 #include "FileProvider.h"
 #include "Utils.h"
 
 using namespace cspot;
 
 namespace {
-const size_t maxPreloadedTracks = 3;
+// Fresh per track start, hex-encoded (not base64, unlike session_id - a
+// real divergence from go-librespot found and documented in this repo's
+// own PlayerEngine.cpp). Same generator idiom as ConnectStateHandler's own
+// generateSessionId().
+std::string generatePlaybackId() {
+  static std::independent_bits_engine<std::default_random_engine, CHAR_BIT,
+                                      unsigned char>
+      randomEngine{std::default_random_engine(std::random_device{}())};
+  static const char* hexDigits = "0123456789abcdef";
+  std::string id;
+  id.reserve(32);
+  std::generate_n(std::back_inserter(id), 32,
+                  [] { return hexDigits[randomEngine() % 16]; });
+  return id;
 }
+}  // namespace
 
 StreamPlayer::StreamPlayer(std::shared_ptr<cspot::EventLoop> eventLoop,
                            std::unique_ptr<cspot::FileProvider> fileProvider,
@@ -61,65 +77,63 @@ void StreamPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
     return;
   }
 
-  bool flushRequired = false;
+  std::optional<SpotifyId> newNextTrackId =
+      update.nextTracks.empty() ? std::nullopt
+                                : std::make_optional(update.nextTracks[0]);
 
-  if (playbackQueue.empty()) {
-    playbackQueue.push_back(*update.currentTrackId);
-  }
+  bool trackChanged =
+      !currentTrackId || *currentTrackId != *update.currentTrackId;
 
-  if (playbackQueue[0] != *update.currentTrackId) {
-    flushRequired = true;
-    playbackQueue[0] = *update.currentTrackId;
-  }
-
-  for (size_t nextTrackIdx = 0;
-       nextTrackIdx < std::min(maxPreloadedTracks, update.nextTracks.size());
-       nextTrackIdx++) {
-    if (playbackQueue.size() <
-        nextTrackIdx + 2) {  // +2 because current track is at index 0
-      playbackQueue.push_back(update.nextTracks[nextTrackIdx]);
-    }
-
-    if (playbackQueue[nextTrackIdx + 1] != update.nextTracks[nextTrackIdx]) {
-      if (currentTrackIndex >= static_cast<int>(nextTrackIdx + 1)) {
-        // Only flush if we're ahead of the changed track
-        flushRequired = true;
+  if (trackChanged) {
+    if (nextTrackId && *nextTrackId == *update.currentTrackId) {
+      // Prefetch hit: what we already fetched (or are still fetching) for
+      // "next" is exactly the new current track - promote it instead of
+      // asking FileProvider for it again. Mirrors go-librespot's
+      // secondaryStream -> primaryStream swap (daemon/controls.go).
+      currentTrackId = *nextTrackId;
+      currentFile = nextFile;
+    } else {
+      // Not a hit - stop FileProvider's work on whatever's being discarded.
+      if (currentTrackId && !currentFile) {
+        fileProvider->cancel(*currentTrackId);
       }
-
-      playbackQueue[nextTrackIdx + 1] = update.nextTracks[nextTrackIdx];
+      if (nextTrackId && !nextFile) {
+        fileProvider->cancel(*nextTrackId);
+      }
+      currentTrackId = update.currentTrackId;
+      currentFile.reset();
+      fileProvider->provideTrack(*currentTrackId);
     }
-  }
 
-  if (flushRequired) {
+    nextTrackId = newNextTrackId;
+    nextFile.reset();
+    nextFetchStarted = false;
+
+    // Only requests the reset here - maybeStartCurrentTrack() is
+    // deliberately NOT called from this function (unlike
+    // handleFileProvided/handlePlayEvent, which do call it, so the decoder
+    // is opened from whichever thread gets there first, serialized by
+    // playbackMutex - not exclusively taskLoop()'s thread). Calling it here
+    // could open the new track's stream before taskLoop() gets a chance to
+    // process this same flush and tear it back down as if it were the
+    // stale one.
     BELL_LOG(info, LOG_TAG, "Queue changed, flushing playback");
     handleFlushEvent();
+  } else if (newNextTrackId != nextTrackId) {
+    // Same current track, but the upcoming one shifted (e.g. a set_queue
+    // command) - drop an in-flight/resolved prefetch for the old "next",
+    // it's no longer wanted.
+    if (nextTrackId && !nextFile) {
+      fileProvider->cancel(*nextTrackId);
+    }
+    nextTrackId = newNextTrackId;
+    nextFile.reset();
+    nextFetchStarted = false;
   }
 
-  // Request files for all tracks in the queue that we don't already have
-  for (auto& trackId : playbackQueue) {
-    if (!providedTracks.contains(trackId)) {
-      providedTracks[trackId] = {};
-      fileProvider->provideTrack(trackId);
-    }
-  }
-
-  // Ensure we don't keep files for tracks that are no longer in the queue.
-  // Collect stale ids first instead of erasing from providedTracks while
-  // iterating it directly - erase() invalidates the range-for's iterator
-  // mid-loop (a real hardware crash, reproduced: SpotifyId::operator==
-  // reading garbage memory from the dangling iterator on the very next
-  // comparison).
-  std::vector<SpotifyId> staleTrackIds;
-  for (auto& trackId : providedTracks) {
-    if (std::find(playbackQueue.begin(), playbackQueue.end(), trackId.first) ==
-        playbackQueue.end()) {
-      staleTrackIds.push_back(trackId.first);
-    }
-  }
-  for (auto& trackId : staleTrackIds) {
-    providedTracks.erase(trackId);
-    fileProvider->cancel(trackId);
-  }
+  // Safe to call unconditionally: only touches FileProvider bookkeeping and
+  // reads audioDecoder->isOpen(), never mutates the decoder itself.
+  maybePrefetchNext();
 }
 
 void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
@@ -131,19 +145,22 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
     return;
   }
 
-  if (this->providedTracks.contains(providedFile.itemId)) {
-    this->providedTracks[providedFile.itemId] = providedFile;
+  if (currentTrackId && providedFile.itemId == *currentTrackId &&
+      !currentFile) {
+    currentFile = providedFile;
 
     BELL_LOG(info, LOG_TAG, "Track {} is ready to play from file {}",
              providedFile.itemId.uri, providedFile.cdnUrl);
 
-    if (providedFile.itemId == playbackQueue[0]) {
-      // Still buffering here - the decoder hasn't been opened yet, let
-      // alone produced any real audio. See announceState()'s doc comment.
-      announceState(/*isBuffering=*/true);
-    }
+    // Still buffering here - the decoder hasn't been opened yet, let alone
+    // produced any real audio. See announceState()'s doc comment.
+    announceState(/*isBuffering=*/true);
+  } else if (nextTrackId && providedFile.itemId == *nextTrackId && !nextFile) {
+    nextFile = providedFile;
+    BELL_LOG(info, LOG_TAG, "Track {} prefetched, ready for next advance",
+             providedFile.itemId.uri);
   } else {
-    // Probably outdated request
+    // Stale/cancelled request (superseded before it resolved) - ignore.
   }
 
   maybeStartCurrentTrack();
@@ -186,7 +203,7 @@ void StreamPlayer::maybeStartCurrentTrack() {
   // permanently stuck loading and greyed out its Play button. Mirrors
   // librespot-cpp's TrackPlayer, which always loads a track regardless of
   // its own startPaused flag.
-  auto& file = providedTracks[playbackQueue[currentTrackIndex]];
+  auto& file = *currentFile;
   BELL_LOG(info, LOG_TAG, "Opening CDN stream for {}: {}", file.itemId.uri,
            file.cdnUrl);
   auto res = audioDecoder->openStream(file.cdnUrl, file.decryptionKey,
@@ -197,19 +214,42 @@ void StreamPlayer::maybeStartCurrentTrack() {
     return;
   }
 
-  if (file.itemId == playbackQueue[0]) {
-    // Ready now - a session is loaded regardless of the local play/pause
-    // state, since "ready but paused" is a real, valid state distinct
-    // from "still buffering". See announceState()'s doc comment.
-    announceState(/*isBuffering=*/false);
-  }
+  // Ready now - a session is loaded regardless of the local play/pause
+  // state, since "ready but paused" is a real, valid state distinct from
+  // "still buffering". See announceState()'s doc comment.
+  announceState(/*isBuffering=*/false, generatePlaybackId());
+
+  // Only now that the current track is confirmed open do we go fetch the
+  // next one - keeps a transfer/skip from ever requesting more than one
+  // track's worth of metadata/audio-key/CDN work at once (a burst of that
+  // was reproduced on real hardware killing the dealer WebSocket).
+  maybePrefetchNext();
 }
 
-void StreamPlayer::announceState(bool isBuffering) {
+void StreamPlayer::maybePrefetchNext() {
+  std::scoped_lock lock(playbackMutex);
+  if (!nextTrackId || nextFetchStarted || !audioDecoder->isOpen()) {
+    return;
+  }
+  nextFetchStarted = true;
+  fileProvider->provideTrack(*nextTrackId);
+}
+
+void StreamPlayer::announceState(bool isBuffering,
+                                 const std::string& playbackId) {
   std::scoped_lock lock(playbackMutex);
 
   PlayerStateUpdate stateUpdate{
-      .isPlaying = !isBuffering,
+      // Both of announceState()'s callers only fire once a track is
+      // known/loading (handleFileProvided's isBuffering=true announce,
+      // maybeStartCurrentTrack()'s isBuffering=false one) - isPlaying
+      // means "a session is loaded", never "audio already flowing", so it
+      // stays true through buffering too. Tying it to !isBuffering here
+      // reported the device as having nothing loaded for the whole
+      // buffering window on the real desktop client - see
+      // ConnectStateHandler::handleTransferCommand()'s own comment on the
+      // same fix.
+      .isPlaying = true,
       .isPaused = !isPlaying,
       .isBuffering = isBuffering,
       .timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -217,11 +257,11 @@ void StreamPlayer::announceState(bool isBuffering) {
                        .count(),
       .positionAsOfTimestamp = 0,
       .playbackDurationMs = 0,
+      .playbackId = playbackId,
   };
 
-  if (providedTracks[playbackQueue[0]].trackMetadata) {
-    stateUpdate.playbackDurationMs =
-        providedTracks[playbackQueue[0]].trackMetadata->durationMs;
+  if (currentFile && currentFile->trackMetadata) {
+    stateUpdate.playbackDurationMs = currentFile->trackMetadata->durationMs;
   }
 
   eventLoop->post(EventLoop::EventType::PLAYER_STATE_UPDATED, stateUpdate);
@@ -234,7 +274,6 @@ void StreamPlayer::taskLoop() {
       BELL_LOG(info, LOG_TAG, "Flush requested, resetting state");
       flushRequested = false;
       audioDecoder->resetStream();
-      currentTrackIndex = 0;
     }
     maybeStartCurrentTrack();
   }
@@ -250,8 +289,23 @@ void StreamPlayer::taskLoop() {
     if (audioDecoder->isEOF()) {
       BELL_LOG(info, LOG_TAG, "Track ended, moving to next track");
       audioDecoder->resetStream();
-      currentTrackIndex++;
-      maybeStartCurrentTrack();
+      // Also drop currentFile/currentTrackId here, not just the decoder:
+      // the next taskLoop() iteration's maybeStartCurrentTrack() (top of
+      // this function) runs before QUEUE_UPDATED can possibly arrive back
+      // from ConnectStateHandler's advanceToNextTrack(), and without this
+      // it still sees isCurrentTrackReady()==true for the track that just
+      // ended - reopening it from scratch for ~1s before the real next
+      // track's QUEUE_UPDATE lands and flushes it back out again
+      // (reproduced on real hardware: a spurious re-open/immediate-flush
+      // of the just-finished track on every natural advance).
+      currentFile.reset();
+      currentTrackId.reset();
+      // TrackQueueHandler (via ConnectStateHandler) is the sole authority
+      // on what's next, same as a remote skip_next - this just signals
+      // that we ran out of audio, and the resulting QUEUE_UPDATED (which
+      // may hit the nextTrackId/nextFile prefetch above) is what actually
+      // advances playback.
+      eventLoop->post(EventLoop::EventType::TRACK_ENDED, std::monostate{});
     }
   } else {
     queueUpdateSemaphore.take(100);
@@ -259,17 +313,7 @@ void StreamPlayer::taskLoop() {
 }
 
 bool StreamPlayer::isCurrentTrackReady() {
-  if (playbackQueue.empty() ||
-      currentTrackIndex >= static_cast<int>(playbackQueue.size())) {
-    return false;
-  }
-
-  auto& currentTrackId = playbackQueue[currentTrackIndex];
-  if (!providedTracks.contains(currentTrackId)) {
-    return false;
-  }
-
-  auto& providedFile = providedTracks[currentTrackId];
-  return !providedFile.cdnUrl.empty() && !providedFile.decryptionKey.empty() &&
-         providedFile.trackMetadata.has_value();
+  return currentFile.has_value() && !currentFile->cdnUrl.empty() &&
+         !currentFile->decryptionKey.empty() &&
+         currentFile->trackMetadata.has_value();
 }
