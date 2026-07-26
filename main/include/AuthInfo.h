@@ -1,5 +1,8 @@
 #pragma once
 
+#include <algorithm>
+#include <climits>
+#include <random>
 #include <string>
 #include "Utils.h"
 #include "authentication.pb.h"
@@ -7,17 +10,34 @@
 #include "tao/json.hpp"
 
 namespace {
-const std::string deviceIdPrefix = "142137fd329622137a149016";
+// 20 random bytes, hex-encoded (40 chars) - matches go-librespot's device id
+// generation exactly (daemon/app.go: crypto/rand.Read into a 20-byte buffer,
+// then hex.EncodeToString), real per-installation entropy rather than a
+// hash of a fixed compile-time string (the old deviceIdPrefix + hash(
+// deviceName) scheme produced the *same* id for every build of this
+// firmware, since deviceName was itself a hardcoded literal - zero entropy,
+// not just "stable"). main()'s session-file load
+// (AuthInfo::assignDataFromJson()) overwrites this with the persisted value
+// on every run after the first, so this generator only actually matters
+// once per device's lifetime.
+std::string generateDeviceId() {
+  static std::independent_bits_engine<std::default_random_engine, CHAR_BIT,
+                                      unsigned char>
+      randomEngine{std::default_random_engine(std::random_device{}())};
+  static const char* hexDigits = "0123456789abcdef";
+  std::string id;
+  id.reserve(40);
+  std::generate_n(std::back_inserter(id), 40,
+                  [] { return hexDigits[randomEngine() % 16]; });
+  return id;
 }
+}  // namespace
 
 namespace cspot {
 struct AuthInfo {
   AuthInfo() = default;
-  AuthInfo(const std::string& deviceName) : deviceName(deviceName) {
-    // Recalculate device ID
-    this->deviceId = fmt::format("{}{:016x}", deviceIdPrefix,
-                                 std::hash<std::string>{}(deviceName));
-  }
+  AuthInfo(const std::string& deviceName)
+      : deviceName(deviceName), deviceId(generateDeviceId()) {}
   std::string deviceName;
   std::string deviceId;
   std::string sessionId;
