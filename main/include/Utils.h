@@ -4,10 +4,39 @@
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+#include "bell/Logger.h"
 #include "fmt/core.h"
 #include "mbedtls/base64.h"
 
+#ifdef ESP_PLATFORM
+#include "esp_heap_caps.h"
+#endif
+
 namespace cspot {
+
+// No-op on the CLI/host build (ESP_PLATFORM only defined under ESP-IDF).
+// Free internal DRAM is the scarce resource concurrent TLS connections
+// (AP/Dealer WS/SpClient/CDNDataStream) compete over on this board - see
+// targets/esp32/sdkconfig.defaults's own comment on hardware AES DMA
+// descriptors failing to allocate under exactly that load. Free PSRAM is
+// logged alongside it since mbedTLS's own buffers are routed there
+// (CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC), to tell "we're out of DRAM" apart
+// from "PSRAM itself is the bottleneck" (bus contention, not exhaustion).
+inline void logHeapStatus(const char* tag, const char* label) {
+#ifdef ESP_PLATFORM
+  size_t internalFree = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+  size_t internalLargest =
+      heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+  size_t psramFree = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  BELL_LOG(info, tag,
+           "Heap [{}]: internal free={} bytes (largest block={} bytes), "
+           "psram free={} bytes",
+           label, internalFree, internalLargest, psramFree);
+#else
+  (void)tag;
+  (void)label;
+#endif
+}
 
 inline std::string base64Encode(const std::byte* data, size_t dataSize) {
   std::string outputStr;

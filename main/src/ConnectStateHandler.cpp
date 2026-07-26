@@ -285,24 +285,41 @@ bell::Result<> ConnectStateHandler::flushStateNowLocked(
              ps.isPaused, ps.isBuffering, ps.playbackId);
   }
 
+  // Heap snapshot right before the PUT's socket connect/TLS handshake -
+  // pairs with the one after the call returns to see how much internal
+  // DRAM/PSRAM this single PUT consumed, and what was already free
+  // going in (this can overlap with the AP connection, the dealer WS,
+  // and a CDNDataStream all holding their own TLS contexts at once).
+  logHeapStatus(LOG_TAG, "before putConnectState");
+
   auto putStartTime = std::chrono::steady_clock::now();
   auto res = this->spClient->putConnectState(putStateRequestProto,
                                              authInfo->deviceId,
                                              authInfo->sessionId);
+  auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       std::chrono::steady_clock::now() - putStartTime)
+                       .count();
+
+  logHeapStatus(LOG_TAG, "after putConnectState");
 
   // Only errors were ever logged here before - on real hardware this PUT
   // is the thing the initiating client's "Connecting..." wait actually
-  // depends on, and its round-trip time was otherwise invisible.
+  // depends on, and its round-trip time was otherwise invisible. Now also
+  // logged (with elapsed time) on failure, previously silent here -
+  // failures are exactly the runs where the timing/heap data matters
+  // most.
   if (res) {
-    auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - putStartTime)
-                        .count();
     BELL_LOG(info, LOG_TAG,
              "Put state succeeded in {}ms (reason={}, isActive={}, "
              "isBuffering={}, isPaused={})",
              elapsedMs, static_cast<int>(reason), putStateRequestProto.isActive,
              putStateRequestProto.device.playerState.isBuffering,
              putStateRequestProto.device.playerState.isPaused);
+  } else {
+    BELL_LOG(error, LOG_TAG,
+             "Put state failed after {}ms (reason={}, isActive={}): {}",
+             elapsedMs, static_cast<int>(reason), putStateRequestProto.isActive,
+             res.error());
   }
 
   return res;
