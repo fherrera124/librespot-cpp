@@ -104,6 +104,14 @@ class ConnectStateHandler : public bell::Task {
 
   bell::Result<> handlePauseCommand(bool pause);
 
+  // Shared by handleSkipNextCommand() (remote skip_next) and the TRACK_ENDED
+  // handler (StreamPlayer ran out of audio) - either way, "what's next" is
+  // decided the same way: ask trackQueueHandler, refresh the windows, and
+  // tell Spotify. Matches go-librespot's single advanceNext()
+  // (daemon/controls.go), used from both its skip_next command and its
+  // natural end-of-track event.
+  bell::Result<> advanceToNextTrack();
+
   bool encodeProtoTracks(pb_ostream_t* stream, const pb_field_t* field,
                          bool previous);
 

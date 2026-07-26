@@ -36,6 +36,10 @@ struct PlayerStateUpdate {
   int64_t timestamp;
   int64_t positionAsOfTimestamp;
   int64_t playbackDurationMs;
+  // Fresh random id for this playback, hex-encoded, set only on the
+  // isBuffering=false announce (empty on the earlier isBuffering=true one -
+  // not known yet). See StreamPlayer::announceState()'s comment.
+  std::string playbackId;
 };
 
 struct ProvidedFile {

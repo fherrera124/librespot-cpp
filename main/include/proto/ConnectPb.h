@@ -218,6 +218,27 @@ struct ProvidedTrack {
 NANOPB_STRUCT(cspot_proto::ProvidedTrack, ProvidedTrack_fields)
 
 namespace cspot_proto {
+// go-librespot always sends a non-nil (even if empty) Suppressions on
+// every PlayerState it PUTs (daemon/player_state.go's initState():
+// "Suppressions: &connectpb.Suppressions{}", and re-set from the
+// TransferState/command on every transfer/suppress command - see
+// daemon/player.go, daemon/controls.go). Previously entirely absent from
+// this wrapper layer - decoding a TransferState silently dropped its
+// suppressions, and every outgoing PlayerState omitted the field rather
+// than sending it present-but-empty like go always does.
+struct Suppressions {
+  std::vector<std::string> providers;
+
+  static auto bindFields(Suppressions* self, bool isDecode) {
+    _Suppressions rawProto = Suppressions_init_zero;
+    nanopb_helper::bindField(rawProto.providers, self->providers, isDecode);
+    return rawProto;
+  }
+};
+}  // namespace cspot_proto
+NANOPB_STRUCT(cspot_proto::Suppressions, Suppressions_fields)
+
+namespace cspot_proto {
 struct PlayerState {
   int64_t timestamp = 0;
   std::string contextUri;
@@ -230,14 +251,20 @@ struct PlayerState {
   double playbackSpeed = 1.0;
   int64_t positionAsOfTimestamp = 0;
   int64_t duration = 0;
-  bool isPlaying;
-  bool isBuffering;
-  bool isPaused;
-  bool isSystemInitiated;
+  // Missing defaults here (unlike every sibling field above) meant a fresh
+  // PutStateRequest sent whatever indeterminate value happened to be in
+  // memory for these three - confirmed on real hardware: the very first
+  // NEW_DEVICE put state, before anything had even happened, reported
+  // isBuffering=true/isPaused=true.
+  bool isPlaying = false;
+  bool isBuffering = false;
+  bool isPaused = false;
+  bool isSystemInitiated = false;
   pb_callback_t nextTracks;
   pb_callback_t prevTracks;
   std::string sessionId;
   int64_t position = 0;
+  cspot_proto::Suppressions suppressions;
 
   static auto bindFields(PlayerState* self, bool isDecode) {
     _PlayerState rawProto = PlayerState_init_zero;
@@ -265,6 +292,8 @@ struct PlayerState {
     rawProto.prev_tracks = self->prevTracks;
     nanopb_helper::bindField(rawProto.session_id, self->sessionId, isDecode);
     nanopb_helper::bindField(rawProto.position, self->position, isDecode);
+    nanopb_helper::bindField(rawProto.suppressions, self->suppressions,
+                             isDecode);
     return rawProto;
   }
 };
@@ -320,6 +349,7 @@ struct Session {
   std::string currentUid;
   nanopb_helper::Optional<std::string> originalSessionId;
   cspot_proto::PlayOrigin playOrigin;
+  cspot_proto::Suppressions suppressions;
 
   static auto bindFields(Session* self, bool isDecode) {
     _Session rawProto = Session_init_zero;
@@ -328,6 +358,8 @@ struct Session {
     nanopb_helper::bindField(rawProto.original_session_id,
                              self->originalSessionId, isDecode);
     nanopb_helper::bindField(rawProto.play_origin, self->playOrigin, isDecode);
+    nanopb_helper::bindField(rawProto.suppressions, self->suppressions,
+                             isDecode);
     return rawProto;
   }
 };

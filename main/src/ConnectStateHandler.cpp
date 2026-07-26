@@ -37,7 +37,7 @@ std::string sessionIdChars =
 std::string generateSessionId() {
   static std::independent_bits_engine<std::default_random_engine, CHAR_BIT,
                                       unsigned char>
-      randomEngine;
+      randomEngine{std::default_random_engine(std::random_device{}())};
   std::string sessionId;
   sessionId.reserve(16);  // Reserve space for 16 characters
 
@@ -78,8 +78,29 @@ ConnectStateHandler::ConnectStateHandler(
         playerState.isPaused = playerStateUpdate.isPaused;
         playerState.isBuffering = playerStateUpdate.isBuffering;
         playerState.timestamp = playerStateUpdate.timestamp;
+        // Deliberately not touched when empty (the isBuffering=true
+        // announce, before a playback id is known) - leaves whatever the
+        // previous track's id was in place transiently rather than
+        // clearing it, matching this repo's own PlayerEngine.cpp
+        // precedent for the same field.
+        if (!playerStateUpdate.playbackId.empty()) {
+          playerState.playbackId = playerStateUpdate.playbackId;
+        }
 
         (void)putState();
+      });
+
+  // StreamPlayer ran out of audio (natural end of track) - advance the same
+  // way a remote skip_next would, so TrackQueueHandler's position and the
+  // Spotify-visible track/index stay correct even when nothing remote ever
+  // asked us to move on.
+  this->eventLoop->registerHandler(
+      EventLoop::EventType::TRACK_ENDED, [this](cspot::EventLoop::Event&&) {
+        auto res = advanceToNextTrack();
+        if (!res) {
+          BELL_LOG(error, LOG_TAG, "Failed to advance after track end: {}",
+                   res.error());
+        }
       });
 
   // this->sessionContext->eventLoop->registerHandler(
@@ -132,7 +153,7 @@ void ConnectStateHandler::initialize() {
   capabilities.can_be_player = true;
   capabilities.restrict_to_local = false;
   capabilities.gaia_eq_connect_id = true;
-  capabilities.supports_logout = true;
+  capabilities.supports_logout = true; // TODO: only if zeroconfEnabled
   capabilities.is_observable = true;
   capabilities.volume_steps = 100;
   capabilities.command_acks = true;
@@ -239,8 +260,52 @@ bell::Result<> ConnectStateHandler::flushStateNowLocked(
   lastPutStateTime = std::chrono::steady_clock::now();
   putStatePending = false;
 
-  return this->spClient->putConnectState(
-      putStateRequestProto, authInfo->deviceId, authInfo->sessionId);
+  // Temp diagnostic: dump exactly what this PUT's PlayerState carries, to
+  // rule out a field silently not making it onto the wire the way the C++
+  // side thinks it did (this repo's own master branch hit and logged
+  // exactly this class of doubt during a real investigation).
+  {
+    auto& ps = putStateRequestProto.device.playerState;
+    // deviceId/connectionId included because this PUT's URL path is
+    // /connect-state/v1/devices/{deviceId} and its X-Spotify-Connection-Id
+    // header is connectionId (authInfo->sessionId) - neither is part of
+    // the PutStateRequest body itself, so nothing above this line would
+    // ever reveal if one of them were stale/empty. A device whose PUT
+    // succeeds (200) but whose connection id doesn't correlate to a real,
+    // currently-open dealer session from the server's own point of view
+    // would explain isActive=true on our side while the server's own
+    // cluster keeps reporting a different device as active.
+    BELL_LOG(info, LOG_TAG,
+             "PUT DIAG: deviceId={} connectionId={} isActive={} "
+             "playerSessionId={} track.uri={} index=[{},{}] isPlaying={} "
+             "isPaused={} isBuffering={} playbackId={}",
+             authInfo->deviceId, authInfo->sessionId,
+             putStateRequestProto.isActive, ps.sessionId, ps.track.uri,
+             ps.index.value.page, ps.index.value.track, ps.isPlaying,
+             ps.isPaused, ps.isBuffering, ps.playbackId);
+  }
+
+  auto putStartTime = std::chrono::steady_clock::now();
+  auto res = this->spClient->putConnectState(putStateRequestProto,
+                                             authInfo->deviceId,
+                                             authInfo->sessionId);
+
+  // Only errors were ever logged here before - on real hardware this PUT
+  // is the thing the initiating client's "Connecting..." wait actually
+  // depends on, and its round-trip time was otherwise invisible.
+  if (res) {
+    auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - putStartTime)
+                        .count();
+    BELL_LOG(info, LOG_TAG,
+             "Put state succeeded in {}ms (reason={}, isActive={}, "
+             "isBuffering={}, isPaused={})",
+             elapsedMs, static_cast<int>(reason), putStateRequestProto.isActive,
+             putStateRequestProto.device.playerState.isBuffering,
+             putStateRequestProto.device.playerState.isPaused);
+  }
+
+  return res;
 }
 
 void ConnectStateHandler::taskLoop() {
@@ -271,6 +336,18 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
     BELL_LOG(error, LOG_TAG, "Failed to decode cluster update");
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
+
+  // Temp diagnostic: this used to only log when we decided to deactivate -
+  // every other cluster update (including ones confirming our own
+  // activation) went by silently. Logging all of them lets us see whether
+  // the backend ever contradicts what we just PUT (e.g. activeDeviceId
+  // isn't us, or isn't anyone, right after we announced isActive=true).
+  BELL_LOG(info, LOG_TAG,
+           "Cluster update: activeDeviceId={} (ours={}) ts={} ourIsActive={} "
+           "lastTransferTimestamp={}",
+           clusterUpdate.cluster.activeDeviceId, authInfo->deviceId,
+           clusterUpdate.cluster.playerState.timestamp,
+           putStateRequestProto.isActive, lastTransferTimestamp);
 
   // Someone else just became the active device while we thought we were -
   // back off. The lastTransferTimestamp guard (matches go-librespot's
@@ -359,9 +436,25 @@ bell::Result<> ConnectStateHandler::handleTransferCommand(
     // Generate random 16-byte session ID
     playerState.sessionId = generateSessionId();
   }
+  // Temp diagnostic: confirm whether the source actually sent a session id
+  // to continue, or whether we're minting a fresh one it has no way to
+  // recognize - a client that correlates connect-state updates by session
+  // id would never leave "Connecting" if every PUT looks like a brand new,
+  // unrelated session to it.
+  BELL_LOG(info, LOG_TAG,
+           "TransferState session id: hadOriginal={}, using sessionId={}",
+           transferState.current_session.originalSessionId.hasValue,
+           playerState.sessionId);
 
-  // No playback yet
-  playerState.isPlaying = false;
+  // isPlaying means "session active", NOT "audio already flowing" - stays
+  // true through buffering, same as advanceToNextTrack()/
+  // handleSkipPrevCommand() below and master's PlayerEngine::
+  // putBufferingState() (hardcodes isPlaying=true) and go-librespot's
+  // loadCurrentTrack() (IsPlaying=true set alongside IsBuffering=true).
+  // Sending isPlaying=false here (as this used to) grayed out play/pause
+  // and hid the progress bar on the real desktop client for the whole
+  // buffering window of every transfer - confirmed against a real session.
+  playerState.isPlaying = true;
   playerState.isBuffering = true;
   playerState.timestamp = transferState.playback.timestamp;
   lastTransferTimestamp = transferState.playback.timestamp;
@@ -381,6 +474,11 @@ bell::Result<> ConnectStateHandler::handleTransferCommand(
   playerState.contextUri = transferState.current_session.context.uri;
   playerState.contextUrl = transferState.current_session.context.url;
   playerState.options = transferState.options;
+  // go-librespot copies this from the incoming TransferState on every
+  // transfer (daemon/player.go) and otherwise keeps a non-nil (if empty)
+  // Suppressions on every PlayerState it PUTs - never omitting the field
+  // entirely like this code used to.
+  playerState.suppressions = transferState.current_session.suppressions;
   playerState.track.uid = transferState.current_session.currentUid;
   playerState.position = 0;
   playerState.positionAsOfTimestamp =
@@ -396,6 +494,11 @@ bell::Result<> ConnectStateHandler::handleTransferCommand(
   SpotifyId trackId =
       SpotifyId(trackType, transferState.playback.currentTrack.gid);
 
+  // Still no PUT before loadContext() resolves - context.uri/currentUid
+  // are needed to even know what "the current track" is, and this repo's
+  // own master branch (PlayerEngine::handleTransfer -> contextResolver.
+  // resolve()) and go-librespot (controls.go's loadContext(), called
+  // before loadCurrentTrack()'s first PUT) both resolve first too.
   auto loadRes = trackQueueHandler->loadContext(
       transferState.current_session.context.uri, trackId.uri,
       transferState.current_session.currentUid);
@@ -428,9 +531,15 @@ bell::Result<> ConnectStateHandler::handleTransferCommand(
     BELL_LOG(error, LOG_TAG, "Failed to put state");
     return {};
   }
-  trackQueueHandler->updateTrackWindows();
 
-  eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, true);
+  // Unconditional flush: a transfer command is the source's own authority
+  // on what should be playing right now, so always tear down and reopen
+  // from what this command says - including on Spotify's own ~15s
+  // duplicate resend of a transfer, which otherwise left StreamPlayer's
+  // queue position silently ahead of (or behind) what was just PUT above,
+  // e.g. reporting index 27 here while audio kept playing whatever a
+  // natural EOF had already advanced it to.
+  eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, std::monostate{});
   eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !shouldPause);
 
   return {};
@@ -452,11 +561,22 @@ bell::Result<> ConnectStateHandler::handlePlayCommand(
   auto contextUri = context.optional<std::string>("uri");
   auto skipToUid = skipTo.optional<std::string>("track_uid");
   auto skipToUri = skipTo.optional<std::string>("track_uri");
+  bool initiallyPaused =
+      options.optional<bool>("initially_paused").value_or(false);
 
   if (!contextUri) {
     BELL_LOG(error, LOG_TAG, "Play command missing context URI");
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
+
+  // Set active state - a bare "play" (no preceding transfer, e.g. the user
+  // already had this device selected and just picked something new to
+  // play) is just as much "this device is now the active one" as a
+  // transfer is. Matches go-librespot's setActive(true) in its own "play"
+  // case (daemon/player.go). Missing this left every subsequent putState
+  // claiming isActive=false even while genuinely playing audio - real
+  // hardware confirmed this reads as "not connected" on the client.
+  putStateRequestProto.isActive = true;
 
   auto loadRes =
       trackQueueHandler->loadContext(*contextUri, skipToUri, skipToUid);
@@ -466,10 +586,22 @@ bell::Result<> ConnectStateHandler::handlePlayCommand(
 
   trackQueueHandler->updateTrackWindows();
 
-  eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, true);
-  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, true);
+  // Unconditional flush - see handleTransferCommand()'s own comment on
+  // this same point.
+  eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, std::monostate{});
+  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !initiallyPaused);
 
   auto& playerState = putStateRequestProto.device.playerState;
+  // isPlaying=true here too, same reasoning as handleTransferCommand()'s
+  // own comment: a session being loaded (even mid-buffering, before
+  // StreamPlayer's async fetch/CDN-open pipeline gets there) is what
+  // isPlaying reports - not "audio already flowing". Explicit here (not
+  // left to whatever isPlaying/isBuffering/isPaused already held) since
+  // this putState() call below fires synchronously, before that.
+  playerState.isPlaying = true;
+  playerState.isBuffering = true;
+  playerState.isPaused = initiallyPaused;
+
   auto track = trackQueueHandler->currentTrack();
   if (track) {
     playerState.track = *track;
@@ -489,7 +621,7 @@ bell::Result<> ConnectStateHandler::handlePlayCommand(
 
   auto putRes = putState();
   if (!putRes) {
-    BELL_LOG(error, LOG_TAG, "Failed to put state after skip next");
+    BELL_LOG(error, LOG_TAG, "Failed to put state after play command");
     return putRes;
   }
 
@@ -497,6 +629,10 @@ bell::Result<> ConnectStateHandler::handlePlayCommand(
 }
 
 bell::Result<> ConnectStateHandler::handleSkipNextCommand() {
+  return advanceToNextTrack();
+}
+
+bell::Result<> ConnectStateHandler::advanceToNextTrack() {
   auto res = trackQueueHandler->skipToNextTrack();
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to skip next track");
@@ -516,6 +652,21 @@ bell::Result<> ConnectStateHandler::handleSkipNextCommand() {
   if (contextIndex) {
     playerState.index.value = *contextIndex;
   }
+
+  // A plain advance (skip_next or natural end of track, the only variant
+  // this implements - go-librespot's own "skip to a specific track"
+  // branch is a separate case we don't have) always resumes, never stays
+  // paused: matches go-librespot's advanceNext(), which hardcodes
+  // paused=false into loadCurrentTrackOrSkip() for this exact path. Also
+  // re-announces isPlaying/isBuffering=true here: without this, this
+  // putState() below would send the NEW track/index alongside whatever
+  // isBuffering/isPlaying/playbackId the PREVIOUS, just-finished track had
+  // left behind - an incoherent state (new track, "not buffering") that
+  // this repo's own master branch traced a real playlist-switch UI
+  // flicker back to.
+  playerState.isPlaying = true;
+  playerState.isBuffering = true;
+  playerState.isPaused = false;
 
   playerState.positionAsOfTimestamp = 0;
   playerState.timestamp =
@@ -552,6 +703,17 @@ bell::Result<> ConnectStateHandler::handleSkipPrevCommand() {
   if (contextIndex) {
     playerState.index.value = *contextIndex;
   }
+
+  // Re-announce isPlaying/isBuffering=true - a new track is loading, so
+  // whatever isBuffering/playbackId the PREVIOUS track's "ready" state left
+  // behind would otherwise go out alongside this new track/index (see
+  // advanceToNextTrack()'s own comment for the same fix). isPaused is
+  // deliberately NOT touched here, unlike advanceToNextTrack(): go-librespot's
+  // skipPrev() passes its current p.state.player.IsPaused straight through
+  // to loadCurrentTrack() unchanged (preserve pause across skip_prev),
+  // rather than hardcoding false the way its plain advanceNext() does.
+  playerState.isPlaying = true;
+  playerState.isBuffering = true;
 
   playerState.positionAsOfTimestamp = 0;
   playerState.timestamp =
