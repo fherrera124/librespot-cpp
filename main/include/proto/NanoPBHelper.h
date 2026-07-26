@@ -64,7 +64,7 @@ bool pbDecodeVarintList(pb_istream_t* stream, const pb_field_t* field,
   void* ptrToValue = &integer;
   bool result = pbDecodeVarint<IntegerT>(stream, field, &ptrToValue);
   if (result) {
-    vec.push_back(result);
+    vec.push_back(integer);
   }
   return result;
 }
@@ -375,17 +375,21 @@ void bindField(pb_callback_t& pbField, FieldT& field, bool isDecode) {
         pbField.funcs.decode = &pbDecodeStringList;
       else
         pbField.funcs.encode = &pbEncodeStringList;
+    } else if constexpr (std::is_same_v<T, uint8_t>) {
+      // Must come before the generic is_integral_v branch below - uint8_t
+      // satisfies is_integral_v too, and a vector<uint8_t> needs the
+      // single length-delimited bytes-blob encoding here, not one
+      // tag+varint per element.
+      if (isDecode)
+        pbField.funcs.decode = &pbDecodeUint8Vector;
+      else
+        pbField.funcs.encode = &pbEncodeUint8Vector;
     } else if constexpr (std::is_integral_v<T>) {
       if (isDecode)
 
         pbField.funcs.decode = &pbDecodeVarintList<T>;
       else
         pbField.funcs.encode = &pbEncodeVarintList<T>;
-    } else if constexpr (std::is_same_v<T, uint8_t>) {
-      if (isDecode)
-        pbField.funcs.decode = &pbDecodeUint8Vector;
-      else
-        pbField.funcs.encode = &pbEncodeUint8Vector;
     } else if constexpr (std::is_same_v<T, std::byte>) {
       if (isDecode)
 
