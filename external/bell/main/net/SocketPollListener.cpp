@@ -18,8 +18,16 @@ void SocketPollListener::registerSocket(const std::shared_ptr<Socket>& socket,
     throw std::invalid_argument("Invalid socket");
   }
 
-  if (handlers.find(socket->getFd()) == handlers.end()) {
-    // Create a new handler for the socket
+  auto it = handlers.find(socket->getFd());
+  if (it == handlers.end() || it->second.socketPtr.lock() != socket) {
+    // Either a genuinely new fd, or a stale entry left behind by a caller
+    // that closed its socket without unregistering first - poll()'s own
+    // cleanup pass only prunes those on its next tick (up to the caller's
+    // poll timeout later), and the OS is free to hand that fd number to a
+    // brand new socket in the meantime. Starting the entry fresh here (new
+    // socketPtr, empty callbacks) stops the new socket from inheriting the
+    // old one's leftover event callbacks or having events dispatched
+    // against the wrong (stale) Socket object.
     handlers[socket->getFd()] = {.socketPtr = socket, .callbacks = {}};
   }
 
