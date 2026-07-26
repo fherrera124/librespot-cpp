@@ -128,7 +128,13 @@ bell::Result<> TCPSocket::connect(const std::string& host, uint16_t port,
              reinterpret_cast<const char*>(&keepalive), sizeof(keepalive));
 #ifndef _WIN32
   int keepIdle = 30;
+#ifdef __APPLE__
+  // Apple has no TCP_KEEPIDLE - TCP_KEEPALIVE is its equivalent (same
+  // "idle time before the first probe" semantics, different name).
+  setsockopt(sockFd, IPPROTO_TCP, TCP_KEEPALIVE, &keepIdle, sizeof(keepIdle));
+#else
   setsockopt(sockFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(keepIdle));
+#endif
   int keepInterval = 10;
   setsockopt(sockFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval,
              sizeof(keepInterval));

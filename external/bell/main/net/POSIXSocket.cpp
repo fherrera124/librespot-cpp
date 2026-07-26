@@ -8,6 +8,14 @@
 #include "bell/utils/Utils.h"
 #include "tl/expected.hpp"
 
+// MSG_NOSIGNAL (suppress SIGPIPE on write to a peer-closed socket) is a
+// Linux/BSD extension - Apple platforms have no equivalent send() flag and
+// rely on the SO_NOSIGPIPE socket option instead (set once in createFd()
+// below), so this just needs to compile away to a no-op flag there.
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 // Platform specific socket includes
 #ifdef _WIN32
 #include <winsock2.h>
@@ -98,6 +106,13 @@ bell::Result<> POSIXSocket::createFd(int domain, int protocol) {
   if (sockFd < 0) {
     return tl::make_unexpected(errorFromErrno());
   }
+
+#ifdef __APPLE__
+  // Apple's stand-in for MSG_NOSIGNAL above: suppresses SIGPIPE for this
+  // socket instead of per-send.
+  int noSigPipe = 1;
+  setsockopt(sockFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe));
+#endif
 
   return {};
 }
