@@ -228,7 +228,18 @@ void StreamPlayer::maybeStartCurrentTrack() {
 
 void StreamPlayer::maybePrefetchNext() {
   std::scoped_lock lock(playbackMutex);
-  if (!nextTrackId || nextFetchStarted || !audioDecoder->isOpen()) {
+  // flushRequested closes this same race handleQueueUpdate() otherwise
+  // opens: it sets the flag and calls this function in the same breath,
+  // but the actual audioDecoder->resetStream() only happens later, on
+  // taskLoop()'s own thread - until then, isOpen() can still be reporting
+  // the *previous* (about-to-be-torn-down) track as open, which let this
+  // fire a prefetch for the new "next" track before the newly-transferred-
+  // to "current" track had even started loading. Reproduced on real
+  // hardware: two CDN streams' worth of network traffic firing at once
+  // right at transfer time - the exact burst this function's other call
+  // site (maybeStartCurrentTrack()) was already written to prevent.
+  if (!nextTrackId || nextFetchStarted || flushRequested ||
+      !audioDecoder->isOpen()) {
     return;
   }
   nextFetchStarted = true;
