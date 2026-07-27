@@ -1,0 +1,46 @@
+menu "librespot-cpp ESP32 example"
+
+    config CSPOT_DEVICE_NAME
+        string "Device name"
+        default "librespot-cpp ESP32"
+        help
+            Name shown in the Spotify app's device picker.
+
+    choice CSPOT_QUALITY
+        prompt "Streaming bitrate"
+        default CSPOT_QUALITY_160
+        config CSPOT_QUALITY_320
+            bool "320 kbps"
+        config CSPOT_QUALITY_160
+            bool "160 kbps"
+        config CSPOT_QUALITY_96
+            bool "96 kbps"
+    endchoice
+
+    menu "I2S pinout"
+        # Defaults match this repo's own feature/esp32-port branch
+        # (targets/esp32/main/main.cpp) for the same physical board
+        # (JC3248W535, onboard NS4168 mono class-D amp) - change these if
+        # targeting different hardware.
+        config CSPOT_I2S_BCLK_GPIO
+            int "BCLK GPIO"
+            default 42
+
+        config CSPOT_I2S_WS_GPIO
+            int "WS (LRCLK) GPIO"
+            default 2
+
+        config CSPOT_I2S_DOUT_GPIO
+            int "DOUT GPIO"
+            default 41
+
+        config CSPOT_I2S_MCLK_GPIO
+            int "MCLK GPIO (-1 if unused)"
+            default 0
+            help
+                GPIO0 is a boot-strap pin - safe to drive once the board has
+                already finished booting, not before. Set -1 if your DAC/amp
+                doesn't need MCLK.
+    endmenu
+
+endmenu

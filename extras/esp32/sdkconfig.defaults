@@ -1,0 +1,70 @@
+# Board: JC3248W535 (ESP32-S3, Octal SPI PSRAM) - same board this repo's
+# own feature/esp32-port branch targets. If you're on different hardware,
+# at minimum revisit CONFIG_IDF_TARGET and the SPIRAM mode/speed below.
+CONFIG_IDF_TARGET="esp32s3"
+
+# bell::Task (external/bell/main/utilities/include/BellTask.h) allocates
+# every task's stack from PSRAM by default (MALLOC_CAP_SPIRAM) - required,
+# not optional, or task creation fails. Confirmed by reading BellTask.h on
+# this branch directly, not assumed from feature/esp32-port's own (older,
+# differently-organized) copy of bell.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# main/main.cpp does NVS init + WiFi connect (example_connect()) before
+# spawning SpotifyConnectReceiver's own task - the default 3584 bytes is
+# tight for that combination (WiFi+event loop bring-up on the main task's
+# own stack).
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# HttpRetry.h, LoginBlob.cpp, CommandLineArguments.cpp, etc. throw
+# std::invalid_argument/std::runtime_error throughout this component and
+# extras/cli alike - ESP-IDF C++ builds have exceptions off by default.
+CONFIG_COMPILER_CXX_EXCEPTIONS=y
+
+# JC3248W535 has 16MB flash.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# mbedTLS TLS buffers to PSRAM instead of internal DRAM.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
+# Prefer PSRAM for Wi-Fi/lwIP allocations, and lower the "always internal"
+# malloc() threshold from 16KB to 512B so most small allocations can go to
+# PSRAM too. Both fall back to internal memory automatically if PSRAM
+# allocation fails.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=512
+
+# Carried forward defensively from this repo's own feature/esp32-port
+# branch (targets/esp32/sdkconfig.defaults), NOT independently
+# re-verified against this engine's own connection pattern: that branch
+# found hardware AES's DMA descriptors (must live in internal DRAM, no
+# PSRAM alternative on this SoC) failing to allocate under concurrent TLS
+# load, on this exact board. This component's own DealerSession (WSS) +
+# CDNAudioFile (HTTPS) + a pooled connect-state PUT connection is a
+# comparable concurrent-connection shape, but hasn't actually hit this
+# failure here yet - if you never see it, this can likely be re-enabled
+# (CONFIG_MBEDTLS_HARDWARE_AES=y) for the speed back. No speed cost at
+# 240MHz per this option's own Kconfig help text either way.
+CONFIG_MBEDTLS_HARDWARE_AES=n
+CONFIG_MBEDTLS_GCM_SUPPORT_NON_AES_CIPHER=n
+CONFIG_MBEDTLS_AES_USE_INTERRUPT=n
+
+# Smaller "common certificates" bundle (~50% smaller, ~99% coverage per
+# ESP-IDF's own Kconfig help text) instead of the full root CA bundle -
+# strictly beneficial here, nothing exotic needed to talk to Spotify's own
+# servers.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y
+
+# Default of 10 is tight once DealerSession's WSS, a pooled connect-state
+# PUT connection, CDN audio fetch, and zeroconf's own httpd are all live
+# at once.
+CONFIG_LWIP_MAX_SOCKETS=16
+
+# Enables uxTaskGetSystemState() so per-task stack high-water marks can
+# actually be measured instead of guessed. Cheap: a few tens of bytes of
+# TCB overhead per task.
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
