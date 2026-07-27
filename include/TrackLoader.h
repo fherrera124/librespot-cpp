@@ -15,14 +15,14 @@ class WrappedSemaphore;
 
 namespace cspot {
 struct Context;
-class AccessKeyFetcher;
+class Login5Client;
 
 // Drives QueuedTrack's network state machine (processTrack()'s per-state
 // dispatch, moved here from TrackQueue) on its own background task. Never
 // touches TrackQueue's preloadedTracks/tracksMutex directly - it asks for
 // what it needs through two constructor-injected callbacks, the same way
-// it already depends on AccessKeyFetcher's behavior without ever touching
-// AccessKeyFetcher's internals. See TrackQueue.h's own comment on why the
+// it already depends on Login5Client's behavior without ever touching
+// Login5Client's internals. See TrackQueue.h's own comment on why the
 // split stops here (TrackQueue keeps owning preloadedTracks) instead of
 // handing the deque itself across the class boundary.
 class TrackLoader : public bell::Task {
@@ -38,7 +38,7 @@ class TrackLoader : public bell::Task {
   // plain mutex), so sharing it across this boundary doesn't reintroduce
   // the anti-pattern QueuedTrack's mutex parameter had - see TrackQueue.h.
   TrackLoader(std::shared_ptr<cspot::Context> ctx,
-              std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher,
+              std::shared_ptr<cspot::Login5Client> login5,
               std::shared_ptr<bell::WrappedSemaphore> processSemaphore,
               SnapshotFn snapshotPreloaded, TopUpFn tryTopUpLookahead);
   ~TrackLoader();
@@ -54,7 +54,7 @@ class TrackLoader : public bell::Task {
 
  private:
   std::shared_ptr<cspot::Context> ctx;
-  std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher;
+  std::shared_ptr<cspot::Login5Client> login5;
   std::shared_ptr<bell::WrappedSemaphore> processSemaphore;
   SnapshotFn snapshotPreloaded;
   TopUpFn tryTopUpLookahead;
@@ -65,6 +65,14 @@ class TrackLoader : public bell::Task {
   Episode pbEpisode;
 
   std::string accessKey;
+  std::string clientToken;
+  // Resolved once (apresolve.spotify.com?type=spclient) and cached for
+  // this task's whole lifetime, same scope as PutStateClient's own
+  // spclientHost (PutStateClient.h) - QueuedTrack objects are one-per-
+  // track and short-lived, the wrong place to own this. See
+  // stepLoadCDNUrl()'s own comment (TrackQueue.cpp) for why this host,
+  // not api.spotify.com.
+  std::string spclientHost;
 
   void processTrack(std::shared_ptr<QueuedTrack> track);
 };

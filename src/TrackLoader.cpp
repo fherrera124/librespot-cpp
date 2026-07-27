@@ -1,18 +1,20 @@
 #include "TrackLoader.h"
 #include <pb_decode.h>
 
-#include "AccessKeyFetcher.h"
+#include "ApResolve.h"
 #include "CSpotContext.h"
+#include "Login5Client.h"
+#include "Logger.h"
 #include "WrappedSemaphore.h"
 
 using namespace cspot;
 
 TrackLoader::TrackLoader(std::shared_ptr<cspot::Context> ctx,
-                         std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher,
+                         std::shared_ptr<cspot::Login5Client> login5,
                          std::shared_ptr<bell::WrappedSemaphore> processSemaphore,
                          SnapshotFn snapshotPreloaded, TopUpFn tryTopUpLookahead)
     : bell::Task("CSpotTrackLoader", 1024 * 32, 2, 1), ctx(ctx),
-      accessKeyFetcher(accessKeyFetcher), processSemaphore(processSemaphore),
+      login5(login5), processSemaphore(processSemaphore),
       snapshotPreloaded(snapshotPreloaded),
       tryTopUpLookahead(tryTopUpLookahead) {
   pbTrack = Track_init_zero;
@@ -32,8 +34,26 @@ void TrackLoader::runTask() {
   while (!shouldStop()) {
     processSemaphore->twait(100);
 
-    // Make sure we have the newest access key
-    accessKey = accessKeyFetcher->getAccessKey();
+    // Make sure we have the newest access + client token - the same pair
+    // PlayerEngine's own sendPutStateRequest() refreshes together
+    // (PlayerEngine.cpp), since Login5Client treats them as a matched set
+    // (a fresh login can rotate both).
+    accessKey = login5->getToken();
+    clientToken = login5->getClientToken();
+
+    // Resolved once, then cached for this task's entire lifetime - see
+    // this class's own spclientHost comment (TrackLoader.h). Failure just
+    // leaves it empty; stepLoadCDNUrl() already no-ops until it's set, so
+    // the next tick retries the resolve for free rather than needing its
+    // own separate backoff.
+    if (spclientHost.empty()) {
+      try {
+        spclientHost = ApResolve("").fetchFirstSpclientAddress();
+      } catch (const std::exception& e) {
+        CSPOT_LOG(error, "Failed to resolve spclient host for CDN access: %s",
+                 e.what());
+      }
+    }
 
     auto snapshot = snapshotPreloaded();  // TrackQueue locks internally
 
@@ -62,7 +82,7 @@ void TrackLoader::processTrack(std::shared_ptr<QueuedTrack> track) {
       track->stepLoadAudioFile(processSemaphore);
       break;
     case QueuedTrack::State::CDN_REQUIRED:
-      track->stepLoadCDNUrl(accessKey);
+      track->stepLoadCDNUrl(accessKey, clientToken, spclientHost);
 
       if (track->getState() == QueuedTrack::State::READY) {
         tryTopUpLookahead();  // TrackQueue locks + resolves + queues internally

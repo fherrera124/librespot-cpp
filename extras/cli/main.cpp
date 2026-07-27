@@ -73,10 +73,6 @@ void printUsage() {
                "open the Spotify app and this device should appear as a "
                "Connect target.\n";
   std::cout << "\n";
-  std::cout << "--client-id <id>          Spotify Developer Dashboard app "
-               "client id (required)\n";
-  std::cout << "--client-secret <secret>  Spotify Developer Dashboard app "
-               "client secret (required)\n";
   std::cout << "--device-name <name>      Name advertised to Spotify "
                "clients (default: \"CSpot CLI\")\n";
   std::cout << "-b, --bitrate <kbps>      Streaming bitrate: 96, 160 or "
@@ -124,8 +120,6 @@ int main(int argc, char** argv) {
   cspot::SpotifyConnectReceiverConfig receiverConfig;
   receiverConfig.deviceName = args->deviceName;
   receiverConfig.bitrate = args->bitrate;
-  receiverConfig.clientId = args->clientId;
-  receiverConfig.clientSecret = args->clientSecret;
   receiverConfig.normalisationPregainDb = args->normalisationPregainDb;
 
   auto receiver = std::make_unique<cspot::SpotifyConnectReceiver>(

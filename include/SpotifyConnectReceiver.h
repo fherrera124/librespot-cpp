@@ -23,8 +23,6 @@ struct SpotifyConnectReceiverConfig {
   std::string deviceName;
   uint16_t initialVolume = 0;   // 0..UINT16_MAX
   int bitrate = 160;            // 96, 160 or 320 (kbps); anything else -> 160
-  std::string clientId;
-  std::string clientSecret;
   uint16_t zeroconfHttpPort = 8090;
   // See Context::ConfigState's own field (CSpotContext.h) - just
   // forwarded there in runSessionInner().
@@ -93,8 +91,6 @@ class SpotifyConnectReceiver : public bell::Task {
   int volume;
   int bitrate;
   uint16_t zeroconfHttpPort;
-  std::string clientId;
-  std::string clientSecret;
   float normalisationPregainDb;
   EventHandler eventHandler;
   ConnectionStateCallback connectionStateCallback;

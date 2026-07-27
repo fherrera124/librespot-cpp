@@ -13,6 +13,7 @@
 namespace cspot {
 struct Context;
 struct TrackReference;
+class Login5Client;
 
 // Owns TrackQueue/TrackPlayer and position tracking - the actual audio
 // control path. Never reports connect-state itself (no
@@ -27,7 +28,11 @@ class PlaybackController {
       std::function<void(std::shared_ptr<QueuedTrack>)>;
   using DepletedCallback = std::function<void()>;
 
+  // login5: forwarded to TrackQueue/TrackLoader for CDN storage-resolve -
+  // see TrackQueue::TrackQueue()'s own comment on why this replaced a
+  // dedicated AccessKeyFetcher.
   PlaybackController(std::shared_ptr<cspot::Context> ctx,
+                     std::shared_ptr<cspot::Login5Client> login5,
                      TrackLoadedCallback onTrackLoaded,
                      TrackReachedCallback onTrackReached,
                      DepletedCallback onDepleted);

@@ -6,7 +6,6 @@
 #include <memory>
 #include <mutex>
 
-#include "AccessKeyFetcher.h"
 #include "CDNAudioFile.h"
 #include "CSpotContext.h"
 #include "HTTPClient.h"
@@ -358,9 +357,13 @@ void QueuedTrack::stepLoadAudioFile(
   setState(State::PENDING_KEY);
 }
 
-void QueuedTrack::stepLoadCDNUrl(const std::string& accessKey) {
-  if (accessKey.size() == 0) {
-    // Wait for access key
+void QueuedTrack::stepLoadCDNUrl(const std::string& accessKey,
+                                 const std::string& clientToken,
+                                 const std::string& spclientHost) {
+  if (accessKey.empty() || spclientHost.empty()) {
+    // Wait for a token/resolved host - both refreshed every
+    // TrackLoader::runTask() tick (TrackLoader.cpp), so this just no-ops
+    // until they're available rather than failing outright.
     return;
   }
 
@@ -388,17 +391,31 @@ void QueuedTrack::stepLoadCDNUrl(const std::string& accessKey) {
 
   try {
 
+    // spclientHost (resolved via apresolve.spotify.com?type=spclient),
+    // NOT the public api.spotify.com Web API this used to hit - this
+    // repo's own feature/esp32-port branch's equivalent call
+    // (SpClient::resolveStorageInteractive()) confirmed a user-session
+    // token is only meaningful against the internal spclient host, not
+    // the public one, and also always sends Client-Token alongside
+    // Authorization, which this call never did before (nothing else in
+    // this codebase makes an authenticated request without it either).
     std::string requestUrl = string_format(
-        "https://api.spotify.com/v1/storage-resolve/files/audio/interactive/"
+        "https://%s/storage-resolve/files/audio/interactive/"
         "%s?alt=json&product=9",
-        bytesToHexString(fileId).c_str());
+        spclientHost.c_str(), bytesToHexString(fileId).c_str());
 
     auto req = bell::HTTPClient::get(
-        requestUrl, {bell::HTTPClient::ValueHeader(
-                        {"Authorization", "Bearer " + accessKey})});
+        requestUrl, {
+                        {"Client-Token", clientToken},
+                        {"Authorization", "Bearer " + accessKey},
+                    });
 
-    // Wait for response
-    std::string_view result = req->body();
+    // Copied into a std::string (not left as the string_view body()
+    // actually returns) so .c_str() below is guaranteed null-terminated -
+    // cJSON_Parse() scans for '\0', which a string_view's .data() carries
+    // no guarantee of. Same bug, same fix as AccessKeyFetcher.cpp's own
+    // (see that file's comment for the full explanation).
+    std::string result(req->body());
 
     // A non-2xx or empty body (rate limiting, backend hiccup) used to go
     // straight into the JSON parser with zero context on why it failed -
@@ -415,7 +432,7 @@ void QueuedTrack::stepLoadCDNUrl(const std::string& accessKey) {
     // cJSON_Parse()/cJSON_GetObjectItem() both return null on failure - the
     // original code dereferenced the result unconditionally, a null deref
     // waiting for a malformed/unexpected response. See F80.
-    cJSON* jsonResult = cJSON_Parse(result.data());
+    cJSON* jsonResult = cJSON_Parse(result.c_str());
     if (jsonResult == nullptr) {
       throw std::runtime_error("storage-resolve returned invalid JSON");
     }
@@ -511,7 +528,7 @@ void QueuedTrack::stepLoadMetadata(
 }
 
 TrackQueue::TrackQueue(std::shared_ptr<cspot::Context> ctx,
-                      std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher)
+                      std::shared_ptr<cspot::Login5Client> login5)
     : ctx(ctx) {
   processSemaphore = std::make_shared<bell::WrappedSemaphore>();
   playableSemaphore = std::make_shared<bell::WrappedSemaphore>();
@@ -519,7 +536,7 @@ TrackQueue::TrackQueue(std::shared_ptr<cspot::Context> ctx,
   // Constructed last - see trackLoader's own declaration comment
   // (TrackQueue.h) for why member order matters here.
   trackLoader = std::make_unique<TrackLoader>(
-      ctx, accessKeyFetcher, processSemaphore,
+      ctx, login5, processSemaphore,
       [this] { return snapshotPreloadedTracks(); },
       [this] { tryTopUpLookahead(); });
 };

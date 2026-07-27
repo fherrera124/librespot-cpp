@@ -30,8 +30,6 @@ SpotifyConnectReceiver::SpotifyConnectReceiver(
       bitrate(config.bitrate == 96 || config.bitrate == 320 ? config.bitrate
                                                              : 160),
       zeroconfHttpPort(config.zeroconfHttpPort),
-      clientId(config.clientId),
-      clientSecret(config.clientSecret),
       normalisationPregainDb(config.normalisationPregainDb),
       eventHandler(std::move(eventHandler)),
       connectionStateCallback(std::move(onConnectionStateChanged)),
@@ -202,8 +200,6 @@ void SpotifyConnectReceiver::runSessionInner() {
 
   ctx->session->connectWithRandomAp();
   ctx->config.authData = ctx->session->authenticate(blob);
-  ctx->config.clientId = clientId;
-  ctx->config.clientSecret = clientSecret;
 
   if (ctx->config.authData.empty()) {
     CSPOT_LOG(error,

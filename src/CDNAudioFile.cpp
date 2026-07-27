@@ -10,7 +10,6 @@
 #include <string_view>       // for string_view
 #include <type_traits>       // for remove_extent_t
 
-#include "AccessKeyFetcher.h"  // for AccessKeyFetcher
 #include "BellLogger.h"        // for AbstractLogger
 #include "Crypto.h"
 #include "Logger.h"            // for CSPOT_LOG

@@ -19,9 +19,6 @@ files) - if `python3 -c "import google.protobuf"` fails, either
 `pip install protobuf` or create a venv with it and prepend its `bin/`
 to `PATH` before building.
 
-You'll also need a Spotify Developer Dashboard app (client ID + secret)
-- see below.
-
 ## Building
 
 From the repo root:
@@ -41,16 +38,14 @@ reached. Without either, `cspotcli` falls back to a `NamedPipeAudioSink`
 ## Running
 
 ```bash
-./extras/cli/cspotcli --client-id <id> --client-secret <secret>
+./extras/cli/cspotcli
 ```
 
-`--client-id`/`--client-secret` are required - create an app at the
-[Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-to get them (used for the `client_credentials` grant that fetches track
-audio from the CDN, not for login - pairing itself is ZeroConf-only, no
-username/password support). `--device-name <name>` sets what's shown in
-the Spotify app (default `"CSpot CLI"`); `-b/--bitrate <96|160|320>`
-sets the streaming bitrate. `--help` lists all options.
+No credentials needed - pairing is ZeroConf-only, and the same user-
+session token it gets from that also covers fetching track audio from
+the CDN. `--device-name <name>` sets what's shown in the Spotify app
+(default `"CSpot CLI"`); `-b/--bitrate <96|160|320>` sets the streaming
+bitrate. `--help` lists all options.
 
 Make sure `avahi-daemon` is running (`systemctl status avahi-daemon`) -
 `cspotcli` won't be discoverable by the Spotify app otherwise. Once

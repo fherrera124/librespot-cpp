@@ -12,16 +12,6 @@ std::shared_ptr<CommandLineArguments> CommandLineArguments::parse(int argc,
     if (stringVal == "-h" || stringVal == "--help") {
       result->shouldShowHelp = true;
       return result;
-    } else if (stringVal == "--client-id") {
-      if (i >= argc - 1) {
-        throw std::invalid_argument("expected value after --client-id");
-      }
-      result->clientId = std::string(argv[++i]);
-    } else if (stringVal == "--client-secret") {
-      if (i >= argc - 1) {
-        throw std::invalid_argument("expected value after --client-secret");
-      }
-      result->clientSecret = std::string(argv[++i]);
     } else if (stringVal == "--device-name") {
       if (i >= argc - 1) {
         throw std::invalid_argument("expected value after --device-name");
@@ -45,12 +35,6 @@ std::shared_ptr<CommandLineArguments> CommandLineArguments::parse(int argc,
     } else {
       throw std::invalid_argument(("unknown flag '" + stringVal + "'").c_str());
     }
-  }
-
-  if (result->clientId.empty() || result->clientSecret.empty()) {
-    throw std::invalid_argument(
-        "--client-id and --client-secret are required (create an app at "
-        "the Spotify Developer Dashboard to get them)");
   }
 
   return result;

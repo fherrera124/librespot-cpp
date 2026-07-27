@@ -18,7 +18,7 @@ class WrappedSemaphore;
 
 namespace cspot {
 struct Context;
-class AccessKeyFetcher;
+class Login5Client;
 class CDNAudioFile;
 struct CDNConnection;
 class TrackLoader;
@@ -113,7 +113,14 @@ class QueuedTrack : public std::enable_shared_from_this<QueuedTrack> {
   void stepLoadAudioFile(
       std::shared_ptr<bell::WrappedSemaphore> updateSemaphore);
 
-  void stepLoadCDNUrl(const std::string& accessKey);
+  // accessKey/clientToken: Login5Client's user-session token pair (not
+  // AccessKeyFetcher's app-only client_credentials one, removed - see
+  // TrackQueue::TrackQueue()'s own comment). spclientHost: resolved once
+  // by TrackLoader and cached for its own lifetime, not by this class -
+  // see TrackLoader.h.
+  void stepLoadCDNUrl(const std::string& accessKey,
+                      const std::string& clientToken,
+                      const std::string& spclientHost);
 
   void expire();
 
@@ -138,14 +145,27 @@ class QueuedTrack : public std::enable_shared_from_this<QueuedTrack> {
 
 class TrackQueue {
  public:
-  // accessKeyFetcher: injected rather than constructed internally, so a
-  // test can supply a fake instead of the real one's blocking HTTPS POST
-  // to accounts.spotify.com (see tests/f104_queuedtrack_state_race_
-  // test.cpp's own comment on why it couldn't drive TrackLoader::runTask()
-  // directly for exactly this reason). Forwarded straight through to
-  // trackLoader's constructor - see TrackLoader.h.
+  // login5: the same Login5Client instance PlayerEngine already owns for
+  // Dealer/connect-state auth (its user-session token pair works for CDN
+  // storage-resolve too, against the internal spclient host - see
+  // TrackQueue.cpp's own comment), injected rather than constructed
+  // internally so a test can supply a fake instead of the real one's
+  // blocking HTTPS (see tests/f104_queuedtrack_state_race_test.cpp's own
+  // comment on why it couldn't drive TrackLoader::runTask() directly for
+  // exactly this reason - unrelated to which token type this is, that
+  // comment predates this change). Forwarded straight through to
+  // trackLoader's constructor - see TrackLoader.h. Previously a
+  // dedicated AccessKeyFetcher (removed): a *second*, separate token
+  // fetch using an app-only client_credentials grant against
+  // accounts.spotify.com, requiring a Spotify Developer Dashboard app
+  // client id/secret nothing else in this codebase needed. Confirmed
+  // against this repo's own feature/esp32-port branch, which only ever
+  // derives one (user-session) token from the ZeroConf login blob and
+  // uses it for both connect-state and CDN resolution - AccessKeyFetcher
+  // was this branch's own extra, never-quite-working mechanism, not
+  // something Spotify's backend actually requires.
   TrackQueue(std::shared_ptr<cspot::Context> ctx,
-             std::shared_ptr<cspot::AccessKeyFetcher> accessKeyFetcher);
+             std::shared_ptr<cspot::Login5Client> login5);
   ~TrackQueue();
 
   enum class SkipDirection { NEXT, PREV };

@@ -37,7 +37,7 @@ PlayerEngine::PlayerEngine(
     : bell::Task("cspotConnectState", 32 * 1024, 1, 0), ctx(ctx),
       login5(login5), contextResolver(ctx, login5),
       playbackController(
-          ctx,
+          ctx, login5,
           [this](std::shared_ptr<QueuedTrack> track, bool paused) {
             // Announce the new track immediately (is_buffering=true),
             // before the CDN fetch/decode that reachedPlaybackCallback

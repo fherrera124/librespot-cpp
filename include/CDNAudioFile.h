@@ -16,7 +16,6 @@ class WrappedSemaphore;
 }  // namespace bell
 
 namespace cspot {
-class AccessKeyFetcher;
 
 // A CDN connection (TCP+TLS session to Spotify's audio CDN) kept alive
 // across tracks, not just within one - see docs/dealer_websocket_
