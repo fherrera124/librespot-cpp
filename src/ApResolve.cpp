@@ -4,7 +4,6 @@
 #include <map>               // for operator!=, operator==
 #include <memory>            // for allocator, unique_ptr
 #include <stdexcept>         // for runtime_error
-#include <string_view>       // for string_view
 #include <vector>            // for vector
 
 #include "HTTPClient.h"  // for HTTPClient, HTTPClient::Response
@@ -22,7 +21,16 @@ std::string ApResolve::fetchFirstApAddress() {
   }
 
   auto request = bell::HTTPClient::get("https://apresolve.spotify.com/");
-  std::string_view responseStr = request->body();
+  // Copied into a std::string (not left as the string_view body() actually
+  // returns) specifically so .c_str() below is guaranteed null-terminated -
+  // cJSON_Parse() scans for '\0' to know where to stop, and a
+  // string_view's .data() carries no such guarantee (it's a raw view into
+  // HTTPClient's own read buffer). Same fix as AccessKeyFetcher.cpp's own
+  // identical bug, found while investigating a real access-token failure
+  // that traced back to this exact pattern - this call site never visibly
+  // failed from it, purely by buffer-layout luck, but it was the same
+  // undefined behavior underneath.
+  std::string responseStr(request->body());
 
   // FIX: this used to skip checking that "ap_list" actually existed and
   // had at least one element before indexing into it - an empty/malformed
@@ -31,7 +39,7 @@ std::string ApResolve::fetchFirstApAddress() {
   // entirely on the generic top-level catch (finding F17) instead of
   // failing with a clear message. See docs/spotify_component_analysis.md,
   // finding F36.
-  cJSON* json = cJSON_Parse(responseStr.data());
+  cJSON* json = cJSON_Parse(responseStr.c_str());
   if (json == nullptr) {
     throw std::runtime_error("ApResolve: failed to parse JSON response");
   }
@@ -53,9 +61,11 @@ std::vector<std::string> ApResolve::fetchAddressesOfType(
     const std::string& type) {
   auto request =
       bell::HTTPClient::get("https://apresolve.spotify.com/?type=" + type);
-  std::string_view responseStr = request->body();
+  // See fetchFirstApAddress()'s own comment on why this is a std::string,
+  // not the string_view body() actually returns.
+  std::string responseStr(request->body());
 
-  cJSON* json = cJSON_Parse(responseStr.data());
+  cJSON* json = cJSON_Parse(responseStr.c_str());
   if (json == nullptr) {
     throw std::runtime_error("ApResolve: failed to parse JSON response");
   }
