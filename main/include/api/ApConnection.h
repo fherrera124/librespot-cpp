@@ -24,67 +24,46 @@ class ApConnection {
  public:
   ApConnection(const std::shared_ptr<cspot::AuthInfo>& authInfo);
 
-  // Type for the packet handler function
   using ConnectionPacketHandler = std::function<void(
       uint8_t packetType, const std::byte* data, size_t len)>;
 
-  /**
-   * @brief Connects to the AP, address fetched from the credential resolver
-   */
+  // Connects to the AP, address fetched from the credential resolver.
   bell::Result<> connect(
       const std::string& apAddress,
       const std::shared_ptr<bell::SocketPollListener>& socketPoll);
 
-  /**
-   * @brief Sends a shannon encrypted packet to the AP
-   *
-   * @param cmd Packet command
-   * @param packetData Buffer containing the packet data
-   * @param packetSize Size of the packet data
-   */
+  // Sends a Shannon-encrypted packet to the AP.
   bell::Result<> sendPacket(uint8_t cmd, const std::byte* packetData,
                             uint16_t packetSize);
 
-  /**
-   * @brief Receives a shannon encrypted packet from the AP
-   *
-   * @param cmd Reference to the packet command byte
-   * @param packetSize Reference to the packet size
-   * @return uint8_t* Buffer containing the received packet data
-   */
+  // Receives a Shannon-encrypted packet from the AP.
   bell::Result<std::byte*> receivePacket(uint8_t& cmd, uint16_t& packetSize);
 
-  /**
-   * @brief Assigns a handler called when an encrypted packet is received
-   */
   void setPacketHandler(ConnectionPacketHandler handler);
 
-  /**
-   * @brief Authenticates the connection with the AP, using data from login blob
-   */
+  // Authenticates the connection with the AP, using data from the login blob.
   bell::Result<> authenticate(
       const cspot_proto::LoginCredentials& loginCredentials,
       const std::string& deviceId);
 
-  /**
-   * @brief Returns the underlying socket used for the connection
-   */
   std::shared_ptr<bell::net::TCPSocket> getSocket() { return apSock; }
 
   bool isConnected() const { return state == State::CONNECTED_SHANNON; }
   bool hasFailed() const { return state == State::ERROR; }
 
-  /**
-   * @brief Tears down the connection (closes the socket, unregisters it from
-   * the poller) and marks the connection failed, same as an internal error
-   * would. Used by ApClient's ping watchdog to force a reconnect when the AP
-   * has gone silently dead (socket still looks fine, no error ever fires).
-   */
+  // Tears down the connection (closes the socket, unregisters it from the
+  // poller) and marks it failed, same as an internal error would. Used by
+  // ApClient's ping watchdog to force a reconnect when the AP has gone
+  // silently dead (socket still looks fine, no error ever fires).
   void disconnect();
 
  private:
   const char* LOG_TAG = "ApConnection";
-  const static uint32_t operationTimeout = 3000;
+  // inline: odr-used below via std::chrono::milliseconds(operationTimeout),
+  // which binds by reference - plain "const static" without an
+  // out-of-class definition links only as long as every use stays a pure
+  // rvalue, and stops as soon as one doesn't.
+  const static inline uint32_t operationTimeout = 3000;
 
   std::shared_ptr<cspot::AuthInfo> authInfo;
   std::shared_ptr<bell::net::TCPSocket> apSock;
@@ -97,19 +76,16 @@ class ApConnection {
   // pointer instead destroys the old instance cleanly.
   std::unique_ptr<DH> dhPair = std::make_unique<DH>();
 
-  // Nonce counters for Shannon ciphers
   uint32_t shanRecvNonce = 0;
   uint32_t shanSendNonce = 0;
 
   Shannon recvCipher{};
   Shannon sendCipher{};
 
-  // Connection state machine enumeration
   enum class State { INITIAL, SENT_HELLO, CONNECTED_SHANNON, ERROR };
 
   State state = State::INITIAL;
 
-  // Protobufs
   cspot_proto::ClientHello pbClientHello{};
   cspot_proto::APResponseMessage pbApResponse{};
   cspot_proto::ClientResponsePlaintext pbClientResponse{};
@@ -120,7 +96,6 @@ class ApConnection {
   // Holds the initially transferred messages, used for the handshake challenge
   std::vector<std::byte> accumulatedExchangeBuffer;
 
-  // Packet handler for incoming packets
   ConnectionPacketHandler packetHandler = nullptr;
 
   void handleRead();
@@ -135,19 +110,10 @@ class ApConnection {
   bell::Result<size_t> receivePlainPacket();
 
   // Reads exactly `len` bytes, transparently retrying on EAGAIN/EWOULDBLOCK
-  // (apSock is non-blocking - see the connect(..., timeoutMs=0) call site -
-  // so a read finding 0 bytes currently available is normal, not an error,
-  // and used to be treated as fatal here: receivePacket()/receivePlainPacket()
-  // read a multi-byte packet across a handful of individual read() calls,
-  // and if the rest of the packet hadn't arrived from the wire yet, that
-  // transient EAGAIN killed the whole AP connection permanently (state
-  // dropped to ERROR), which is exactly what a real hardware session hit -
-  // every single audio key request failing with "Not owner" (this
-  // toolchain's newlib strerror() text for EPERM, returned by
-  // sendPacket()/receivePacket() once state != CONNECTED_SHANNON) because
-  // the connection had already silently died within the first second or
-  // two. Bounded by operationTimeout so a genuinely dead connection still
-  // surfaces as a real error instead of hanging forever.
+  // (apSock is non-blocking, so a read finding 0 bytes currently available
+  // is normal, not an error). Bounded by operationTimeout so a genuinely
+  // dead connection still surfaces as a real error instead of hanging
+  // forever.
   bell::Result<> readExact(std::byte* buf, size_t len);
 
   static void updateShannonNonce(uint32_t& nonce, Shannon& cipher);

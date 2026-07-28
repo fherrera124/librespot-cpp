@@ -78,7 +78,6 @@ class ApClient {
 
   uint32_t audioKeySequence = 0;
 
-  // Holds a mapping of audio key requests to track IDs
   std::unordered_map<uint32_t, std::pair<SpotifyId, std::vector<std::byte>>>
       audioKeyRequests;
 
