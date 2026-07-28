@@ -310,15 +310,15 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
     BELL_LOG(error, LOG_TAG, "HTTP request error: {}", response.error());
     return tl::make_unexpected(response.error());
   }
-  activeResponse = *response;
+  activeResponse = std::move(*response);
 
   auto* stream = activeResponse->stream();
   // Ensure buffer size
-  if (lastReadChunk.size() < *response->contentLength) {
-    lastReadChunk.resize(*response->contentLength);
+  if (lastReadChunk.size() < *activeResponse->contentLength) {
+    lastReadChunk.resize(*activeResponse->contentLength);
   }
   stream->read(reinterpret_cast<char*>(lastReadChunk.data()),
-               *response->contentLength);
+               *activeResponse->contentLength);
 
   auto elapsed = std::chrono::system_clock::now() - startTime;
   totalRequestTimeMs +=

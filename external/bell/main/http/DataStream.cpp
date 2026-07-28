@@ -37,7 +37,7 @@ bell::Result<> DataStream::open(bell::HTTPMethod method, const std::string& url,
   }
 
   totalSize = response->contentLength;
-  activeResponse = *response;
+  activeResponse = std::move(*response);
 
   // Detect seekability via Content-Range
   if (activeResponse->headers.contains("Content-Range")) {
@@ -179,11 +179,11 @@ bell::Result<> DataStream::requestNextRange() {
     return tl::make_unexpected(response.error());
   }
 
-  activeResponse = *response;
+  activeResponse = std::move(*response);
 
   auto* stream = activeResponse->stream();
   stream->read(reinterpret_cast<char*>(lastReadChunk.data()),
-               *response->contentLength);
+               *activeResponse->contentLength);
 
   if (stream->fail() && !stream->eof()) {
     return bell::make_unexpected_errc<>(std::errc::io_error);

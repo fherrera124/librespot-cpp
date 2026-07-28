@@ -4,6 +4,7 @@
 #include "bell/Result.h"
 #include "bell/http/Common.h"
 #include "bell/io/MemoryStream.h"
+#include "bell/net/SocketStream.h"
 #include "bell/net/URIParser.h"
 #include "tl/expected.hpp"
 
@@ -29,9 +30,9 @@ http::Reader::Reader(Direction readerDirection, std::istream* istream,
 }
 
 http::Reader::Reader(Direction readerDirection,
-                     std::shared_ptr<std::istream> istreamPtr)
+                     std::shared_ptr<net::SocketStream> socketStream)
     : readerDirection(readerDirection),
-      sharedIstream(std::move(istreamPtr)),
+      sharedIstream(std::move(socketStream)),
       istream(sharedIstream.get()),
       bufferPtr(&internalBuffer) {
   // Use the internal buffer for reading
@@ -161,7 +162,24 @@ bell::Result<> http::Reader::readHeaders() {
     }
   }
 
+  if (sharedIstream) {
+    bodyStartByteCount_ = sharedIstream->totalBytesConsumed();
+  }
+
   return {};
+}
+
+http::Reader::~Reader() {
+  if (readerDirection != Direction::Response || !sharedIstream) {
+    return;
+  }
+  // An undrained or unverifiable (no Content-Length) body must not go back
+  // to the connection pool looking healthy.
+  size_t bytesConsumed =
+      sharedIstream->totalBytesConsumed() - bodyStartByteCount_;
+  if (!contentLength.has_value() || bytesConsumed < *contentLength) {
+    sharedIstream->close();
+  }
 }
 
 std::istream* http::Reader::getStream() const {

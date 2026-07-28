@@ -85,6 +85,7 @@ SocketBuffer::int_type SocketBuffer::underflow() {
   if (*br == 0) {
     return traits_type::eof();  // Stream sets eofbit (clean EOF)
   }
+  bytesRead_ += *br;
   setg(ibuf.data(), ibuf.data(), ibuf.data() + *br);
   return traits_type::to_int_type(*ibuf.data());
 }
@@ -123,6 +124,7 @@ std::streamsize SocketBuffer::xsgetn(char_type* _s, std::streamsize _n) {
     if (*br == 0) {
       return (_n - remain);
     }
+    bytesRead_ += *br;
     remain -= *br;
   }
   return _n;

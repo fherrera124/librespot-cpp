@@ -15,6 +15,7 @@
 // Own includes
 #include "bell/Result.h"
 #include "bell/http/Common.h"
+#include "bell/net/SocketStream.h"
 
 namespace bell::http {
 class Reader {
@@ -34,8 +35,25 @@ class Reader {
 
   /**
    * @brief Ownership-taking constructor, initializes the reader with the given stream. No data is read from the stream until readHeaders() is called.
+   * @remark Typed as SocketStream (not a generic istream) so the destructor
+   * can decide whether to close the connection without RTTI (this build
+   * uses -fno-rtti on the ESP32 target, ruling out dynamic_cast).
    */
-  Reader(Direction readerDirection, std::shared_ptr<std::istream> istreamPtr);
+  Reader(Direction readerDirection,
+         std::shared_ptr<net::SocketStream> socketStream);
+
+  // May close the underlying connection - see the .cpp for why.
+  ~Reader();
+
+  // Move-only: the destructor decides whether to close the underlying
+  // connection based on this instance's own byte counters, so a silent
+  // copy-instead-of-move (which a user-declared destructor would otherwise
+  // cause by suppressing the implicit move members) would make that
+  // decision on a stale duplicate instead of the live instance.
+  Reader(Reader&&) = default;
+  Reader& operator=(Reader&&) = default;
+  Reader(const Reader&) = delete;
+  Reader& operator=(const Reader&) = delete;
 
   /**
    * @brief Read the headers from the stream. This method needs to be called before any other methods.
@@ -145,7 +163,7 @@ class Reader {
   // something you can take the address/reference of.
   static constexpr int maxRequestLen = 4 * 1024;
   Direction readerDirection = Direction::Invalid;
-  std::shared_ptr<std::istream> sharedIstream;
+  std::shared_ptr<net::SocketStream> sharedIstream;
   std::istream* istream{};
   std::vector<char> internalBuffer;
   std::vector<char>* bufferPtr = &internalBuffer;
@@ -153,6 +171,12 @@ class Reader {
 
   bool headersValid = false;
   size_t readContentLength = 0;
+
+  // Checkpoint of the underlying SocketStream's totalBytesConsumed() taken
+  // right after headers are parsed, used by the destructor to compute how
+  // many body bytes were actually consumed. 0 if the stream isn't a
+  // SocketStream (e.g. tests using a plain istream).
+  size_t bodyStartByteCount_ = 0;
 
   // picohttpparser headers
   std::vector<phr_header> phrHeaders;

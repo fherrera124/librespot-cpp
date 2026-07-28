@@ -98,6 +98,12 @@ class Response {
   Response(http::Reader responseReader);
   ~Response() = default;
 
+  // Move-only: bodyReader is move-only (see Reader.h).
+  Response(Response&&) = default;
+  Response& operator=(Response&&) = default;
+  Response(const Response&) = delete;
+  Response& operator=(const Response&) = delete;
+
   /**
    * @brief Reads the entire response body as a string.
    * @return A Result containing a string_view of the body on success.

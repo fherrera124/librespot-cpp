@@ -16,6 +16,9 @@ class SocketBuffer : public std::streambuf {
   std::array<char, bufLen> ibuf{};
   std::array<char, bufLen> obuf{};
 
+  // Bytes read() from the socket so far. Only touched in underflow()/xsgetn().
+  size_t bytesRead_ = 0;
+
  public:
   SocketBuffer(std::shared_ptr<Socket> socket);
 
@@ -26,6 +29,11 @@ class SocketBuffer : public std::streambuf {
   // Define move constructor and move assignment operator
   SocketBuffer(SocketBuffer&& other) noexcept = default;
   SocketBuffer& operator=(SocketBuffer&& other) noexcept = default;
+
+  // Bytes handed to callers so far (bytesRead_ minus what's still buffered).
+  size_t totalBytesConsumed() const {
+    return bytesRead_ - static_cast<size_t>(egptr() - gptr());
+  }
 
  protected:
   int sync() override;
@@ -51,6 +59,10 @@ class SocketStream : public std::iostream {
   bool isOpen() { return socket->isValid(); }
 
   SocketBuffer* rdbuf() { return &socketBuf; }
+
+  size_t totalBytesConsumed() const { return socketBuf.totalBytesConsumed(); }
+
+  void close() { socket->close(); }
 };
 }  // namespace bell::net
 
