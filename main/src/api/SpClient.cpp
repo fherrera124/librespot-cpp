@@ -7,6 +7,7 @@
 // Library includes
 #include "Utils.h"
 #include "bell/http/Client.h"
+#include "bell/utils/Utils.h"
 #include "tao/json.hpp"
 
 #include "api/CredentialsResolver.h"
@@ -26,6 +27,9 @@ class DefaultSpClient : public SpClient {
   bell::Result<> putConnectState(cspot_proto::PutStateRequest& stateRequest,
                                  const std::string& deviceId,
                                  const std::string& sessionId) override;
+  bell::Result<> putConnectStateRaw(std::vector<std::byte> body,
+                                    const std::string& deviceId,
+                                    const std::string& sessionId) override;
   bell::Result<> putInactive(const std::string& deviceId,
                              const std::string& sessionId) override;
   bell::Result<bell::HTTPResponse> contextResolve(
@@ -70,18 +74,24 @@ class DefaultSpClient : public SpClient {
 bell::Result<> DefaultSpClient::putConnectState(
     cspot_proto::PutStateRequest& stateRequest, const std::string& deviceId,
     const std::string& sessionId) {
-  auto credentialsRes = updateCredentials();
-  if (!credentialsRes) {
-    // Could not fetch credentials
-    return credentialsRes;
-  }
-
   std::vector<std::byte> freshBuffer;
   auto encodeRes = nanopb_helper::encodeToVector(stateRequest, freshBuffer);
 
   if (!encodeRes) {
     BELL_LOG(error, LOG_TAG, "Error while encoding message");
     return bell::make_unexpected_errc(std::errc::bad_message);
+  }
+
+  return putConnectStateRaw(std::move(freshBuffer), deviceId, sessionId);
+}
+
+bell::Result<> DefaultSpClient::putConnectStateRaw(
+    std::vector<std::byte> body, const std::string& deviceId,
+    const std::string& sessionId) {
+  auto credentialsRes = updateCredentials();
+  if (!credentialsRes) {
+    // Could not fetch credentials
+    return credentialsRes;
   }
 
   // No ?product=/salt= query params and Client-Token now included - matches
@@ -93,20 +103,48 @@ bell::Result<> DefaultSpClient::putConnectState(
   // never actually transfers "active" to it (server accepts the write,
   // never applies the transition) is consistent with the server
   // distrusting/deprioritizing a request missing this token.
-  auto httpResponse = httpClient->put(
-      fmt::format("https://{}/connect-state/v1/devices/{}", spClientAddress,
-                  deviceId),
+  auto url = fmt::format("https://{}/connect-state/v1/devices/{}",
+                         spClientAddress, deviceId);
+  // Accept matches this repo's own master branch for this endpoint
+  // (HTTPClient.cpp's rawRequest(): always sends "Accept: */*" unless the
+  // caller overrides it - PutStateClient::put() relies on that default).
+  // Our own newer bell::http::Writer has no Accept default at all, so it's
+  // sent explicitly here instead.
+  bell::HTTPHeaders headers = {
       {
-          {
-              "Content-Type",
-              "application/x-protobuf",
-          },
-          {"Client-Token", clientToken},
-          {"X-Spotify-Connection-Id", sessionId},
-          {"Authorization", fmt::format("Bearer {}", accessToken)},
+          "Content-Type",
+          "application/x-protobuf",
       },
-      tcb::span(reinterpret_cast<std::byte*>(freshBuffer.data()),
-                freshBuffer.size()));
+      {"Client-Token", clientToken},
+      {"X-Spotify-Connection-Id", sessionId},
+      {"Authorization", fmt::format("Bearer {}", accessToken)},
+      {"Accept", "*/*"},
+  };
+  auto bodySpan = tcb::span(reinterpret_cast<std::byte*>(body.data()),
+                            body.size());
+
+  // Bounded retry (2 attempts total, 1s apart) for a transport-level
+  // failure - matches this repo's own master branch (PutStateClient::
+  // put()'s HttpRetry(2, 1000ms, "connect-state PUT")). Confirmed
+  // necessary on real hardware: a transfer's own activation PUT failed
+  // with "Connection reset by peer", Client.cpp's own single pooled-
+  // connection-reuse fallback ALSO failed on its fresh-connection retry,
+  // and this call gave up outright with no further attempt - silently
+  // dropping the exact PUT a client's "Connecting..." state was waiting
+  // on. Only retries a transport-level failure (no response reached this
+  // client at all) - an actual HTTP status back from the server (200,
+  // 4xx, 429...) is handled below, unretried, since resending the
+  // identical request wouldn't change a server-side decision.
+  constexpr int kMaxAttempts = 2;
+  constexpr int kRetryBackoffMs = 1000;
+  auto httpResponse = httpClient->put(url, headers, bodySpan);
+  for (int attempt = 2; !httpResponse && attempt <= kMaxAttempts; attempt++) {
+    BELL_LOG(warn, LOG_TAG,
+             "putConnectState transport failure, retrying ({}/{}): {}",
+             attempt, kMaxAttempts, httpResponse.error());
+    bell::utils::sleepMs(kRetryBackoffMs);
+    httpResponse = httpClient->put(url, headers, bodySpan);
+  }
 
   if (!httpResponse) {
     BELL_LOG(error, LOG_TAG, "Error while sending request: {}",
@@ -138,40 +176,24 @@ bell::Result<> DefaultSpClient::putConnectState(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  // Temp diagnostic: this response body IS the server's own updated cluster
-  // state (per the comment above) - decoding it here gives ground truth,
-  // right at the moment we succeed, on whether Spotify's backend actually
-  // recorded us as the active device, instead of inferring it indirectly
-  // from a later pubsub cluster update (which may never arrive addressed
-  // to the device that just changed, or may lag behind).
-  {
-    cspot_proto::Cluster cluster;
-    if (nanopb_helper::decodeFromVector(cluster, *bodyRes)) {
-      BELL_LOG(info, LOG_TAG,
-               "PUT response cluster: activeDeviceId={} (ours={})",
-               cluster.activeDeviceId, deviceId);
-    } else {
-      BELL_LOG(warn, LOG_TAG,
-               "Could not decode PUT response body as a Cluster ({} bytes)",
-               bodyRes->size());
-    }
-
-    // Cluster.device (tag 4) is actually a map<string, DeviceInfo> in
-    // Spotify's real schema (go-librespot's connect.proto) - every device
-    // currently registered in the cluster, keyed by device id. Our own
-    // generated Cluster struct still treats it as a single embedded
-    // message (a schema gap, not yet fixed), so cluster.activeDeviceId
-    // above can't tell us whether we're actually listed, only who's
-    // active. Cheap substring search on the raw bytes as a stand-in until
-    // proper map decoding is added: our own device id is a fixed hex
-    // string, so if it's anywhere in this response, we're in that map.
-    std::string_view rawBody(reinterpret_cast<const char*>(bodyRes->data()),
-                             bodyRes->size());
-    bool listedInResponse = rawBody.find(deviceId) != std::string_view::npos;
+  // Decode this response as the Cluster it's documented to be (master's
+  // own PutStateClient comment: "on success, the full updated cluster
+  // state") - the server's own authoritative view immediately after
+  // accepting this exact PUT, no dependency on a separate WS push (which
+  // real hardware captures show frequently never arrives at all after a
+  // transfer).
+  cspot_proto::Cluster cluster;
+  if (nanopb_helper::decodeFromVector(cluster, *bodyRes)) {
     BELL_LOG(info, LOG_TAG,
-             "PUT response raw bytes contain our own device id: {} ({} "
-             "bytes total)",
-             listedInResponse, bodyRes->size());
+             "PUT response Cluster: activeDeviceId={} (ours={}) echoed "
+             "sessionId={} isPlaying={} isPaused={} timestamp={}",
+             cluster.activeDeviceId, deviceId, cluster.playerState.sessionId,
+             cluster.playerState.isPlaying, cluster.playerState.isPaused,
+             cluster.playerState.timestamp);
+  } else {
+    BELL_LOG(warn, LOG_TAG,
+             "PUT response body ({} bytes) didn't decode as Cluster",
+             bodyRes->size());
   }
 
   return {};
