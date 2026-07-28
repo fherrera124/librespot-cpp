@@ -5,7 +5,6 @@
 #include <bell/Logger.h>
 #include <bell/io/BinaryStream.h>
 #include <bell/io/MemoryStream.h>
-#include <mbedtls/base64.h>
 #include <mbedtls/build_info.h>  // for MBEDTLS_VERSION_NUMBER, checked below
 // mbedTLS 4.0 moved these under mbedtls/private/ (still shipped, just
 // relocated - see MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS in
@@ -18,6 +17,7 @@
 #include <mbedtls/pkcs5.h>
 #endif
 #include <tao/json.hpp>
+#include "Utils.h"
 #include "authentication.pb.h"
 #include "bell/Result.h"
 #include "bell/net/URIParser.h"
@@ -92,24 +92,20 @@ Authenticator::authenticateZeroconfQuery(
     return bell::make_unexpected_errc<cspot_proto::LoginCredentials>(
         std::errc::bad_message);
   }
-  // Holds base64 decoded blob and client key
-  std::vector<std::byte> decodedBlob;
-  std::vector<std::byte> decodedClientKey;
-
-  auto res = base64Decode(queryParams.at("blob"), decodedBlob);
-  if (!res) {
+  auto blobRes = base64Decode(queryParams.at("blob"));
+  if (!blobRes) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode blob");
-    return tl::make_unexpected(res.error());
+    return tl::make_unexpected(blobRes.error());
   }
 
-  res = base64Decode(queryParams.at("clientKey"), decodedClientKey);
-  if (!res) {
+  auto clientKeyRes = base64Decode(queryParams.at("clientKey"));
+  if (!clientKeyRes) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode client key");
-    return tl::make_unexpected(res.error());
+    return tl::make_unexpected(clientKeyRes.error());
   }
 
   std::string username = queryParams.at("userName");
-  auto encryptedAuthBlobRes = decodeZeroconfBlob(decodedBlob, decodedClientKey);
+  auto encryptedAuthBlobRes = decodeZeroconfBlob(*blobRes, *clientKeyRes);
   if (!encryptedAuthBlobRes) {
     BELL_LOG(error, LOG_TAG, "Failed to decode zeroconf blob");
     return tl::make_unexpected(encryptedAuthBlobRes.error());
@@ -246,16 +242,14 @@ Authenticator::decodeEncryptedAuthBlob(
     const std::vector<std::byte>& encryptedAuthBlob) {
   std::scoped_lock lock(accessMutex);
 
-  std::vector<std::byte> base64DecodedAuthData;
   auto decodeRes = base64Decode(
       std::string_view(reinterpret_cast<const char*>(encryptedAuthBlob.data()),
-                       encryptedAuthBlob.size()),
-      base64DecodedAuthData);
-
+                       encryptedAuthBlob.size()));
   if (!decodeRes) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode auth blob");
     return tl::make_unexpected(decodeRes.error());
   }
+  std::vector<std::byte> base64DecodedAuthData = std::move(*decodeRes);
 
   // Calculate the pbkdf2 hmac
   std::array<std::byte, 20> deviceIdDigest{};
@@ -362,26 +356,4 @@ uint32_t Authenticator::readUvarint(bell::io::BinaryStream& stream) {
   stream >> hi;
 
   return (uint32_t)((lo & 0x7f) | (hi << 7));
-}
-
-bell::Result<> Authenticator::base64Decode(
-    std::string_view encoded, std::vector<std::byte>& targetBuffer) {
-  size_t outputSize = 0;
-  int res = mbedtls_base64_decode(
-      nullptr, 0, &outputSize, reinterpret_cast<const uint8_t*>(encoded.data()),
-      encoded.size());
-  if (outputSize == 0) {
-    return bell::make_unexpected_errc<>(std::errc::bad_message);
-  }
-
-  targetBuffer.resize(outputSize);
-  res = mbedtls_base64_decode(reinterpret_cast<uint8_t*>(targetBuffer.data()),
-                              targetBuffer.size(), &outputSize,
-                              reinterpret_cast<const uint8_t*>(encoded.data()),
-                              encoded.size());
-  if (res != 0) {
-    return bell::make_unexpected_errc<>(std::errc::bad_message);
-  }
-
-  return {};
 }

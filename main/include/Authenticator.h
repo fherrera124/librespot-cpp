@@ -58,8 +58,5 @@ class Authenticator {
       const std::vector<std::byte>& authBlob);
 
   static uint32_t readUvarint(bell::io::BinaryStream& stream);
-
-  static bell::Result<> base64Decode(std::string_view encoded,
-                                     std::vector<std::byte>& targetBuffer);
 };
 }  // namespace cspot

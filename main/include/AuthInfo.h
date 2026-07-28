@@ -54,10 +54,16 @@ struct AuthInfo {
     json["deviceName"] = deviceName;
     json["deviceId"] = deviceId;
     if (loginCredentials.has_value()) {
-      json["username"] = loginCredentials->username;
-      json["blob"] = base64Encode(loginCredentials->authData.data(),
-                                  loginCredentials->authData.size());
-      json["authType"] = static_cast<int>(loginCredentials->type);
+      auto encodedBlob = base64Encode(loginCredentials->authData.data(),
+                                      loginCredentials->authData.size());
+      if (encodedBlob) {
+        json["username"] = loginCredentials->username;
+        json["blob"] = *encodedBlob;
+        json["authType"] = static_cast<int>(loginCredentials->type);
+      } else {
+        BELL_LOG(error, "AuthInfo",
+                 "Failed to base64-encode credentials blob for persistence");
+      }
     }
     return tao::json::to_string(json);
   }
@@ -71,12 +77,18 @@ struct AuthInfo {
     auto blob = json.optional<std::string>("blob");
     auto authType = json.optional<int>("authType");
     if (username.has_value() && blob.has_value() && authType.has_value()) {
+      auto decodedBlob = base64Decode(*blob);
+      if (!decodedBlob) {
+        BELL_LOG(error, "AuthInfo",
+                 "Failed to base64-decode persisted credentials blob - "
+                 "ignoring");
+        return;
+      }
       cspot_proto::LoginCredentials credentials;
       credentials.username = *username;
       credentials.type = static_cast<AuthenticationType>(*authType);
-      auto decodedBlob = base64Decode(*blob);
       credentials.authData.insert(credentials.authData.end(),
-                                  decodedBlob.begin(), decodedBlob.end());
+                                  decodedBlob->begin(), decodedBlob->end());
       loginCredentials = credentials;
     }
   }
