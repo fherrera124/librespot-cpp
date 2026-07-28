@@ -64,8 +64,14 @@ class DealerClient {
   std::shared_ptr<bell::TLSSocket> socket;
   std::shared_ptr<bell::SocketPollListener> socketPoll;
 
-  std::chrono::system_clock::time_point lastPingTime;
-  std::chrono::system_clock::time_point lastPongTime;
+  // steady_clock, not system_clock: the AP Ping packet handler
+  // (ApClient.cpp) calls settimeofday() to sync the system clock, which
+  // can jump it forward by hours in one step - a system_clock-based
+  // watchdog here would see a huge bogus elapsed time right after that
+  // jump and declare the connection dead. steady_clock is immune to
+  // wall-clock adjustments.
+  std::chrono::steady_clock::time_point lastPingTime;
+  std::chrono::steady_clock::time_point lastPongTime;
 
   State state_ = State::Disconnected;
   // Only meaningful while state_ == Connecting - deadline for the WS

@@ -62,7 +62,7 @@ bell::Result<> DealerClient::connect(
   // before it can possibly fire - otherwise a default-constructed/stale
   // lastPongTime would look "expired" from the very first housekeeping
   // tick, before any ping/pong cycle has even had a chance to happen.
-  lastPingTime = std::chrono::system_clock::now();
+  lastPingTime = std::chrono::steady_clock::now();
   lastPongTime = lastPingTime;
 
   std::string connectionUrl =
@@ -245,7 +245,7 @@ void DealerClient::onWSMessage(websocketpp::connection_hdl conn,
     } else if (type == "request") {
       eventLoop->post(EventLoop::EventType::DEALER_REQUEST, jsonMessage);
     } else if (type == "pong") {
-      lastPongTime = std::chrono::system_clock::now();
+      lastPongTime = std::chrono::steady_clock::now();
       BELL_LOG(debug, LOG_TAG, "Received pong");
     } else {
       BELL_LOG(debug, LOG_TAG, "Unknown message type: {}", type);
@@ -291,11 +291,11 @@ void DealerClient::doHousekeeping() {
     return;
   }
 
-  if (std::chrono::system_clock::now() >= (lastPingTime + pingInterval)) {
+  if (std::chrono::steady_clock::now() >= (lastPingTime + pingInterval)) {
     std::scoped_lock lock(accessMutex);
 
     if (wsConnection && state_ == State::Connected) {
-      auto now = std::chrono::system_clock::now();
+      auto now = std::chrono::steady_clock::now();
 
       // Same watchdog as master's DealerSession and go-librespot's
       // dealer.go: if a full ping interval plus grace period has passed
