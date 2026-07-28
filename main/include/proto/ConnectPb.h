@@ -174,9 +174,9 @@ NANOPB_STRUCT(cspot_proto::PlayOrigin, PlayOrigin_fields)
 
 namespace cspot_proto {
 struct ContextPlayerOptions {
-  bool shufflingContext;
-  bool repeatingContext;
-  bool repeatingTrack;
+  bool shufflingContext = false;
+  bool repeatingContext = false;
+  bool repeatingTrack = false;
   nanopb_helper::Optional<float> playbackSpeed;
 
   static auto bindFields(ContextPlayerOptions* self, bool isDecode) {
@@ -243,19 +243,22 @@ struct PlayerState {
   int64_t timestamp = 0;
   std::string contextUri;
   std::string contextUrl;
-  cspot_proto::ProvidedTrack track;
+  // The currently loaded track, if any - omitted entirely (not sent
+  // empty) when nothing is loaded.
+  nanopb_helper::Optional<cspot_proto::ProvidedTrack> track;
   std::string playbackId;
   nanopb_helper::Optional<ContextIndex> index;
   ContextPlayerOptions options;
   PlayOrigin playOrigin;
-  double playbackSpeed = 1.0;
+  // playbackSpeed: 0.0 while paused or buffering, 1.0 otherwise - the
+  // client extrapolates the progress bar from
+  // position_as_of_timestamp + (now - timestamp) * playback_speed.
+  double playbackSpeed = 0.0;
   int64_t positionAsOfTimestamp = 0;
   int64_t duration = 0;
-  // Missing defaults here (unlike every sibling field above) meant a fresh
-  // PutStateRequest sent whatever indeterminate value happened to be in
-  // memory for these three - confirmed on real hardware: the very first
-  // NEW_DEVICE put state, before anything had even happened, reported
-  // isBuffering=true/isPaused=true.
+  // isPlaying: "a session is loaded", not "audio is currently flowing" -
+  // stays true through buffering and while paused, only false when
+  // nothing is loaded at all.
   bool isPlaying = false;
   bool isBuffering = false;
   bool isPaused = false;

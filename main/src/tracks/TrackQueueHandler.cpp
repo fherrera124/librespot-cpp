@@ -99,6 +99,11 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   std::array<cspot_proto::ProvidedTrack, trackWindowLen> nextTracksWindow{};
   std::array<cspot_proto::ProvidedTrack, trackWindowLen> previousTracksWindow{};
 
+  // Last current-track uri actually reported via QUEUE_UPDATED - see
+  // updateTrackWindows()'s own comment on why this, not just the next/
+  // previous window diff, has to gate that event.
+  std::string lastNotifiedCurrentTrackUri;
+
   void resetContext();
 
   void onTrackParsed(uint32_t pageIndex, uint32_t trackIndex,
@@ -206,7 +211,7 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
   if (contextIndex.has_value()) {
     BELL_LOG(info, LOG_TAG, "Found current track at index=[{},{}]",
              contextIndex->track, contextIndex->page);
-  } else {
+  } else if (!contextPages.empty() && !contextPages[0].trackGids.empty()) {
     BELL_LOG(
         error, LOG_TAG,
         "Could not find current track in the given context, default to zero");
@@ -214,6 +219,16 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
         0,
         0,
     };  // Default to start if we could not find the current track
+  } else {
+    // contextPages has no actual track data (e.g. an unsupported/empty
+    // context) - defaulting contextIndex to {0,0} here used to leave it
+    // pointing at a page that was never populated, crashing later in
+    // ensureEnoughTracks(). Matches master's own ContextResolver::resolve(),
+    // which explicitly treats "resolved OK but zero tracks" as failure
+    // (`ok && !tracksOut.empty()`), not success.
+    BELL_LOG(error, LOG_TAG, "Context resolved with no tracks, uri={}",
+             contextUri);
+    return bell::make_unexpected_errc(std::errc::no_such_file_or_directory);
   }
 
   return {};
@@ -264,9 +279,15 @@ bell::Result<> DefaultTrackQueueHandler::ensureEnoughTracks() {
     return {};  // Cant ensure tracks without context index
   }
 
-  assert(contextPages.size() > contextIndex->page);
-  assert(contextPages[contextIndex->page].trackGids.size() >
-         contextIndex->track);
+  // Same invariant getOffsetIndex()/currentTrack() already guard
+  // defensively instead of trusting - contextIndex pointing past what's
+  // actually in contextPages (e.g. a context that resolved with no tracks)
+  // used to hit these as raw assert()s, aborting the whole device instead
+  // of degrading gracefully.
+  if (contextIndex->page >= contextPages.size() ||
+      contextIndex->track >= contextPages[contextIndex->page].trackGids.size()) {
+    return {};
+  }
   size_t nextTracksCount = contextPages[contextIndex->page].trackGids.size() -
                            (contextIndex->track + 1);
 
@@ -370,6 +391,14 @@ bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
   size_t bytesToRead = *response.contentLength;
   std::array<std::byte, 512> buffer{};
 
+  // Temp diagnostic: capture what actually arrives on the wire (bounded, to
+  // avoid flooding the log on a real, populated page) - to confirm/rule out
+  // whether rawRequest()'s missing Accept header (see its own comment) is
+  // the reason contextPages ends up empty, before touching that header.
+  constexpr size_t kDiagCap = 1024;
+  std::string diagBody;
+  diagBody.reserve(std::min<size_t>(bytesToRead, kDiagCap));
+
   while (bytesToRead > 0 && !stream->eof() && !stream->bad()) {
     size_t toRead = std::min(buffer.size(), bytesToRead);
     stream->read(reinterpret_cast<char*>(buffer.data()), toRead);
@@ -379,12 +408,23 @@ bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
     }
 
     size_t bytesRead = stream->gcount();
+
+    if (diagBody.size() < kDiagCap) {
+      size_t toCopy = std::min(bytesRead, kDiagCap - diagBody.size());
+      diagBody.append(reinterpret_cast<const char*>(buffer.data()), toCopy);
+    }
+
     auto res = pageParser.feed(buffer.data(), bytesRead);
     bytesToRead -= bytesRead;
 
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Error occured while parsing page, err={}",
                res.error());
+      BELL_LOG(error, LOG_TAG,
+               "RAW BODY DIAG (parse failed): status={} contentLength={} "
+               "body[0..{}]={}",
+               response.statusCode, *response.contentLength, diagBody.size(),
+               diagBody);
       return tl::make_unexpected(res.error());
     }
   }
@@ -398,6 +438,11 @@ bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
     BELL_LOG(error, LOG_TAG, "Error occured while finalizing page parse");
     return bell::make_unexpected_errc(std::errc::io_error);
   }
+
+  BELL_LOG(info, LOG_TAG,
+           "RAW BODY DIAG: status={} contentLength={} body[0..{}]={}",
+           response.statusCode, *response.contentLength, diagBody.size(),
+           diagBody);
 
   return {};
 }
@@ -619,6 +664,32 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
 void DefaultTrackQueueHandler::updateTrackWindows() {
   bool updated = false;
 
+  // The next/previous-window diffing below only catches a change in what's
+  // *around* the current track - not the current track itself. That's
+  // normally masked by there also being a real "next" track most of the
+  // time (which flips updated=true as a side effect), but a track with
+  // nothing before/after it (an ad-hoc single/queue track with no context,
+  // or a single-track context) never touches either window, so updated
+  // stayed false and QUEUE_UPDATED - and the currentTrackId it carries -
+  // never got posted at all. Real hardware symptom: a single-track,
+  // no-context transfer silently never told StreamPlayer a track was
+  // ready to load, leaving isBuffering=true forever and the remote client
+  // stuck on "Connecting...".
+  std::string newCurrentTrackUri;
+  if (isPlayingQueue && !queue.empty()) {
+    newCurrentTrackUri = queue[0].uri;
+  } else if (contextIndex && contextIndex->page < contextPages.size() &&
+             contextIndex->track <
+                 contextPages[contextIndex->page].trackGids.size()) {
+    SpotifyId trackId(
+        contextIdType,
+        contextPages[contextIndex->page].trackGids[contextIndex->track]);
+    newCurrentTrackUri = trackId.uri;
+  }
+  if (newCurrentTrackUri != lastNotifiedCurrentTrackUri) {
+    updated = true;
+  }
+
   size_t queueOffset = queue.size();
   size_t offsetInQueue = isPlayingQueue ? 1 : 0;
   if (queueOffset > 0) {
@@ -703,6 +774,8 @@ void DefaultTrackQueueHandler::updateTrackWindows() {
 
     // TODO: Make an event with updated tracks
     BELL_LOG(info, LOG_TAG, "Track windows updated");
+
+    lastNotifiedCurrentTrackUri = newCurrentTrackUri;
 
     TrackQueueUpdate updateEvent{};
     auto nextTracksItr = nextTracks();

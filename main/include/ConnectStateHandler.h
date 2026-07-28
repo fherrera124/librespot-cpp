@@ -7,26 +7,28 @@
 #include "connect.pb.h"
 
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <mutex>
+#include <vector>
 
 #include "SessionContext.h"
 #include "api/SpClient.h"
+#include "events/EventModels.h"
 #include "tracks/TrackQueueHandler.h"
 
 namespace cspot {
 
 // Fires with the new 0..65535 connect-state volume whenever a
-// SetVolumeCommand push is handled - the caller (Session, then whatever
-// owns the actual audio sink) applies it to real output gain. Defaults
-// to a no-op the same way Session's own AudioOutputCallback does, so
-// callers that don't care about volume (host targets, tests) don't need
-// to pass anything.
+// SetVolumeCommand push is handled. Defaults to a no-op so callers that
+// don't care about volume (host targets, tests) don't need to pass
+// anything.
 using VolumeChangedCallback = std::function<void(uint16_t)>;
 
-// Owns its own background task (see taskLoop()) purely to flush a
-// deferred PUT scheduled by putState()'s rate-limiting - see that
-// method's comment.
+// Owns a background task (taskLoop()) that sends every connect-state PUT.
+// putState()/putStateLocked() only ever mutate putStateRequestProto and
+// schedule a flush - never send inline - so the HTTPS round-trip never
+// blocks a caller mutating state under putStateMutex.
 class ConnectStateHandler : public bell::Task {
  public:
   ConnectStateHandler(
@@ -52,8 +54,14 @@ class ConnectStateHandler : public bell::Task {
   // the base64 payload from the dealer message's payloads[0].
   bell::Result<> handleSetVolume(std::string_view payloadDataStr);
 
+  // Wired directly into StreamPlayer's constructor as its
+  // PlayerStateAnnounceCallback - called synchronously, not through
+  // EventLoop, so the PUT is dispatched before StreamPlayer does anything
+  // else (in particular, before opening the CDN stream).
+  void onPlayerStateUpdate(const PlayerStateUpdate& playerStateUpdate);
+
   // Tells the backend this device is going away, before it actually
-  // disconnects.
+  // disconnects - matches master's own PlayerEngine::putStateInactive().
   bell::Result<> putInactive();
 
  private:
@@ -64,57 +72,107 @@ class ConnectStateHandler : public bell::Task {
   std::shared_ptr<SpClient> spClient;
   std::shared_ptr<TrackQueueHandler> trackQueueHandler;
   VolumeChangedCallback volumeChangedCallback;
-  // std::shared_ptr<ApClient> apClient;
 
-  // Holds the protobuf state
   cspot_proto::PutStateRequest putStateRequestProto;
 
-  // putState() rate-limiting - matches go-librespot's statePutMinInterval/
-  // updateState() and this repo's own master branch (same 200ms value,
-  // "last reason wins" coalescing when a burst arrives inside the window).
-  // Guards putStateRequestProto too, since flushStateNowLocked() runs
-  // either inline on the caller's thread (EventLoop's dispatch task, for
-  // every handler here) or from taskLoop() (this class's own background
-  // task) for a deferred flush - never both at once.
+  // Rate-limits putState() (200ms min interval, "last reason wins"
+  // coalescing - matches go-librespot/master). Also guards
+  // putStateRequestProto/trackQueueHandler: every command/state handler
+  // mutates them under this lock (EventLoop's thread), and
+  // prepareAndEncodeLocked() reads them under the same lock (taskLoop()'s
+  // thread) - never both at once. Not held during the network send
+  // itself.
   std::mutex putStateMutex;
   std::chrono::steady_clock::time_point lastPutStateTime =
       std::chrono::steady_clock::time_point::min();
+  // Short-circuits putState()'s rate-limit check on the very first call in
+  // this object's lifetime: `now - lastPutStateTime` would be a signed
+  // overflow otherwise (lastPutStateTime starts at time_point::min()),
+  // which silently wraps to a huge negative duration in an unsanitized
+  // build instead of the intended "elapsed forever" value.
+  bool hasEverSentPutState = false;
   bool putStatePending = false;
   std::chrono::steady_clock::time_point putStateDueTime{};
   PutStateReason pendingPutStateReason = PutStateReason_PLAYER_STATE_CHANGED;
 
-  // Timestamp of our own most recent transfer command's playback state -
-  // guards handleClusterUpdate() against an out-of-order/stale
-  // ClusterUpdate deactivating us right after a legitimate transfer to
-  // this device (matches go-librespot's lastTransferTimestamp guard,
-  // daemon/player.go).
+  // Timestamp of our own most recent transfer's playback state - guards
+  // handleClusterUpdate() against a stale ClusterUpdate deactivating us
+  // right after a legitimate transfer (matches go-librespot's
+  // lastTransferTimestamp guard).
   int64_t lastTransferTimestamp = 0;
 
-  // Actually performs the PUT - caller must hold putStateMutex.
-  bell::Result<> flushStateNowLocked(PutStateReason reason);
+  // URI of the track handleTransferCommandLocked()/
+  // handlePlayCommandLocked() last posted PLAYER_FLUSH+PLAYER_PLAY for -
+  // a later transfer/play for the same URI skips reposting those instead
+  // of reopening an already-loaded stream.
+  std::string lastFlushedTrackUri;
+
+  // This device's own outgoing PutStateRequest.message_id sequence
+  // number, incremented before every PUT (prepareAndEncodeLocked()).
+  uint32_t nextMessageId = 0;
+
+  // Assumes putStateMutex is ALREADY held by the caller - every handler
+  // takes the lock for its own mutation and must call this instead of
+  // the public, self-locking putState() (std::mutex isn't reentrant).
+  //
+  // Never sends the PUT itself - only schedules one for taskLoop() to
+  // send.
+  bell::Result<> putStateLocked(
+      PutStateReason reason = PutStateReason_PLAYER_STATE_CHANGED);
+
+  // Caller (taskLoop()) must hold putStateMutex. Finalizes this PUT's
+  // per-send fields and encodes putStateRequestProto into outBody - the
+  // only part of a flush that touches putStateRequestProto/
+  // trackQueueHandler, so it must run under the lock. Does NOT do the
+  // network send itself.
+  bool prepareAndEncodeLocked(PutStateReason reason,
+                              std::vector<std::byte>& outBody);
 
   void taskLoop() override;
 
   void initialize();
 
-  bell::Result<> handleTransferCommand(std::string_view payloadDataStr,
-                                       const tao::json::value& options);
+  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand(),
+  // its sole dispatcher) - matches putStateLocked()'s own naming/contract.
+  bell::Result<> handleTransferCommandLocked(std::string_view payloadDataStr,
+                                             const tao::json::value& options);
 
-  bell::Result<> handlePlayCommand(const tao::json::value& options);
+  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
+  bell::Result<> handlePlayCommandLocked(const tao::json::value& options);
 
-  bell::Result<> handleSkipNextCommand();
+  // Assumes putStateMutex is ALREADY held by the caller
+  // (handlePlayerCommand() or the TRACK_ENDED handler - see
+  // advanceToNextTrackLocked()'s own comment).
+  bell::Result<> handleSkipNextCommandLocked();
 
-  bell::Result<> handleSkipPrevCommand();
+  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
+  bell::Result<> handleSkipPrevCommandLocked();
 
-  bell::Result<> handlePauseCommand(bool pause);
+  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
+  bell::Result<> handlePauseCommandLocked(bool pause);
 
-  // Shared by handleSkipNextCommand() (remote skip_next) and the TRACK_ENDED
-  // handler (StreamPlayer ran out of audio) - either way, "what's next" is
-  // decided the same way: ask trackQueueHandler, refresh the windows, and
-  // tell Spotify. Matches go-librespot's single advanceNext()
-  // (daemon/controls.go), used from both its skip_next command and its
-  // natural end-of-track event.
-  bell::Result<> advanceToNextTrack();
+  // hm://connect-state/v1/player/command's "update_context" endpoint -
+  // context metadata/restrictions sync, not a new queue/context. Always
+  // acks, even on a uri mismatch (just skips applying) - matches master;
+  // never NAKing matters because an unacknowledged update_context can
+  // trigger a Dealer WS reconnect. Restrictions/context_metadata aren't
+  // captured - ConnectPb.h has no binding for those PlayerState fields
+  // yet.
+  //
+  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
+  bell::Result<> handleUpdateContextCommandLocked(
+      const tao::json::value& command);
+
+  // Shared by handleSkipNextCommandLocked() (remote skip_next) and the
+  // TRACK_ENDED handler (StreamPlayer ran out of audio) - both decide
+  // "what's next" the same way: ask trackQueueHandler, refresh the
+  // windows, and tell Spotify. Matches go-librespot's single
+  // advanceNext().
+  //
+  // Assumes putStateMutex is ALREADY held by the caller - each of the two
+  // callers above takes it independently (they're two separate dispatch
+  // entry points, not nested calls of one another).
+  bell::Result<> advanceToNextTrackLocked();
 
   bool encodeProtoTracks(pb_ostream_t* stream, const pb_field_t* field,
                          bool previous);

@@ -31,6 +31,18 @@ class SpClient {
       const std::string& sessionId) = 0;
 
   /**
+   * @brief Same request as putConnectState(), but for a caller that already
+   * has the encoded PutStateRequest body (e.g. ConnectStateHandler, which
+   * encodes it while still holding the lock protecting the live
+   * next_tracks/prev_tracks callback data, then sends over the network
+   * without holding that lock). putConnectState() itself is just
+   * encode-then-delegate to this.
+   */
+  virtual bell::Result<> putConnectStateRaw(std::vector<std::byte> body,
+                                            const std::string& deviceId,
+                                            const std::string& sessionId) = 0;
+
+  /**
    * @brief Marks this device inactive - a separate endpoint from
    * putConnectState(), not just a PutStateRequest.is_active=false PUT
    * (matches both go-librespot's PutConnectStateInactive and this repo's

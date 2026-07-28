@@ -25,11 +25,7 @@ struct TrackQueueUpdate {
 };
 
 struct PlayerStateUpdate {
-  // Whether a session is loaded at all - stays true while paused. NOT the
-  // same as "audio is currently flowing" (see StreamPlayer::announceState
-  // and isPaused below) - conflating the two ("isPlaying = !isPaused")
-  // reports a paused device as having nothing loaded, which reads as
-  // permanently stopped/disconnected in the real Spotify app.
+  // isPlaying: same semantics as PlayerState.isPlaying (proto/ConnectPb.h).
   bool isPlaying;
   bool isPaused = false;
   bool isBuffering;
@@ -37,9 +33,9 @@ struct PlayerStateUpdate {
   int64_t positionAsOfTimestamp;
   int64_t playbackDurationMs;
   // Fresh random id for this playback, hex-encoded, set only on the
-  // isBuffering=false announce (empty on the earlier isBuffering=true one -
-  // not known yet). See StreamPlayer::announceState()'s comment.
-  std::string playbackId;
+  // isBuffering=false announce (nullopt on the earlier isBuffering=true
+  // one - not known yet). See StreamPlayer::announceState()'s comment.
+  std::optional<std::string> playbackId;
 };
 
 struct ProvidedFile {

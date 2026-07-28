@@ -27,7 +27,6 @@ class EventLoop : public bell::Task {
     QUEUE_UPDATED,
     PLAYER_PLAY,
     PLAYER_FLUSH,
-    PLAYER_STATE_UPDATED,
     // Posted by StreamPlayer on natural end-of-track (taskLoop()'s EOF
     // check) - handled by ConnectStateHandler, which is the sole owner of
     // "what's the next track" (TrackQueueHandler's context/queue/shuffle
@@ -39,8 +38,7 @@ class EventLoop : public bell::Task {
   // Define all possible event payload types
   using EventPayload =
       std::variant<std::monostate, bool, CurrentTrackMetadata, AudioKeyResponse,
-                   TrackQueueUpdate, ProvidedFile, PlayerStateUpdate,
-                   tao::json::value>;
+                   TrackQueueUpdate, ProvidedFile, tao::json::value>;
 
   struct Event {
     EventType type;
