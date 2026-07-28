@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 
@@ -27,7 +28,20 @@ class Session {
 
   bell::Result<> start();
 
-  void runPoller();
+  // Blocks polling the AP/dealer sockets forever, UNLESS restartRequested
+  // is set (checked once per ~1s poll tick) or the AP declines our login -
+  // at which point this returns so the caller can rebuild the Session (a
+  // fresh pairing) or give up on these credentials (see
+  // credentialsRejected()).
+  void runPoller(std::atomic<bool>& restartRequested);
+
+  // Forwards to ConnectStateHandler::putInactive(). Callers tearing this
+  // Session down to rebuild a new one should call this first, best-effort.
+  bell::Result<> putInactive();
+
+  // True if runPoller() returned because the AP explicitly rejected our
+  // login credentials - see ApClient::loginWasDeclined()'s own comment.
+  bool credentialsRejected() const;
 
  private:
   const char* LOG_TAG = "Session";

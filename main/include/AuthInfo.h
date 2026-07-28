@@ -16,10 +16,10 @@ namespace {
 // hash of a fixed compile-time string (the old deviceIdPrefix + hash(
 // deviceName) scheme produced the *same* id for every build of this
 // firmware, since deviceName was itself a hardcoded literal - zero entropy,
-// not just "stable"). main()'s session-file load
-// (AuthInfo::assignDataFromJson()) overwrites this with the persisted value
-// on every run after the first, so this generator only actually matters
-// once per device's lifetime.
+// not just "stable"). AuthInfo::assignDataFromJson() overwrites this with
+// the persisted value on every run after the first, so this generator only
+// actually matters once per device's lifetime (first-ever boot, or after
+// its session file is lost/cleared).
 std::string generateDeviceId() {
   static std::independent_bits_engine<std::default_random_engine, CHAR_BIT,
                                       unsigned char>
@@ -55,8 +55,6 @@ struct AuthInfo {
     json["deviceId"] = deviceId;
     if (loginCredentials.has_value()) {
       json["username"] = loginCredentials->username;
-      std::cout << "Encoding blob of size " << loginCredentials->authData.size()
-                << std::endl;
       json["blob"] = base64Encode(loginCredentials->authData.data(),
                                   loginCredentials->authData.size());
       json["authType"] = static_cast<int>(loginCredentials->type);
@@ -85,11 +83,7 @@ struct AuthInfo {
 
   // Call once per boot, after attempting to load a persisted session
   // (whether or not one was actually found) - mirrors go-librespot logging
-  // this same fact (daemon/app.go: "generated new device id: %s"). A
-  // device id that silently changes across boots looks, from the outside,
-  // exactly like the "hash of a fixed string" bug this replaced - this
-  // makes which case happened unambiguous in every log instead of having
-  // to infer it by comparing device ids across runs by hand.
+  // this same fact (daemon/app.go: "generated new device id: %s").
   inline void logDeviceIdOrigin() const {
     if (deviceIdWasPersisted) {
       BELL_LOG(info, "AuthInfo", "Using persisted device id: {}", deviceId);

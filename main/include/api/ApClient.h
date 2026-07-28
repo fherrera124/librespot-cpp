@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <unordered_map>
 #include <utility>
@@ -41,6 +42,16 @@ class ApClient {
 
   State state() const;
 
+  // True once the AP has explicitly rejected the login credentials this
+  // connection attempt sent (LoginDeclined packet) - distinct from state()
+  // == Failed for every other reason (network error, ping timeout), which
+  // Session::runPoller() retries with backoff. Retrying a declined login
+  // with the exact same (permanently invalid, e.g. revoked/expired)
+  // credentials would just fail identically forever - callers should
+  // check this instead of blindly reconnecting. Reset to false at the
+  // start of every connectAndAuthenticate() attempt.
+  bool loginWasDeclined() const { return loginDeclined; }
+
   // Empty until the AP sends its CountryCode packet, shortly after
   // connecting. Used to resolve region-restricted tracks to a playable
   // alternative (see FileProvider.cpp).
@@ -54,6 +65,10 @@ class ApClient {
   std::unique_ptr<ApConnection> apConnection;
 
   std::string countryCode;
+
+  // Set from apPacketHandler() on a LoginDeclined packet - see
+  // loginWasDeclined()'s own comment.
+  std::atomic<bool> loginDeclined{false};
 
   // Updated whenever a Ping packet arrives (apPacketHandler) and reset with
   // a full grace period at the start of every (re)connect attempt in

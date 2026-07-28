@@ -428,6 +428,10 @@ bell::Result<> ConnectStateHandler::handleSetVolume(
   return {};
 }
 
+bell::Result<> ConnectStateHandler::putInactive() {
+  return spClient->putInactive(authInfo->deviceId, authInfo->sessionId);
+}
+
 bell::Result<> ConnectStateHandler::handleTransferCommand(
     std::string_view payloadDataStr, const tao::json::value& options) {
   auto decodedData = base64Decode(payloadDataStr);

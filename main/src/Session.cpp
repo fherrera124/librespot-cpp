@@ -206,7 +206,15 @@ bell::Result<> cspot::Session::start() {
   return connectDealer();
 }
 
-void cspot::Session::runPoller() {
+bell::Result<> cspot::Session::putInactive() {
+  return connectStateHandler->putInactive();
+}
+
+bool cspot::Session::credentialsRejected() const {
+  return apClient->loginWasDeclined();
+}
+
+void cspot::Session::runPoller(std::atomic<bool>& restartRequested) {
   constexpr int kDealerBackoffBaseMs = 5000;
   constexpr int kDealerBackoffMaxMs = 60000;
   constexpr int kApBackoffBaseMs = 5000;
@@ -218,9 +226,21 @@ void cspot::Session::runPoller() {
   bool apReconnecting = false;
 
   while (true) {
+    if (restartRequested.load()) {
+      // Left set for the caller's own exchange(false).
+      return;
+    }
+
     socketPoll->poll(1000);
     dealerClient->doHousekeeping();
     apClient->doHousekeeping();
+
+    if (apClient->loginWasDeclined()) {
+      // Checked here, before the state()==Failed case below would
+      // otherwise blindly retry connectAp() with the exact same rejected
+      // credentials.
+      return;
+    }
 
     switch (apClient->state()) {
       case ApClient::State::Connected:

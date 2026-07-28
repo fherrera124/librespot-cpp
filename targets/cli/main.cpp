@@ -1,5 +1,5 @@
+#include <atomic>
 #include <fstream>
-#include <istream>
 
 #include "AuthInfo.h"
 #include "Authenticator.h"
@@ -16,31 +16,15 @@ namespace {
 const char* sessionFilePath = "session.json";
 }
 
-// Always started from main() regardless of whether a saved session already
-// exists - the Spotify app's device picker discovers devices on the LAN via
-// this same "_spotify-connect._tcp" mDNS advertisement + HTTP endpoint no
-// matter our auth state. This used to only run while there was no saved
-// session yet, which meant an already-paired device never advertised again
-// on any later run and stayed invisible in the picker (confirmed on real
-// hardware, targets/esp32's own build of this same code). httpServer,
-// authenticator and authSemaphore are main()'s own locals, passed in here
-// by reference/pointer - main() never returns before the process exits, so
-// they outlive every use the registered handlers make of them, including a
-// re-pairing POST that arrives long after this function itself returns.
-//
-// The returned Advertiser must be kept alive by the caller for as long as
-// the device should stay discoverable: EspressifMDNAdvertiser's destructor
-// calls mdns_service_remove() (stopAdvertising()), so letting it fall out
-// of scope right after this function returns - as a local `auto service =
-// ...` here used to - tears the announcement back down within
-// microseconds of registering it. mdns_service_add() itself still reports
-// success, so this was invisible from the return value alone: confirmed
-// via `avahi-browse -a` on a real network showing every other
-// _spotify-connect._tcp device (a Sangean radio) but never this one.
+// Runs for the process's entire lifetime, independent of pairing/session
+// state, so the device stays visible/selectable in the Spotify app's
+// picker at all times. The returned Advertiser must be kept alive by the
+// caller: its destructor tears down the mDNS announcement.
 std::unique_ptr<bell::mdns::Advertiser> startZeroconfService(
     std::shared_ptr<cspot::AuthInfo> authInfo,
     std::shared_ptr<bell::http::Server> httpServer,
-    cspot::Authenticator& authenticator, bell::Semaphore& authSemaphore) {
+    cspot::Authenticator& authenticator, bell::Semaphore& authSemaphore,
+    std::atomic<bool>& needsSessionRestart) {
   httpServer->registerGet(
       "/spotify_handler",
       [&authenticator, authInfo](
@@ -66,21 +50,13 @@ std::unique_ptr<bell::mdns::Advertiser> startZeroconfService(
 
   httpServer->registerPost(
       "/spotify_handler",
-      [&authenticator, &authSemaphore, authInfo](
+      [&authenticator, &authSemaphore, authInfo, &needsSessionRestart](
           const std::unique_ptr<bell::http::Reader>& requestReader,
           const std::unique_ptr<bell::http::Writer>& responseWriter,
           const auto& routeParams) {
         std::cout << "Received post request" << std::endl;
         cspot::logHeapStatus("Zeroconf", "POST /spotify_handler entry");
         auto bodyStr = *requestReader->getBodyStringView();
-        tao::json::value responseJson;
-        responseJson["status"] = 101;
-        responseJson["statusString"] = "OK";
-        responseJson["spotifyError"] = 0;
-
-        auto responseString = tao::json::to_string(responseJson);
-        (void)responseWriter->writeResponseWithBody(
-            200, {{"Content-Type", "application/json"}}, responseString);
 
         auto res = authenticator.authenticateZeroconfString(authInfo->deviceId,
                                                              bodyStr);
@@ -89,12 +65,27 @@ std::unique_ptr<bell::mdns::Advertiser> startZeroconfService(
           authInfo->loginCredentials = *res;
           BELL_LOG(info, "Zeroconf", "user: {}, bloblen={}", res->username,
                    res->authData.size());
+
+          tao::json::value responseJson;
+          responseJson["status"] = 101;
+          responseJson["statusString"] = "OK";
+          responseJson["spotifyError"] = 0;
+          (void)responseWriter->writeResponseWithBody(
+              200, {{"Content-Type", "application/json"}},
+              tao::json::to_string(responseJson));
+
+          // Wakes main()'s loop to (re)build the Session with these
+          // credentials, replacing whatever pairing (if any) is already
+          // active. give() only fires on success so the loop never wakes
+          // to rebuild against stale/unchanged credentials.
+          needsSessionRestart.store(true);
+          authSemaphore.give();
         } else {
           BELL_LOG(error, "Zeroconf", "failed to authenticate with spotify");
+          (void)responseWriter->writeResponseWithBody(500, {}, "");
         }
 
         cspot::logHeapStatus("Zeroconf", "POST /spotify_handler exit");
-        authSemaphore.give();
       });
 
   (void)httpServer->listen(2139);
@@ -126,45 +117,74 @@ int main(int argc, char** argv) {
   }
   authInfo->logDeviceIdOrigin();
 
-  // These are main()'s own locals (not nested inside an if/else scope) so
-  // they stay alive for the process's entire lifetime, matching the
-  // handlers' own lifetime - see startZeroconfService()'s comment.
   auto httpServer = std::make_shared<bell::http::Server>();
   cspot::Authenticator authenticator;
   bell::Semaphore authSemaphore;
-  // Must also outlive this scope, same reasoning as the three above - see
-  // startZeroconfService()'s comment on why letting this fall out of scope
-  // silently tears the mDNS announcement back down.
-  auto mdnsService =
-      startZeroconfService(authInfo, httpServer, authenticator, authSemaphore);
+  std::atomic<bool> needsSessionRestart{false};
+  auto mdnsService = startZeroconfService(authInfo, httpServer, authenticator,
+                                          authSemaphore, needsSessionRestart);
 
-  if (!authInfo->loginCredentials.has_value()) {
-    authSemaphore.take();
-    if (!authInfo->loginCredentials.has_value() ||
-        authInfo->loginCredentials->authData.empty()) {
-      BELL_LOG(error, "Main", "No login credentials, exiting");
-      return 1;
-    }
-
-    // Write session to file
+  auto persistSession = [&authInfo]() {
     std::string sessionString = authInfo->toJson();
     std::ofstream outFile(sessionFilePath, std::ios::binary);
     if (outFile.is_open()) {
       outFile << sessionString;
       outFile.close();
     }
-  }
+  };
+  persistSession();
 
-  auto session = std::make_shared<cspot::Session>(authInfo);
-  auto startRes = session->start();
-
-  if (!startRes) {
-    BELL_LOG(error, "Main", "Failed to start session: {}", startRes.error());
-    return 1;
-  }
-
+  // haveCredentialsToTry: skips the initial wait when a persisted session
+  // was loaded above, so it's tried once before falling back to waiting
+  // for a pairing.
+  std::shared_ptr<cspot::Session> session;
+  bool haveCredentialsToTry = authInfo->loginCredentials.has_value();
   while (true) {
-    session->runPoller();
+    if (!haveCredentialsToTry) {
+      authSemaphore.take();
+      needsSessionRestart.store(false);
+
+      if (!authInfo->loginCredentials.has_value() ||
+          authInfo->loginCredentials->authData.empty()) {
+        continue;
+      }
+    }
+    haveCredentialsToTry = false;
+
+    BELL_LOG(info, "Main",
+             session ? "Rebuilding session after a fresh pairing"
+                     : "Starting session");
+    if (session) {
+      auto oldInactiveRes = session->putInactive();
+      if (!oldInactiveRes) {
+        BELL_LOG(warn, "Main", "putInactive on old session failed: {}",
+                 oldInactiveRes.error());
+      }
+    }
+    session.reset();
+    session = std::make_shared<cspot::Session>(authInfo);
+    auto startRes = session->start();
+    if (!startRes) {
+      BELL_LOG(error, "Main",
+               "Failed to start session: {} - waiting for another pairing "
+               "attempt",
+               startRes.error());
+      continue;
+    }
+    persistSession();
+
+    // Returns on a fresh pairing (needsSessionRestart) or a rejected login
+    // (Session::credentialsRejected()) - AP/dealer transport failures are
+    // retried internally and never surface here.
+    session->runPoller(needsSessionRestart);
+
+    if (session->credentialsRejected()) {
+      BELL_LOG(error, "Main",
+               "Credentials rejected by server - clearing and waiting for "
+               "a new pairing");
+      authInfo->loginCredentials.reset();
+      persistSession();
+    }
   }
   return 0;
 }

@@ -60,6 +60,9 @@ bell::Result<> ApClient::connectAndAuthenticate(
   // sequence IDs aren't reused, so nothing will ever claim them.
   audioKeyRequests.clear();
 
+  // Reset for this attempt - see loginWasDeclined()'s own comment.
+  loginDeclined = false;
+
   // Full grace period before doHousekeeping() can decide the link is
   // dead, same as DealerClient::connect() does for its own pong watchdog -
   // otherwise a default-constructed/stale lastPingTime would look
@@ -217,6 +220,23 @@ void ApClient::apPacketHandler(uint8_t packetType, const std::byte* data,
     case ApCommandType::APWelcome: {
       // Handle AP welcome packet
       BELL_LOG(info, LOG_TAG, "Received AP welcome packet");
+      break;
+    }
+    case ApCommandType::LoginDeclined: {
+      // The AP explicitly rejected our credentials (revoked/expired
+      // persisted blob, most commonly) - previously fell into default:
+      // and was silently logged as an "unknown packet type", leaving
+      // ApConnection's own state at CONNECTED_SHANNON (reached before
+      // this response, see ApConnection::connect()'s own SENT_HELLO
+      // branch) forever: state() kept reporting Connected even though no
+      // real session was ever established. loginDeclined lets callers
+      // (Session/main.cpp) tell this apart from a transient/network
+      // Failed - see loginWasDeclined()'s own comment. disconnect() forces
+      // ApConnection into its own ERROR state so state() also correctly
+      // stops claiming Connected.
+      BELL_LOG(error, LOG_TAG, "AP declined login - credentials rejected");
+      loginDeclined = true;
+      apConnection->disconnect();
       break;
     }
     default:

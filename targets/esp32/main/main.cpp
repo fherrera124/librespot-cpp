@@ -1,5 +1,5 @@
+#include <atomic>
 #include <fstream>
-#include <istream>
 #include <memory>
 
 #include "AudioSinkI2S.h"
@@ -29,40 +29,21 @@ const char* TAG = "cspot";
 const char* sessionFilePath = "/spiffs/session.json";
 
 // JC3248W535 I2S pinout - onboard NS4168 mono class-D amp, I2S-only, no
-// DIN/I2C control lines needed. Reused directly from /desarrollo/git/cspot's
-// own already hardware-verified components/cspot/Kconfig for this exact
-// board, not re-derived.
+// DIN/I2C control lines needed.
 constexpr gpio_num_t kI2sBclkGpio = GPIO_NUM_42;
 constexpr gpio_num_t kI2sWsGpio = GPIO_NUM_2;
 constexpr gpio_num_t kI2sDoutGpio = GPIO_NUM_41;
 constexpr gpio_num_t kI2sMclkGpio = GPIO_NUM_0;  // boot-strap pin, safe once running
 
-// Always started from runTask() regardless of whether a saved session
-// already exists - the Spotify app's device picker discovers devices on
-// the LAN via this same "_spotify-connect._tcp" mDNS advertisement + HTTP
-// endpoint no matter our auth state. This used to only run while there was
-// no saved session yet, which meant an already-paired device never
-// advertised again on any later boot and stayed invisible in the picker -
-// confirmed on real hardware. httpServer, authenticator and authSemaphore
-// are runTask()'s own locals, passed in here by reference/pointer -
-// runTask() never returns before the task is torn down (the while(true)
-// loop below), so they outlive every use the registered handlers make of
-// them, including a re-pairing POST that arrives long after this function
-// itself returns.
-//
-// The returned Advertiser must be kept alive by the caller for as long as
-// the device should stay discoverable: EspressifMDNAdvertiser's destructor
-// calls mdns_service_remove() (stopAdvertising()), so letting it fall out
-// of scope right after this function returns - as a local `auto service =
-// ...` here used to - tears the announcement back down within
-// microseconds of registering it. mdns_service_add() itself still reports
-// success, so this was invisible from the return value alone: confirmed
-// via `avahi-browse -a` on a real network showing every other
-// _spotify-connect._tcp device (a Sangean radio) but never this one.
+// Runs for the task's entire lifetime, independent of pairing/session
+// state, so the device stays visible/selectable in the Spotify app's
+// picker at all times. The returned Advertiser must be kept alive by the
+// caller: its destructor tears down the mDNS announcement.
 std::unique_ptr<bell::mdns::Advertiser> startZeroconfService(
     std::shared_ptr<cspot::AuthInfo> authInfo,
     std::shared_ptr<bell::http::Server> httpServer,
-    cspot::Authenticator& authenticator, bell::Semaphore& authSemaphore) {
+    cspot::Authenticator& authenticator, bell::Semaphore& authSemaphore,
+    std::atomic<bool>& needsSessionRestart) {
   httpServer->registerGet(
       "/spotify_handler",
       [&authenticator, authInfo](
@@ -88,7 +69,7 @@ std::unique_ptr<bell::mdns::Advertiser> startZeroconfService(
 
   httpServer->registerPost(
       "/spotify_handler",
-      [&authenticator, &authSemaphore, authInfo](
+      [&authenticator, &authSemaphore, authInfo, &needsSessionRestart](
           const std::unique_ptr<bell::http::Reader>& requestReader,
           const std::unique_ptr<bell::http::Writer>& responseWriter,
           const auto& routeParams) {
@@ -96,26 +77,33 @@ std::unique_ptr<bell::mdns::Advertiser> startZeroconfService(
         cspot::logHeapStatus("Zeroconf", "POST /spotify_handler entry");
 
         auto bodyStr = *requestReader->getBodyStringView();
-        tao::json::value responseJson;
-        responseJson["status"] = 101;
-        responseJson["statusString"] = "OK";
-        responseJson["spotifyError"] = 0;
-
-        auto responseString = tao::json::to_string(responseJson);
-        (void)responseWriter->writeResponseWithBody(
-            200, {{"Content-Type", "application/json"}}, responseString);
 
         auto res = authenticator.authenticateZeroconfString(authInfo->deviceId,
                                                              bodyStr);
         if (res) {
           BELL_LOG(info, "Zeroconf", "authenticated with spotify");
           authInfo->loginCredentials = *res;
+
+          tao::json::value responseJson;
+          responseJson["status"] = 101;
+          responseJson["statusString"] = "OK";
+          responseJson["spotifyError"] = 0;
+          (void)responseWriter->writeResponseWithBody(
+              200, {{"Content-Type", "application/json"}},
+              tao::json::to_string(responseJson));
+
+          // Wakes runTask()'s loop to (re)build the Session with these
+          // credentials, replacing whatever pairing (if any) is already
+          // active. give() only fires on success so the loop never wakes
+          // to rebuild against stale/unchanged credentials.
+          needsSessionRestart.store(true);
+          authSemaphore.give();
         } else {
           BELL_LOG(error, "Zeroconf", "failed to authenticate with spotify");
+          (void)responseWriter->writeResponseWithBody(500, {}, "");
         }
 
         cspot::logHeapStatus("Zeroconf", "POST /spotify_handler exit");
-        authSemaphore.give();
       });
 
   (void)httpServer->listen(2139);
@@ -131,21 +119,11 @@ std::unique_ptr<bell::mdns::Advertiser> startZeroconfService(
 }
 }  // namespace
 
-// Minimal real entry point for the Session/api engine (Stage C checkpoint -
-// no audio wiring yet, Session.cpp's own TrackPlayer hookup is still
-// commented out). Same shape as targets/cli/main.cpp, just with ESP32's
-// NVS/SPIFFS/WiFi bootstrap instead of a plain file for session persistence.
 class CSpotTask : public bell::Task {
  public:
-  // espStackOnPsram=false: this task reads/writes /spiffs/session.json
-  // (SPIFFS, backed by flash). ESP-IDF's flash operations briefly disable
-  // the flash cache, which also makes PSRAM unreachable on this SoC -
-  // esp_task_stack_is_sane_cache_disabled() (cache_utils.c) asserts the
-  // calling task's own stack is in internal DRAM specifically because of
-  // this, and a PSRAM-backed stack (bell::Task's own default) fails that
-  // check the moment this task does its first flash read. Confirmed via a
-  // real hardware crash, not assumed - see git history for the exact
-  // backtrace (CSpotTask::runTask() -> std::ifstream -> SPIFFS -> flash).
+  // espStackOnPsram=false: this task does flash I/O (SPIFFS session.json),
+  // which briefly disables the flash cache and makes PSRAM unreachable -
+  // a PSRAM-backed stack crashes on the first flash read.
   CSpotTask()
       : bell::Task("cspot", 32 * 1024, 0, bell::TaskCore::Core1,
                    /*espStackOnPsram=*/false) {
@@ -166,34 +144,14 @@ class CSpotTask : public bell::Task {
     }
     authInfo->logDeviceIdOrigin();
 
-    // These are runTask()'s own locals (not nested inside an if/else scope)
-    // so they stay alive for the task's entire lifetime, matching the
-    // handlers' own lifetime - see startZeroconfService()'s comment.
     auto httpServer = std::make_shared<bell::http::Server>();
     cspot::Authenticator authenticator;
     bell::Semaphore authSemaphore;
-    // Must also outlive this scope, same reasoning as the three above -
-    // see startZeroconfService()'s comment on why letting this fall out of
-    // scope silently tears the mDNS announcement back down.
-    auto mdnsService =
-        startZeroconfService(authInfo, httpServer, authenticator, authSemaphore);
+    std::atomic<bool> needsSessionRestart{false};
+    auto mdnsService = startZeroconfService(authInfo, httpServer, authenticator,
+                                            authSemaphore, needsSessionRestart);
 
-    if (!authInfo->loginCredentials.has_value()) {
-      authSemaphore.take();
-      if (!authInfo->loginCredentials.has_value() ||
-          authInfo->loginCredentials->authData.empty()) {
-        BELL_LOG(error, TAG, "No login credentials, halting");
-        return;
-      }
-
-      std::string sessionString = authInfo->toJson();
-      std::ofstream outFile(sessionFilePath, std::ios::binary);
-      if (outFile.is_open()) {
-        outFile << sessionString;
-        outFile.close();
-      }
-    }
-
+    // audioSink outlives every Session rebuild below.
     cspot::AudioSinkI2S::Config sinkConfig{
         .port = I2S_NUM_0,
         .bclkPin = kI2sBclkGpio,
@@ -211,16 +169,67 @@ class CSpotTask : public bell::Task {
     cspot::VolumeChangedCallback volumeCallback =
         [audioSink](uint16_t volume) { audioSink->volumeChanged(volume); };
 
-    auto session = std::make_shared<cspot::Session>(authInfo, audioCallback,
-                                                     volumeCallback);
-    auto startRes = session->start();
-    if (!startRes) {
-      BELL_LOG(error, TAG, "Failed to start session: {}", startRes.error());
-      return;
-    }
+    auto persistSession = [&authInfo]() {
+      std::string sessionString = authInfo->toJson();
+      std::ofstream outFile(sessionFilePath, std::ios::binary);
+      if (outFile.is_open()) {
+        outFile << sessionString;
+        outFile.close();
+      }
+    };
+    persistSession();
 
+    // haveCredentialsToTry: skips the initial wait when a persisted
+    // session was loaded above, so it's tried once before falling back to
+    // waiting for a pairing.
+    std::shared_ptr<cspot::Session> session;
+    bool haveCredentialsToTry = authInfo->loginCredentials.has_value();
     while (true) {
-      session->runPoller();
+      if (!haveCredentialsToTry) {
+        authSemaphore.take();
+        needsSessionRestart.store(false);
+
+        if (!authInfo->loginCredentials.has_value() ||
+            authInfo->loginCredentials->authData.empty()) {
+          continue;
+        }
+      }
+      haveCredentialsToTry = false;
+
+      BELL_LOG(info, TAG, session ? "Rebuilding session after a fresh pairing"
+                                  : "Starting session");
+      if (session) {
+        auto oldInactiveRes = session->putInactive();
+        if (!oldInactiveRes) {
+          BELL_LOG(warn, TAG, "putInactive on old session failed: {}",
+                   oldInactiveRes.error());
+        }
+      }
+      session.reset();
+      session = std::make_shared<cspot::Session>(authInfo, audioCallback,
+                                                  volumeCallback);
+      auto startRes = session->start();
+      if (!startRes) {
+        BELL_LOG(error, TAG,
+                 "Failed to start session: {} - waiting for another pairing "
+                 "attempt",
+                 startRes.error());
+        continue;
+      }
+      persistSession();
+
+      // Returns on a fresh pairing (needsSessionRestart) or a rejected
+      // login (Session::credentialsRejected()) - AP/dealer transport
+      // failures are retried internally and never surface here.
+      session->runPoller(needsSessionRestart);
+
+      if (session->credentialsRejected()) {
+        BELL_LOG(error, TAG,
+                 "Credentials rejected by server - clearing and waiting for "
+                 "a new pairing");
+        authInfo->loginCredentials.reset();
+        persistSession();
+      }
     }
   }
 };

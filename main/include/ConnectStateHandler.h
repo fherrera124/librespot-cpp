@@ -52,6 +52,10 @@ class ConnectStateHandler : public bell::Task {
   // the base64 payload from the dealer message's payloads[0].
   bell::Result<> handleSetVolume(std::string_view payloadDataStr);
 
+  // Tells the backend this device is going away, before it actually
+  // disconnects.
+  bell::Result<> putInactive();
+
  private:
   const char* LOG_TAG = "ConnectStateHandler";
 

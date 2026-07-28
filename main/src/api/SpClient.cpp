@@ -187,14 +187,19 @@ bell::Result<> DefaultSpClient::putInactive(const std::string& deviceId,
   // Separate endpoint from putConnectState() - not a PutStateRequest body,
   // matches go-librespot's PutConnectStateInactive and this repo's own
   // master branch's PutStateClient::putInactive. notify=false matches what
-  // both references pass here.
+  // both references pass here. Client-Token and Accept were missing here -
+  // master's own putInactive() sends both (Client-Token alongside
+  // Authorization/X-Spotify-Connection-Id; Accept via rawRequest()'s own
+  // default, same as putConnectState() above).
   auto httpResponse = httpClient->put(
       fmt::format(
           "https://{}/connect-state/v1/devices/{}/inactive?notify=false",
           spClientAddress, deviceId),
       {
+          {"Client-Token", clientToken},
           {"X-Spotify-Connection-Id", sessionId},
           {"Authorization", fmt::format("Bearer {}", accessToken)},
+          {"Accept", "*/*"},
       });
 
   if (!httpResponse) {
