@@ -10,6 +10,7 @@
 #include "bell/Logger.h"
 #include "connect.pb.h"
 #include "events/EventLoop.h"
+#include "Utils.h"
 
 using namespace cspot;
 
@@ -32,8 +33,14 @@ cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo,
 
   auto fileProvider = createDefaultFileProvider(eventLoop, spClient, apClient);
   auto audioDecoder = createAudioDecoder(std::move(audioOutputCallback));
+  // Direct callback, not an EventLoop-posted event - see
+  // ConnectStateHandler::onPlayerStateUpdate()'s own comment.
   streamPlayer = std::make_shared<StreamPlayer>(
-      eventLoop, std::move(fileProvider), std::move(audioDecoder));
+      eventLoop, std::move(fileProvider), std::move(audioDecoder),
+      [connectStateHandler = this->connectStateHandler](
+          const PlayerStateUpdate& update) {
+        connectStateHandler->onPlayerStateUpdate(update);
+      });
 
   eventLoop->registerHandler(EventLoop::EventType::DEALER_MESSAGE,
                              std::bind(&cspot::Session::handleDealerMessage,
@@ -268,7 +275,9 @@ void cspot::Session::runPoller(std::atomic<bool>& restartRequested) {
           apReconnecting = true;
         }
 
+        logHeapStatus(LOG_TAG, "before AP reconnect attempt");
         auto reconnectRes = connectAp();
+        logHeapStatus(LOG_TAG, "after AP reconnect attempt");
         if (!reconnectRes) {
           BELL_LOG(error, LOG_TAG, "AP reconnect failed, retrying in {}ms",
                    apBackoffMs);
@@ -315,7 +324,9 @@ void cspot::Session::runPoller(std::atomic<bool>& restartRequested) {
           reconnecting = true;
         }
 
+        logHeapStatus(LOG_TAG, "before Dealer reconnect attempt");
         auto reconnectRes = connectDealer();
+        logHeapStatus(LOG_TAG, "after Dealer reconnect attempt");
         if (!reconnectRes) {
           BELL_LOG(error, LOG_TAG, "Dealer reconnect failed, retrying in {}ms",
                    dealerBackoffMs);

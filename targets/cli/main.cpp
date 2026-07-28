@@ -174,7 +174,7 @@ int main(int argc, char** argv) {
     persistSession();
 
     // Returns on a fresh pairing (needsSessionRestart) or a rejected login
-    // (Session::credentialsRejected()) - AP/dealer transport failures are
+    // (Session::credentialsRejected()). Transient transport failures are
     // retried internally and never surface here.
     session->runPoller(needsSessionRestart);
 

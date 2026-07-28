@@ -219,7 +219,7 @@ class CSpotTask : public bell::Task {
       persistSession();
 
       // Returns on a fresh pairing (needsSessionRestart) or a rejected
-      // login (Session::credentialsRejected()) - AP/dealer transport
+      // login (Session::credentialsRejected()). Transient transport
       // failures are retried internally and never surface here.
       session->runPoller(needsSessionRestart);
 
@@ -263,6 +263,7 @@ void init_spiffs() {
     ESP_LOGI(TAG, "Partition size: total: %d, used: %d", total, used);
   }
 }
+
 }  // namespace
 
 extern "C" void app_main(void) {
