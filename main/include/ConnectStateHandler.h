@@ -162,8 +162,9 @@ class ConnectStateHandler : public bell::Task {
 
   // Applies whichever of repeating_context/repeating_track/
   // shuffling_context are present (nullopt = not specified, leave
-  // unchanged) - shared by player_options_override (transfer/play) and
-  // the standalone set_repeating_context/set_repeating_track/
+  // unchanged) - shared by player_options_override (play only -
+  // handleTransferCommandLocked() doesn't read it) and the standalone
+  // set_repeating_context/set_repeating_track/
   // set_shuffling_context/set_options commands, which all carry the same
   // three optional fields under different wire shapes. Does not PUT -
   // callers do that themselves. State-only for shuffle: syncs what the

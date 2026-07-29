@@ -698,12 +698,12 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   auto skipToUri = skipTo.optional<std::string>("track_uri");
   bool initiallyPaused =
       options.optional<bool>("initially_paused").value_or(false);
-  // Only overrides the fields the command actually sent - matches
-  // go-librespot's own "play" case. State-only: syncs what the client
-  // displays (shuffle/repeat toggle) with what was requested, but
-  // doesn't reorder the queue - real shuffling isn't implemented on
-  // either reference engine in this repo
-  // (TrackQueueHandler::enableShuffle() is still a stub).
+  // Only overrides fields actually present in the JSON (optional<bool>
+  // tells "absent" from "sent false") - more precise than go-librespot's
+  // own handling of this same field, which overwrites all three
+  // unconditionally whenever the override object is present at all
+  // (ContextPlayerOptionOverrides uses plain bool, not optional, in its
+  // own proto).
   const tao::json::value* overrideJson =
       options.find("player_options_override");
 
@@ -936,18 +936,8 @@ bell::Result<> ConnectStateHandler::handlePauseCommandLocked(bool pause) {
   eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !pause);
 
   auto& playerState = putStateRequestProto.device.playerState;
-  // isPlaying stays true here too - only isPaused/playbackSpeed carry
-  // the pause signal. isPlaying only goes false for a genuine
-  // end-of-queue/nothing-loaded state, matching go-librespot (every
-  // real PUT hardcodes IsPlaying=true regardless of paused).
-  //
-  // Freezes the real elapsed position into positionAsOfTimestamp before
-  // timestamp is overwritten below - left untouched, it would stay
-  // wherever it was last set (0, typically), so every pause reported
-  // position 0 regardless of how far the track had progressed.
-  // Extrapolated using the OLD playbackSpeed, the same formula the
-  // client uses for its own progress bar - contributes 0 when already
-  // paused (a correct no-op across a resume).
+
+  // Uses the OLD playbackSpeed (before it's reassigned below).
   auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                    std::chrono::system_clock::now().time_since_epoch())
                    .count();

@@ -45,10 +45,10 @@ class TrackQueueHandler {
   virtual tcb::span<cspot_proto::ProvidedTrack> nextTracks() = 0;
   virtual tcb::span<cspot_proto::ProvidedTrack> previousTracks() = 0;
 
-  // forceNotify bypasses the "did anything actually change" dedup below -
-  // needed when a caller knows a fresh QUEUE_UPDATED must go out even
-  // though the current track's identity itself didn't change (e.g.
-  // repeat-track restarting the same track).
+  // forceNotify bypasses the "did anything actually change" dedup in the
+  // default implementation - needed when a caller knows a fresh
+  // QUEUE_UPDATED must go out even though the current track's identity
+  // itself didn't change (e.g. repeat-track restarting the same track).
   virtual void updateTrackWindows(bool forceNotify = false) = 0;
 };
 
