@@ -101,12 +101,6 @@ class ConnectStateHandler : public bell::Task {
   // lastTransferTimestamp guard).
   int64_t lastTransferTimestamp = 0;
 
-  // URI of the track handleTransferCommandLocked()/
-  // handlePlayCommandLocked() last posted PLAYER_FLUSH+PLAYER_PLAY for -
-  // a later transfer/play for the same URI skips reposting those instead
-  // of reopening an already-loaded stream.
-  std::string lastFlushedTrackUri;
-
   // This device's own outgoing PutStateRequest.message_id sequence
   // number, incremented before every PUT (prepareAndEncodeLocked()).
   uint32_t nextMessageId = 0;

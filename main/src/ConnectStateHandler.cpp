@@ -661,20 +661,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     return {};
   }
 
-  // Skips a redundant flush/reopen when the transfer is for the track
-  // already loaded/playing.
-  bool alreadyLoaded = track && track->uri == lastFlushedTrackUri;
-  if (!alreadyLoaded) {
-    eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, std::monostate{});
-    eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !shouldPause);
-    if (track) {
-      lastFlushedTrackUri = track->uri;
-    }
-  } else {
-    BELL_LOG(info, LOG_TAG,
-             "Transfer for already-loaded track {}, skipping flush",
-             track->uri);
-  }
+  eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, std::monostate{});
+  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !shouldPause);
 
   return {};
 }
@@ -730,19 +718,8 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
 
   auto track = trackQueueHandler->currentTrack();
 
-  // Already-loaded guard - see handleTransferCommandLocked()'s own comment on
-  // this same point.
-  bool alreadyLoaded = track && track->uri == lastFlushedTrackUri;
-  if (!alreadyLoaded) {
-    eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, std::monostate{});
-    eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !initiallyPaused);
-    if (track) {
-      lastFlushedTrackUri = track->uri;
-    }
-  } else {
-    BELL_LOG(info, LOG_TAG,
-             "Play for already-loaded track {}, skipping flush", track->uri);
-  }
+  eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, std::monostate{});
+  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !initiallyPaused);
 
   auto& playerState = putStateRequestProto.device.playerState;
   // isPlaying=true even mid-buffering - same reasoning as
