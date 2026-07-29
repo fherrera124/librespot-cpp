@@ -245,12 +245,12 @@ void StreamPlayer::taskLoop() {
 
     std::scoped_lock lock(playbackMutex);
     if (audioDecoder->isEOF()) {
-      BELL_LOG(info, LOG_TAG, "Track ended, moving to next track");
+      BELL_LOG(info, LOG_TAG, "Track ended");
       audioDecoder->resetStream();
       // Also drop currentFile/currentTrackId here, not just the decoder:
       // the next taskLoop() iteration's maybeStartCurrentTrack() (top of
       // this function) runs before QUEUE_UPDATED can possibly arrive back
-      // from ConnectStateHandler's advanceToNextTrack(), and without this
+      // from ConnectStateHandler's advanceToNextTrackLocked(), and without this
       // it still sees isCurrentTrackReady()==true for the track that just
       // ended - reopening it from scratch for ~1s before the real next
       // track's QUEUE_UPDATE lands and flushes it back out again
