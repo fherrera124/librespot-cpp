@@ -571,15 +571,7 @@ bell::Result<std::byte*> ApConnection::receivePacket(uint8_t& cmd,
   if (std::memcmp(mac.data(), &connectionBuffer[packetSize], shannonMacSize) !=
       0) {
     BELL_LOG(error, LOG_TAG, "MAC mismatch in the received packet");
-    for (auto& byte : mac) {
-      std::cout << std::hex << static_cast<int>(byte) << ", ";
-    }
-    for (size_t i = 0; i < shannonMacSize; i++) {
-      std::cout << std::hex
-                << static_cast<int>(connectionBuffer[packetSize + i]) << ", ";
-    }
-    std::cout << std::dec << std::endl;
-    throw std::runtime_error("MAC mismatch in the received packet");
+    return bell::make_unexpected_errc<std::byte*>(std::errc::bad_message);
   }
 
   // Update the nonce
