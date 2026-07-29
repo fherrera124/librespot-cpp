@@ -116,7 +116,7 @@ void ConnectStateHandler::initialize() {
 
   auto& deviceInfo = deviceProto.deviceInfo;
   deviceInfo.canPlay = true;
-  deviceInfo.volume = 100;
+  deviceInfo.volume = 65535;
   deviceInfo.name = authInfo->deviceName;
 
   deviceInfo.deviceType = DeviceType_SPEAKER;
@@ -650,9 +650,6 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   if (contextIndex) {
     playerState.index.value = *contextIndex;
   }
-
-  // duration intentionally left untouched (not zeroed) here - matches
-  // master's own putBufferingState(); the later "ready" PUT corrects it.
 
   BELL_LOG(info, LOG_TAG, "Current track after transfer: {}",
            track ? track->uri : "none");
