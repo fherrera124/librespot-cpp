@@ -703,6 +703,19 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   auto contextUri = context.optional<std::string>("uri");
   auto skipToUid = skipTo.optional<std::string>("track_uid");
   auto skipToUri = skipTo.optional<std::string>("track_uri");
+  // Only meaningful when neither uid nor uri is present - matches
+  // go-librespot's own uid/uri/index priority order (daemon/player.go's
+  // skipToFunc). >0 rather than a presence check because Options.SkipTo
+  // isn't a pointer on go-librespot's side either, so index 0 there is
+  // already indistinguishable from "absent" - harmless either way, since
+  // both fall back to the same "start from the beginning" default.
+  std::optional<uint32_t> skipToTrackIndex;
+  if (!skipToUid && !skipToUri) {
+    auto skipToTrackIndexRaw = skipTo.optional<int>("track_index");
+    if (skipToTrackIndexRaw && *skipToTrackIndexRaw > 0) {
+      skipToTrackIndex = static_cast<uint32_t>(*skipToTrackIndexRaw);
+    }
+  }
   bool initiallyPaused =
       options.optional<bool>("initially_paused").value_or(false);
   // Only overrides fields actually present in the JSON (optional<bool>
@@ -733,8 +746,8 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
 
   // See handleTransferCommandLocked()'s own comment on this same network
   // fetch running with putStateMutex still held.
-  auto loadRes =
-      trackQueueHandler->loadContext(*contextUri, skipToUri, skipToUid);
+  auto loadRes = trackQueueHandler->loadContext(*contextUri, skipToUri,
+                                                skipToUid, skipToTrackIndex);
   if (!loadRes) {
     return tl::make_unexpected(loadRes.error());
   }

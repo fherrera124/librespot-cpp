@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -23,7 +24,8 @@ class TrackQueueHandler {
   virtual bell::Result<> loadContext(
       const std::string& contextUri,
       std::optional<std::string> currentTrackUri = std::nullopt,
-      std::optional<std::string> currentTrackUid = std::nullopt) = 0;
+      std::optional<std::string> currentTrackUid = std::nullopt,
+      std::optional<uint32_t> currentTrackIndex = std::nullopt) = 0;
 
   virtual void setQueue(
       const std::vector<cspot_proto::ContextTrack>& queue) = 0;

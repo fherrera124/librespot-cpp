@@ -44,7 +44,8 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
 
   bell::Result<> loadContext(
       const std::string& contextUri, std::optional<std::string> currentTrackUri,
-      std::optional<std::string> currentTrackUid) override;
+      std::optional<std::string> currentTrackUid,
+      std::optional<uint32_t> currentTrackIndex) override;
 
   void setQueue(const std::vector<cspot_proto::ContextTrack>& queue) override;
 
@@ -95,6 +96,7 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   std::optional<cspot_proto::ContextIndex> contextIndex;
 
   std::pair<std::string, std::string> targetTrackIds{};
+  std::optional<uint32_t> targetTrackIndex;
 
   // Current window of tracks, used for providing next/previous tracks to UI and track player
   std::array<cspot_proto::ProvidedTrack, trackWindowLen> nextTracksWindow{};
@@ -114,6 +116,17 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
                             const PageMetadata& pageMetadata);
 
   std::optional<cspot_proto::ContextIndex> getOffsetIndex(int32_t offset) const;
+
+  // Converts a flat 0-based track index (position across the whole
+  // context, not per-page - matches go-librespot's own SkipTo.TrackIndex
+  // semantics in daemon/player.go) into a {page, track} pair, by walking
+  // contextPages. Only correct once every page up to the target has
+  // actually been fetched; returns nullopt if the walk runs past what's
+  // currently populated (not yet fetched, or genuinely out of range) -
+  // callers fall back to loadContext()'s own "default to zero" handling
+  // in that case.
+  std::optional<cspot_proto::ContextIndex> resolveFlatIndex(
+      uint32_t flatIndex) const;
 
   bell::Result<> ensureEnoughTracks();
   bell::Result<> fetchRootPage(const std::string& rootContextUri);
@@ -136,17 +149,27 @@ DefaultTrackQueueHandler::DefaultTrackQueueHandler(
 
 bell::Result<> DefaultTrackQueueHandler::loadContext(
     const std::string& contextUri, std::optional<std::string> currentTrackUri,
-    std::optional<std::string> currentTrackUid) {
+    std::optional<std::string> currentTrackUid,
+    std::optional<uint32_t> currentTrackIndex) {
+  // The "same context" fast path below only knows how to resolve a uri
+  // (cached GID search) or an index (resolveFlatIndex against the cache) -
+  // a uid-only target still needs a fresh fetch+parse for onTrackParsed()'s
+  // own uid check to find it, same as before this function took an index
+  // at all.
+  bool haveFastPathTarget =
+      currentTrackUri.has_value() || currentTrackIndex.has_value();
+
   // In case we only have UID, we need to refetch the pages either way - we only keep the gids
-  if (currentContextUri != contextUri || !currentTrackUri.has_value()) {
+  if (currentContextUri != contextUri || !haveFastPathTarget) {
     // New context, reset everything
     resetContext();
     targetTrackIds = {currentTrackUri.value_or(""),
                       currentTrackUid.value_or("")};
+    targetTrackIndex = currentTrackIndex;
 
     contextIdType = SpotifyIdType::Track;
 
-    if (!currentTrackUid && !currentTrackUri) {
+    if (!currentTrackUri && !currentTrackUid && !currentTrackIndex) {
       contextIndex = {
           0,
           0,
@@ -164,29 +187,40 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
                contextUri, res.error());
       return tl::make_unexpected(res.error());
     }
+
+    if (targetTrackIndex && !contextIndex) {
+      contextIndex = resolveFlatIndex(*targetTrackIndex);
+    }
   } else {
-    // Same context, only reset the current index & queue
+    // Same context, only reset the current index & queue - contextPages is
+    // already fully populated from the earlier load, so both target kinds
+    // resolve from that cache directly, no network fetch needed.
     contextIndex.reset();
     queue.clear();
     isPlayingQueue = false;
 
     targetTrackIds = {currentTrackUri.value_or(""),
                       currentTrackUid.value_or("")};
+    targetTrackIndex = currentTrackIndex;
 
-    auto targetGid = uriToGid(*currentTrackUri);
+    if (currentTrackUri) {
+      auto targetGid = uriToGid(*currentTrackUri);
 
-    for (size_t pageIdx = 0; pageIdx < contextPages.size(); pageIdx++) {
-      auto trackItr =
-          std::find(contextPages[pageIdx].trackGids.begin(),
-                    contextPages[pageIdx].trackGids.end(), targetGid);
-      if (trackItr != contextPages[pageIdx].trackGids.end()) {
-        // Found current track in the parsed data
-        contextIndex = {
-            static_cast<uint32_t>(pageIdx),
-            static_cast<uint32_t>(std::distance(
-                contextPages[pageIdx].trackGids.begin(), trackItr))};
-        break;
+      for (size_t pageIdx = 0; pageIdx < contextPages.size(); pageIdx++) {
+        auto trackItr =
+            std::find(contextPages[pageIdx].trackGids.begin(),
+                      contextPages[pageIdx].trackGids.end(), targetGid);
+        if (trackItr != contextPages[pageIdx].trackGids.end()) {
+          // Found current track in the parsed data
+          contextIndex = {
+              static_cast<uint32_t>(pageIdx),
+              static_cast<uint32_t>(std::distance(
+                  contextPages[pageIdx].trackGids.begin(), trackItr))};
+          break;
+        }
       }
+    } else {
+      contextIndex = resolveFlatIndex(*currentTrackIndex);
     }
   }
 
@@ -206,6 +240,10 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
       BELL_LOG(error, LOG_TAG, "Could not resolve context page, uri={}, err={}",
                *page.url, res.error());
       return tl::make_unexpected(res.error());
+    }
+
+    if (targetTrackIndex && !contextIndex) {
+      contextIndex = resolveFlatIndex(*targetTrackIndex);
     }
   }
 
@@ -453,6 +491,7 @@ void DefaultTrackQueueHandler::resetContext() {
   contextPages = {};
   contextIndex.reset();
   targetTrackIds = {};
+  targetTrackIndex.reset();
   nextTracksWindow.fill(cspot_proto::ProvidedTrack{});
   previousTracksWindow.fill(cspot_proto::ProvidedTrack{});
   currentContextUri.clear();
@@ -669,6 +708,19 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
       contextIndex->page,
       static_cast<uint32_t>(totalOffset),
   };
+}
+
+std::optional<cspot_proto::ContextIndex>
+DefaultTrackQueueHandler::resolveFlatIndex(uint32_t flatIndex) const {
+  uint32_t remaining = flatIndex;
+  for (uint32_t page = 0; page < contextPages.size(); page++) {
+    auto pageSize = static_cast<uint32_t>(contextPages[page].trackGids.size());
+    if (remaining < pageSize) {
+      return cspot_proto::ContextIndex{page, remaining};
+    }
+    remaining -= pageSize;
+  }
+  return std::nullopt;
 }
 
 void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
