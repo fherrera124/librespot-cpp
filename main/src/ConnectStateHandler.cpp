@@ -289,21 +289,16 @@ bool ConnectStateHandler::prepareAndEncodeLocked(
 
   {
     auto& ps = putStateRequestProto.device.playerState;
-    // deviceId/connectionId aren't part of the PutStateRequest body
-    // itself (they're the URL path / X-Spotify-Connection-Id header) -
-    // included here since nothing else in this dump would reveal if one
-    // of them were stale/empty.
     BELL_LOG(info, LOG_TAG,
-             "PUT DIAG: deviceId={} connectionId={} isActive={} "
-             "playerSessionId={} hasTrack={} track.uri={} index=[{},{}] "
-             "playbackSpeed={} isPlaying={} isPaused={} isBuffering={} "
-             "playbackId={} messageId={} lastCommandMessageId={} "
+             "PUT DIAG: "
+             "hasTrack={} track.uri={} index=[{},{}] "
+             "isPlaying={} isPaused={} isBuffering={} "
+             "messageId={} lastCommandMessageId={} "
              "lastCommandSentByDeviceId={} startedPlayingAt={}",
-             authInfo->deviceId, authInfo->sessionId,
-             putStateRequestProto.isActive, ps.sessionId, ps.track.hasValue,
+             ps.track.hasValue,
              ps.track.value.uri, ps.index.value.page, ps.index.value.track,
-             ps.playbackSpeed, ps.isPlaying, ps.isPaused, ps.isBuffering,
-             ps.playbackId, putStateRequestProto.messageId,
+             ps.isPlaying, ps.isPaused, ps.isBuffering,
+             putStateRequestProto.messageId,
              putStateRequestProto.lastCommandMessageId,
              putStateRequestProto.lastCommandSentByDeviceId,
              putStateRequestProto.startedPlayingAt);
