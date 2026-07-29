@@ -786,15 +786,14 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   // unconditional either way).
   playerState.contextUri = *contextUri;
   playerState.contextUrl = context.optional<std::string>("url").value_or("");
-  const tao::json::value* playOriginJson = command.find("play_origin");
-  if (playOriginJson) {
-    playerState.playOrigin.featureIdentifier =
-        playOriginJson->optional<std::string>("feature_identifier")
-            .value_or("");
-    playerState.playOrigin.referrerIdentifier =
-        playOriginJson->optional<std::string>("referrer_identifier")
-            .value_or("");
-  }
+  static const tao::json::value emptyPlayOrigin = tao::json::empty_object;
+  const tao::json::value* playOriginJsonPtr = command.find("play_origin");
+  const tao::json::value& playOriginJson =
+      playOriginJsonPtr ? *playOriginJsonPtr : emptyPlayOrigin;
+  playerState.playOrigin.featureIdentifier =
+      playOriginJson.optional<std::string>("feature_identifier").value_or("");
+  playerState.playOrigin.referrerIdentifier =
+      playOriginJson.optional<std::string>("referrer_identifier").value_or("");
   playerState.playOrigin.deviceIdentifier =
       putStateRequestProto.lastCommandSentByDeviceId;
 
