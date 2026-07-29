@@ -10,7 +10,6 @@
 #include "api/SpClient.h"
 #include "bell/Logger.h"
 #include "bell/Result.h"
-#include "bell/utils/Utils.h"
 #include "connect.pb.h"
 #include "events/EventLoop.h"
 #include "events/EventModels.h"
@@ -222,7 +221,7 @@ bell::Result<> ConnectStateHandler::putState(PutStateReason reason) {
 bell::Result<> ConnectStateHandler::putStateLocked(PutStateReason reason) {
   constexpr auto kStatePutMinInterval = std::chrono::milliseconds(200);
 
-  // Only schedules a flush for taskLoop() to send (see this method's own
+  // Only schedules a flush for runTask() to send (see this method's own
   // declaration comment in the header). "Last reason wins": always
   // overwrite the pending reason, but only set the due time once per
   // burst - repeated calls inside the same window mustn't keep pushing
@@ -232,6 +231,7 @@ bell::Result<> ConnectStateHandler::putStateLocked(PutStateReason reason) {
     return {};
   }
   putStatePending = true;
+  putStateCv.notify_one();
 
   auto now = std::chrono::steady_clock::now();
   if (!hasEverSentPutState || now - lastPutStateTime >= kStatePutMinInterval) {
@@ -287,81 +287,87 @@ bool ConnectStateHandler::prepareAndEncodeLocked(
   // Still under putStateMutex here: encoding touches
   // putStateRequestProto/trackQueueHandler (the next_tracks/prev_tracks
   // pb_callback reads trackQueueHandler's live windows). Everything
-  // after this point in taskLoop() is a plain byte buffer, safe to send
+  // after this point in runTask() is a plain byte buffer, safe to send
   // unlocked.
   return nanopb_helper::encodeToVector(putStateRequestProto, outBody);
 }
 
-void ConnectStateHandler::taskLoop() {
-  bell::utils::sleepMs(50);
+void ConnectStateHandler::runTask() {
+  std::scoped_lock runningLock(taskRunningMutex);
+  taskRunning = true;
 
-  if (!putStatePending) {
-    return;
-  }
+  // Bounds how long stopTask() can be blocked waiting for this loop to
+  // notice taskRunning went false when nothing else wakes it up - not a
+  // scheduling interval (that's putStateDueTime/putStateCv.notify_one()).
+  // Matches master's PlayerEngine::runTask()'s own wait_for pattern.
+  constexpr auto kIdleWaitInterval = std::chrono::milliseconds(500);
 
-  std::vector<std::byte> encodedBody;
-  std::string deviceId;
-  std::string sessionId;
-  PutStateReason reason = PutStateReason_PLAYER_STATE_CHANGED;
-  bool isActive = false;
-  bool isBuffering = false;
-  bool isPaused = false;
-  bool encodeOk;
-  {
-    std::scoped_lock lock(putStateMutex);
-    if (!putStatePending ||
-        std::chrono::steady_clock::now() < putStateDueTime) {
-      return;
+  std::unique_lock<std::mutex> lock(putStateMutex);
+  while (taskRunning) {
+    if (!putStatePending) {
+      putStateCv.wait_for(
+          lock, kIdleWaitInterval,
+          [this] { return putStatePending || !taskRunning; });
+      continue;
+    }
+    if (std::chrono::steady_clock::now() < putStateDueTime) {
+      putStateCv.wait_until(lock, putStateDueTime,
+                            [this] { return !taskRunning; });
+      continue;
     }
 
-    reason = pendingPutStateReason;
-    encodeOk = prepareAndEncodeLocked(reason, encodedBody);
-    deviceId = authInfo->deviceId;
-    sessionId = authInfo->sessionId;
-    isActive = putStateRequestProto.isActive;
-    isBuffering = putStateRequestProto.device.playerState.isBuffering;
-    isPaused = putStateRequestProto.device.playerState.isPaused;
-  }
+    PutStateReason reason = pendingPutStateReason;
+    std::vector<std::byte> encodedBody;
+    bool encodeOk = prepareAndEncodeLocked(reason, encodedBody);
+    std::string deviceId = authInfo->deviceId;
+    std::string sessionId = authInfo->sessionId;
+    bool isActive = putStateRequestProto.isActive;
+    bool isBuffering = putStateRequestProto.device.playerState.isBuffering;
+    bool isPaused = putStateRequestProto.device.playerState.isPaused;
 
-  if (!encodeOk) {
-    BELL_LOG(error, LOG_TAG, "Failed to encode PutStateRequest, dropping "
-                             "this flush");
-    return;
-  }
+    lock.unlock();
 
-  // Network I/O deliberately outside putStateMutex - held across the
-  // full HTTPS round-trip before (250ms-1500ms+ observed, up to ~11s
-  // worst case given SpClient's own retry/timeout budget), blocking
-  // every other state mutator, including StreamPlayer's synchronous
-  // onPlayerStateUpdate() sitting on the track-load critical path.
-  // putConnectStateRaw() takes the already-encoded body so this can run
-  // unlocked.
-  //
-  // Heap snapshot around the PUT's socket/TLS work - the AP connection,
-  // the dealer WS, and a CDN stream can all hold their own TLS contexts
-  // concurrently.
-  logHeapStatus(LOG_TAG, "before putConnectState");
-  auto putStartTime = std::chrono::steady_clock::now();
-  auto res = spClient->putConnectStateRaw(std::move(encodedBody), deviceId,
-                                          sessionId);
-  auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::steady_clock::now() - putStartTime)
-                       .count();
+    if (!encodeOk) {
+      BELL_LOG(error, LOG_TAG, "Failed to encode PutStateRequest, dropping "
+                               "this flush");
+    } else {
+      // Network I/O deliberately outside putStateMutex - held across the
+      // full HTTPS round-trip before (250ms-1500ms+ observed, up to ~11s
+      // worst case given SpClient's own retry/timeout budget), blocking
+      // every other state mutator, including StreamPlayer's synchronous
+      // onPlayerStateUpdate() sitting on the track-load critical path.
+      // putConnectStateRaw() takes the already-encoded body so this can
+      // run unlocked.
+      //
+      // Heap snapshot around the PUT's socket/TLS work - the AP
+      // connection, the dealer WS, and a CDN stream can all hold their
+      // own TLS contexts concurrently.
+      logHeapStatus(LOG_TAG, "before putConnectState");
+      auto putStartTime = std::chrono::steady_clock::now();
+      auto res = spClient->putConnectStateRaw(std::move(encodedBody),
+                                              deviceId, sessionId);
+      auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now() - putStartTime)
+                           .count();
 
-  logHeapStatus(LOG_TAG, "after putConnectState");
+      logHeapStatus(LOG_TAG, "after putConnectState");
 
-  // Round-trip time logged on both outcomes - this PUT is what the
-  // initiating client's "Connecting..." wait actually depends on.
-  if (res) {
-    BELL_LOG(info, LOG_TAG,
-             "Put state succeeded in {}ms (reason={}, isActive={}, "
-             "isBuffering={}, isPaused={})",
-             elapsedMs, static_cast<int>(reason), isActive, isBuffering,
-             isPaused);
-  } else {
-    BELL_LOG(error, LOG_TAG,
-             "Put state failed after {}ms (reason={}, isActive={}): {}",
-             elapsedMs, static_cast<int>(reason), isActive, res.error());
+      // Round-trip time logged on both outcomes - this PUT is what the
+      // initiating client's "Connecting..." wait actually depends on.
+      if (res) {
+        BELL_LOG(info, LOG_TAG,
+                 "Put state succeeded in {}ms (reason={}, isActive={}, "
+                 "isBuffering={}, isPaused={})",
+                 elapsedMs, static_cast<int>(reason), isActive, isBuffering,
+                 isPaused);
+      } else {
+        BELL_LOG(error, LOG_TAG,
+                 "Put state failed after {}ms (reason={}, isActive={}): {}",
+                 elapsedMs, static_cast<int>(reason), isActive, res.error());
+      }
+    }
+
+    lock.lock();
   }
 }
 
@@ -513,9 +519,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
            playerState.sessionId);
 
   // isPlaying means "session active", not "audio already flowing" -
-  // stays true through buffering, matching master's own
-  // PlayerEngine::putBufferingState() and go-librespot's
-  // loadCurrentTrack() (both hardcode isPlaying=true here).
+  // stays true through buffering.
   playerState.isPlaying = true;
   playerState.isBuffering = true;
   // Our own clock, not transferState.playback.timestamp (the source
@@ -567,11 +571,6 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
           .count();
   putStateRequestProto.hasBeenPlayingForMs = 0;
 
-  // context.uri empty is a legitimate shape (not a decode failure) -
-  // matches master's own haveContext check: it means an ad-hoc queue,
-  // no context (search results, radio). Calling loadContext() with an
-  // empty uri unconditionally crashed later in ensureEnoughTracks() on
-  // real hardware.
   bool haveContext = !transferState.current_session.context.uri.empty();
 
   if (haveContext) {
@@ -587,7 +586,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     // This network fetch runs with putStateMutex still held (by the
     // caller - see this function's own declaration comment) rather than
     // released around it: the only other lock-taker is this class's own
-    // low-frequency taskLoop() (50ms poll, 200ms min interval), so the
+    // runTask(), which only holds the lock briefly to check/encode
+    // (released during both its wait and its own network send), so the
     // worst case is a deferred flush, never a deadlock - and it avoids
     // ever flushing a half-updated transfer.
     auto loadRes = trackQueueHandler->loadContext(
@@ -622,8 +622,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     trackQueueHandler->setPlayingQueue(true);
   } else {
     // Genuinely empty transfer (device selected while nothing plays
-    // anywhere yet) - not an error, matches master's own same-shaped
-    // case.
+    // anywhere yet)
     BELL_LOG(info, LOG_TAG,
              "Transfer has no context/queue/track - becoming active with "
              "nothing loaded");

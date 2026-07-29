@@ -7,6 +7,7 @@
 #include "connect.pb.h"
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -25,7 +26,7 @@ namespace cspot {
 // anything.
 using VolumeChangedCallback = std::function<void(uint16_t)>;
 
-// Owns a background task (taskLoop()) that sends every connect-state PUT.
+// Owns a background task (runTask()) that sends every connect-state PUT.
 // putState()/putStateLocked() only ever mutate putStateRequestProto and
 // schedule a flush - never send inline - so the HTTPS round-trip never
 // blocks a caller mutating state under putStateMutex.
@@ -79,10 +80,11 @@ class ConnectStateHandler : public bell::Task {
   // coalescing - matches go-librespot/master). Also guards
   // putStateRequestProto/trackQueueHandler: every command/state handler
   // mutates them under this lock (EventLoop's thread), and
-  // prepareAndEncodeLocked() reads them under the same lock (taskLoop()'s
+  // prepareAndEncodeLocked() reads them under the same lock (runTask()'s
   // thread) - never both at once. Not held during the network send
   // itself.
   std::mutex putStateMutex;
+  std::condition_variable putStateCv;
   std::chrono::steady_clock::time_point lastPutStateTime =
       std::chrono::steady_clock::time_point::min();
   // Short-circuits putState()'s rate-limit check on the very first call in
@@ -109,12 +111,12 @@ class ConnectStateHandler : public bell::Task {
   // takes the lock for its own mutation and must call this instead of
   // the public, self-locking putState() (std::mutex isn't reentrant).
   //
-  // Never sends the PUT itself - only schedules one for taskLoop() to
+  // Never sends the PUT itself - only schedules one for runTask() to
   // send.
   bell::Result<> putStateLocked(
       PutStateReason reason = PutStateReason_PLAYER_STATE_CHANGED);
 
-  // Caller (taskLoop()) must hold putStateMutex. Finalizes this PUT's
+  // Caller (runTask()) must hold putStateMutex. Finalizes this PUT's
   // per-send fields and encodes putStateRequestProto into outBody - the
   // only part of a flush that touches putStateRequestProto/
   // trackQueueHandler, so it must run under the lock. Does NOT do the
@@ -122,7 +124,7 @@ class ConnectStateHandler : public bell::Task {
   bool prepareAndEncodeLocked(PutStateReason reason,
                               std::vector<std::byte>& outBody);
 
-  void taskLoop() override;
+  void runTask() override;
 
   void initialize();
 
