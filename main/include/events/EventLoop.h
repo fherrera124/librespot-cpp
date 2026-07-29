@@ -30,9 +30,14 @@ class EventLoop : public bell::Task {
     // Posted by StreamPlayer on natural end-of-track (taskLoop()'s EOF
     // check) - handled by ConnectStateHandler, which is the sole owner of
     // "what's the next track" (TrackQueueHandler's context/queue/shuffle
-    // state). Carries no payload (std::monostate): it's a pure signal, same
-    // "cuál es el próximo" decision as a remote skip_next command.
-    TRACK_ENDED
+    // state). Carries no payload (std::monostate). Unlike TRACK_UNPLAYABLE
+    // below or a remote skip_next command, this honors repeat-track
+    // (replays the same track) rather than always advancing - see
+    // ConnectStateHandler::advanceToNextTrackLocked()'s own comment.
+    TRACK_ENDED,
+    // Posted by StreamPlayer when a track could never be loaded (CDN/audio
+    // key failure) rather than reaching a natural end.
+    TRACK_UNPLAYABLE
   };
 
   // Define all possible event payload types

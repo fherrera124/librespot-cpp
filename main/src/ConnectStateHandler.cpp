@@ -72,12 +72,16 @@ ConnectStateHandler::ConnectStateHandler(
   // (unlike an explicit remote skip_next) so repeat-track is honored here.
   this->eventLoop->registerHandler(
       EventLoop::EventType::TRACK_ENDED, [this](cspot::EventLoop::Event&&) {
-        std::scoped_lock lock(putStateMutex);
-        auto res = advanceToNextTrackLocked(/*forceNext=*/false);
-        if (!res) {
-          BELL_LOG(error, LOG_TAG, "Failed to advance after track end: {}",
-                   res.error());
-        }
+        handleTrackAdvanceSignal(/*forceNext=*/false);
+      });
+
+  // StreamPlayer could never load the track (CDN/audio key failure) -
+  // forceNext=true so it's skipped like an explicit skip_next, regardless
+  // of repeat-track (there's no audio to repeat).
+  this->eventLoop->registerHandler(
+      EventLoop::EventType::TRACK_UNPLAYABLE,
+      [this](cspot::EventLoop::Event&&) {
+        handleTrackAdvanceSignal(/*forceNext=*/true);
       });
 
   initialize();
@@ -523,6 +527,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
 
   BELL_LOG(info, LOG_TAG, "Transfer state decoded successfully");
 
+  consecutiveUnplayableSkips = 0;
+
   putStateRequestProto.isActive = true;
 
   auto& playerState = putStateRequestProto.device.playerState;
@@ -712,6 +718,8 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
+  consecutiveUnplayableSkips = 0;
+
   // A bare "play" (no preceding transfer) is just as much "this device
   // is now active" as a transfer is - matches go-librespot's
   // setActive(true) for "play". Without this, isActive stayed false
@@ -883,6 +891,43 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(bool forceNext) {
   }
 
   return {};
+}
+
+void ConnectStateHandler::handleTrackAdvanceSignal(bool forceNext) {
+  // Matches go-librespot's own maxConsecutiveUnplayableSkips (controls.go) -
+  // guards against a context where every track is unplayable.
+  constexpr int kMaxConsecutiveUnplayableSkips = 50;
+
+  std::scoped_lock lock(putStateMutex);
+
+  if (forceNext) {
+    // Only TRACK_UNPLAYABLE routes through this method with forceNext=true
+    // (skip_next goes straight through handleSkipNextCommandLocked()), so
+    // this is unambiguously "one more unplayable track in a row" here.
+    if (++consecutiveUnplayableSkips > kMaxConsecutiveUnplayableSkips) {
+      BELL_LOG(error, LOG_TAG,
+               "Giving up after {} consecutive unplayable tracks",
+               consecutiveUnplayableSkips - 1);
+      auto& playerState = putStateRequestProto.device.playerState;
+      playerState.isPaused = true;
+      playerState.isBuffering = false;
+      playerState.playbackSpeed = computePlaybackSpeed(
+          playerState.isPaused, playerState.isBuffering);
+      eventLoop->post(EventLoop::EventType::PLAYER_PLAY, false);
+      (void)putStateLocked();
+      return;
+    }
+  } else {
+    // Natural end of track proves the one that just finished WAS playable -
+    // breaks any prior unplayable streak.
+    consecutiveUnplayableSkips = 0;
+  }
+
+  auto res = advanceToNextTrackLocked(forceNext);
+  if (!res) {
+    BELL_LOG(error, LOG_TAG, "Failed to advance after track {}: {}",
+             forceNext ? "became unplayable" : "ended", res.error());
+  }
 }
 
 bell::Result<> ConnectStateHandler::handleSkipPrevCommandLocked() {

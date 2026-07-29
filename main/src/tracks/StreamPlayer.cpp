@@ -110,17 +110,18 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
              providedFile.itemId.uri);
     if (currentTrackId && providedFile.itemId == *currentTrackId &&
         !currentFile) {
-      // Same treatment as natural EOF just below (see that branch's own
-      // comment) - a track that can never load needs to give up exactly
-      // the same way as one that finished normally, not just log locally.
-      // Without this, a track whose audio key request failed (denied by
-      // the AP, or orphaned by a reconnect - see ApClient::
-      // connectAndAuthenticate()'s own comment) leaves the Spotify client
-      // waiting forever for a PlayerState update that never comes - shown
-      // client-side as "Spotify can't play this right now" after its own
-      // timeout.
+      // A separate event from the natural-EOF one just below (see that
+      // branch's own comment) - TRACK_UNPLAYABLE always advances regardless
+      // of repeat-track, unlike TRACK_ENDED, since there's no audio to
+      // repeat here. Without posting something here, a track whose audio
+      // key request failed (denied by the AP, or orphaned by a reconnect -
+      // see ApClient::connectAndAuthenticate()'s own comment) leaves the
+      // Spotify client waiting forever for a PlayerState update that never
+      // comes - shown client-side as "Spotify can't play this right now"
+      // after its own timeout.
       currentTrackId.reset();
-      eventLoop->post(EventLoop::EventType::TRACK_ENDED, std::monostate{});
+      eventLoop->post(EventLoop::EventType::TRACK_UNPLAYABLE,
+                      std::monostate{});
     }
     return;
   }

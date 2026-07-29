@@ -108,6 +108,10 @@ class ConnectStateHandler : public bell::Task {
   // number, incremented before every PUT (prepareAndEncodeLocked()).
   uint32_t nextMessageId = 0;
 
+  // Counts consecutive TRACK_UNPLAYABLE signals with no successful load in
+  // between
+  int consecutiveUnplayableSkips = 0;
+
   // Assumes putStateMutex is ALREADY held by the caller - every handler
   // takes the lock for its own mutation and must call this instead of
   // the public, self-locking putState() (std::mutex isn't reentrant).
@@ -176,23 +180,34 @@ class ConnectStateHandler : public bell::Task {
                                 std::optional<bool> repeatingTrack,
                                 std::optional<bool> shufflingContext);
 
-  // Shared by handleSkipNextCommandLocked() (remote skip_next) and the
-  // TRACK_ENDED handler (StreamPlayer ran out of audio) - both decide
+  // Shared by handleSkipNextCommandLocked() (remote skip_next) and
+  // handleTrackAdvanceSignal() (TRACK_ENDED/TRACK_UNPLAYABLE) - all decide
   // "what's next" the same way: ask trackQueueHandler, refresh the
   // windows, and tell Spotify. Matches go-librespot's single
   // advanceNext().
   //
-  // forceNext=true (skip_next) always advances, ignoring repeat-track.
-  // forceNext=false (natural end of track) replays the current track
-  // instead when repeat-track is on. Either way, running off the end of
-  // the context wraps the cursor to its start; whether that counts as a
-  // real next track (vs. pausing there) depends on repeat-context -
-  // matches go-librespot's advanceNext(ctx, forceNext, drop).
+  // forceNext=true (skip_next, or a track that could never load) always
+  // advances, ignoring repeat-track. forceNext=false (natural end of
+  // track) replays the current track instead when repeat-track is on.
+  // Either way, running off the end of the context wraps the cursor to its
+  // start; whether that counts as a real next track (vs. pausing there)
+  // depends on repeat-context - matches go-librespot's
+  // advanceNext(ctx, forceNext, drop).
   //
-  // Assumes putStateMutex is ALREADY held by the caller - each of the two
-  // callers above takes it independently (they're two separate dispatch
-  // entry points, not nested calls of one another).
+  // Assumes putStateMutex is ALREADY held by the caller - each of its
+  // callers takes it independently (they're separate dispatch entry
+  // points, not nested calls of one another).
   bell::Result<> advanceToNextTrackLocked(bool forceNext);
+
+  // Shared by the TRACK_ENDED and TRACK_UNPLAYABLE event handlers, neither
+  // of which arrives with putStateMutex already held (unlike
+  // handleSkipNextCommandLocked()'s handlePlayerCommand() dispatch path) -
+  // takes the lock itself, then delegates to advanceToNextTrackLocked().
+  // Also owns the consecutiveUnplayableSkips bookkeeping: within this
+  // method forceNext==true always means "track was unplayable" (skip_next
+  // never routes through here), so it's the one place that can tell the
+  // two apart.
+  void handleTrackAdvanceSignal(bool forceNext);
 
   bool encodeProtoTracks(pb_ostream_t* stream, const pb_field_t* field,
                          bool previous);
