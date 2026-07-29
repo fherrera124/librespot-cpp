@@ -5,6 +5,7 @@
 #include <random>
 
 #include <tao/json.hpp>
+#include <tao/json/contrib/traits.hpp>
 #include "SessionContext.h"
 #include "Utils.h"
 #include "api/SpClient.h"
@@ -774,13 +775,15 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
     playerState.index.value = *contextIndex;
   }
 
-  // contextUri/contextUrl/playOrigin, unlike handleTransferCommandLocked(),
-  // were never set here - left holding the PREVIOUS transfer/play's
-  // values while track.value.uri already pointed at the new context, an
-  // internally contradictory PUT (confirmed on real hardware to surface
-  // as "Spotify can't play this right now"). play_origin matches
-  // go-librespot's own "play" case (PlayOrigin = req.Command.PlayOrigin,
-  // DeviceIdentifier always overwritten).
+  // contextUri/contextUrl/playOrigin/suppressions, unlike
+  // handleTransferCommandLocked(), were never set here - left holding the
+  // PREVIOUS transfer/play's values while track.value.uri already pointed
+  // at the new context, an internally contradictory PUT (confirmed on
+  // real hardware to surface as "Spotify can't play this right now").
+  // play_origin/suppressions match go-librespot's own "play" case
+  // (PlayOrigin = req.Command.PlayOrigin, DeviceIdentifier always
+  // overwritten; Suppressions = req.Command.Options.Suppressions,
+  // unconditional either way).
   playerState.contextUri = *contextUri;
   playerState.contextUrl = context.optional<std::string>("url").value_or("");
   const tao::json::value* playOriginJson = command.find("play_origin");
@@ -794,6 +797,14 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   }
   playerState.playOrigin.deviceIdentifier =
       putStateRequestProto.lastCommandSentByDeviceId;
+
+  playerState.suppressions.providers.clear();
+  if (const tao::json::value* suppressionsJson = options.find("suppressions")) {
+    if (const tao::json::value* providersJson =
+            suppressionsJson->find("providers")) {
+      providersJson->to(playerState.suppressions.providers);
+    }
+  }
 
   playerState.positionAsOfTimestamp = 0;
   playerState.timestamp =
