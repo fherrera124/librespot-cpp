@@ -304,7 +304,7 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
   BELL_LOG(debug, LOG_TAG, "Requesting range: {}",
            httpRequest.headers["Range"]);
 
-  auto startTime = std::chrono::system_clock::now();
+  auto startTime = std::chrono::steady_clock::now();
   auto response = httpClient->rawRequest(httpRequest);
   if (!response) {
     BELL_LOG(error, LOG_TAG, "HTTP request error: {}", response.error());
@@ -320,7 +320,7 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
   stream->read(reinterpret_cast<char*>(lastReadChunk.data()),
                *activeResponse->contentLength);
 
-  auto elapsed = std::chrono::system_clock::now() - startTime;
+  auto elapsed = std::chrono::steady_clock::now() - startTime;
   totalRequestTimeMs +=
       std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
   BELL_LOG(
