@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 #include "SessionContext.h"
@@ -159,16 +160,38 @@ class ConnectStateHandler : public bell::Task {
   bell::Result<> handleUpdateContextCommandLocked(
       const tao::json::value& command);
 
+  // Applies whichever of repeating_context/repeating_track/
+  // shuffling_context are present (nullopt = not specified, leave
+  // unchanged) - shared by player_options_override (transfer/play) and
+  // the standalone set_repeating_context/set_repeating_track/
+  // set_shuffling_context/set_options commands, which all carry the same
+  // three optional fields under different wire shapes. Does not PUT -
+  // callers do that themselves. State-only for shuffle: syncs what the
+  // client displays, doesn't reorder the queue - real shuffling isn't
+  // implemented (TrackQueueHandler::enableShuffle() is still a stub).
+  //
+  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
+  void applyPlayerOptionsLocked(std::optional<bool> repeatingContext,
+                                std::optional<bool> repeatingTrack,
+                                std::optional<bool> shufflingContext);
+
   // Shared by handleSkipNextCommandLocked() (remote skip_next) and the
   // TRACK_ENDED handler (StreamPlayer ran out of audio) - both decide
   // "what's next" the same way: ask trackQueueHandler, refresh the
   // windows, and tell Spotify. Matches go-librespot's single
   // advanceNext().
   //
+  // forceNext=true (skip_next) always advances, ignoring repeat-track.
+  // forceNext=false (natural end of track) replays the current track
+  // instead when repeat-track is on. Either way, running off the end of
+  // the context wraps the cursor to its start; whether that counts as a
+  // real next track (vs. pausing there) depends on repeat-context -
+  // matches go-librespot's advanceNext(ctx, forceNext, drop).
+  //
   // Assumes putStateMutex is ALREADY held by the caller - each of the two
   // callers above takes it independently (they're two separate dispatch
   // entry points, not nested calls of one another).
-  bell::Result<> advanceToNextTrackLocked();
+  bell::Result<> advanceToNextTrackLocked(bool forceNext);
 
   bool encodeProtoTracks(pb_ostream_t* stream, const pb_field_t* field,
                          bool previous);

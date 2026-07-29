@@ -54,7 +54,8 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
 
   std::optional<cspot_proto::ContextIndex> currentContextIndex() override;
 
-  bell::Result<> skipToNextTrack(const std::string& trackUri) override;
+  bell::Result<TrackAdvanceResult> skipToNextTrack(
+      const std::string& trackUri) override;
   bell::Result<> skipToPreviousTrack(const std::string& trackUri) override;
 
   bell::Result<> enableShuffle(bool enable) override;
@@ -62,7 +63,7 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   tcb::span<cspot_proto::ProvidedTrack> nextTracks() override;
   tcb::span<cspot_proto::ProvidedTrack> previousTracks() override;
 
-  void updateTrackWindows() override;
+  void updateTrackWindows(bool forceNotify) override;
 
  private:
   const char* LOG_TAG = "TrackQueueHandler";
@@ -518,13 +519,13 @@ DefaultTrackQueueHandler::currentContextIndex() {
   return contextIndex;
 }
 
-bell::Result<> DefaultTrackQueueHandler::skipToNextTrack(
+bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
     const std::string& trackUri) {
   (void)trackUri;  //TODO: Implement skipping to specific track in context
 
   if (!isPlayingQueue && !queue.empty()) {
     setPlayingQueue(true);
-    return {};
+    return TrackAdvanceResult::Advanced;
   }
 
   if (isPlayingQueue && !queue.empty()) {
@@ -535,7 +536,10 @@ bell::Result<> DefaultTrackQueueHandler::skipToNextTrack(
                "Finished playing queue, switching to context tracks");
       isPlayingQueue = false;  // No more tracks in queue, switch to context
     }
-  } else if (contextIndex) {
+    return TrackAdvanceResult::Advanced;
+  }
+
+  if (contextIndex) {
     auto res = ensureEnoughTracks();
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Could not ensure tracks, err={}", res.error());
@@ -544,12 +548,18 @@ bell::Result<> DefaultTrackQueueHandler::skipToNextTrack(
     auto nextIndex = getOffsetIndex(1);
     if (nextIndex.has_value()) {
       contextIndex = *nextIndex;
-    } else {
-      BELL_LOG(debug, LOG_TAG, "At end of context, cannot skip to next track");
+      return TrackAdvanceResult::Advanced;
     }
+
+    // End of context - wrap the cursor back to the start regardless;
+    // caller decides whether that counts as a real advance (repeat-
+    // context) or should stop there instead.
+    BELL_LOG(debug, LOG_TAG, "At end of context, wrapping to start");
+    contextIndex = cspot_proto::ContextIndex{0, 0};
+    return TrackAdvanceResult::WrappedToStart;
   }
 
-  return {};
+  return TrackAdvanceResult::Advanced;
 }
 
 bell::Result<> DefaultTrackQueueHandler::skipToPreviousTrack(
@@ -661,8 +671,8 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
   };
 }
 
-void DefaultTrackQueueHandler::updateTrackWindows() {
-  bool updated = false;
+void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
+  bool updated = forceNotify;
 
   // The next/previous-window diffing below only catches a change in what's
   // *around* the current track - not the current track itself. That's

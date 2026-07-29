@@ -68,13 +68,12 @@ ConnectStateHandler::ConnectStateHandler(
   trackQueueHandler =
       createDefaultTrackQueueHandler(this->spClient, this->eventLoop);
 
-  // StreamPlayer ran out of audio (natural end of track) - advance the same
-  // way a remote skip_next would, so track/index stay correct even when
-  // nothing remote asked us to move on.
+  // StreamPlayer ran out of audio (natural end of track) - forceNext=false
+  // (unlike an explicit remote skip_next) so repeat-track is honored here.
   this->eventLoop->registerHandler(
       EventLoop::EventType::TRACK_ENDED, [this](cspot::EventLoop::Event&&) {
         std::scoped_lock lock(putStateMutex);
-        auto res = advanceToNextTrackLocked();
+        auto res = advanceToNextTrackLocked(/*forceNext=*/false);
         if (!res) {
           BELL_LOG(error, LOG_TAG, "Failed to advance after track end: {}",
                    res.error());
@@ -205,6 +204,27 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
   } else if (endpoint == "update_context") {
     BELL_LOG(info, LOG_TAG, "Received update_context command");
     return handleUpdateContextCommandLocked(command);
+  } else if (endpoint == "set_repeating_context") {
+    BELL_LOG(info, LOG_TAG, "Received set_repeating_context command");
+    applyPlayerOptionsLocked(command.optional<bool>("value"), std::nullopt,
+                             std::nullopt);
+    return putStateLocked();
+  } else if (endpoint == "set_repeating_track") {
+    BELL_LOG(info, LOG_TAG, "Received set_repeating_track command");
+    applyPlayerOptionsLocked(std::nullopt, command.optional<bool>("value"),
+                             std::nullopt);
+    return putStateLocked();
+  } else if (endpoint == "set_shuffling_context") {
+    BELL_LOG(info, LOG_TAG, "Received set_shuffling_context command");
+    applyPlayerOptionsLocked(std::nullopt, std::nullopt,
+                             command.optional<bool>("value"));
+    return putStateLocked();
+  } else if (endpoint == "set_options") {
+    BELL_LOG(info, LOG_TAG, "Received set_options command");
+    applyPlayerOptionsLocked(command.optional<bool>("repeating_context"),
+                             command.optional<bool>("repeating_track"),
+                             command.optional<bool>("shuffling_context"));
+    return putStateLocked();
   } else {
     BELL_LOG(info, LOG_TAG, "Received unknown command: {}", endpoint);
     return bell::make_unexpected_errc(std::errc::operation_not_supported);
@@ -727,20 +747,9 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
       computePlaybackSpeed(playerState.isPaused, playerState.isBuffering);
 
   if (overrideJson) {
-    auto shufflingContext =
-        overrideJson->optional<bool>("shuffling_context");
-    if (shufflingContext) {
-      playerState.options.shufflingContext = *shufflingContext;
-    }
-    auto repeatingContext =
-        overrideJson->optional<bool>("repeating_context");
-    if (repeatingContext) {
-      playerState.options.repeatingContext = *repeatingContext;
-    }
-    auto repeatingTrack = overrideJson->optional<bool>("repeating_track");
-    if (repeatingTrack) {
-      playerState.options.repeatingTrack = *repeatingTrack;
-    }
+    applyPlayerOptionsLocked(overrideJson->optional<bool>("repeating_context"),
+                             overrideJson->optional<bool>("repeating_track"),
+                             overrideJson->optional<bool>("shuffling_context"));
   }
 
   // hasValue set explicitly - omitted (not sent empty) when there's no
@@ -794,19 +803,38 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
 }
 
 bell::Result<> ConnectStateHandler::handleSkipNextCommandLocked() {
-  return advanceToNextTrackLocked();
+  return advanceToNextTrackLocked(/*forceNext=*/true);
 }
 
-bell::Result<> ConnectStateHandler::advanceToNextTrackLocked() {
-  auto res = trackQueueHandler->skipToNextTrack();
-  if (!res) {
-    BELL_LOG(error, LOG_TAG, "Failed to skip next track");
-    return res;
+bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(bool forceNext) {
+  auto& playerState = putStateRequestProto.device.playerState;
+
+  bool hasNextTrack = true;
+  bool forceQueueUpdate = false;
+
+  if (!forceNext && playerState.options.repeatingTrack) {
+    // Natural end of track with repeat-track on: don't advance, replay
+    // the same track. StreamPlayer already cleared its own
+    // currentTrackId before posting TRACK_ENDED (see taskLoop()'s own
+    // comment), so it needs a fresh QUEUE_UPDATED to know to reload -
+    // force one past updateTrackWindows()'s own dedup, which would
+    // otherwise see an unchanged current-track URI and stay silent.
+    forceQueueUpdate = true;
+  } else {
+    auto res = trackQueueHandler->skipToNextTrack();
+    if (!res) {
+      BELL_LOG(error, LOG_TAG, "Failed to skip next track");
+      return tl::make_unexpected(res.error());
+    }
+    // Running off the end of the context always wraps the cursor to its
+    // start - only treat that as a real next track when repeat-context
+    // is on; otherwise pause there instead of looping unasked.
+    hasNextTrack = (*res == TrackAdvanceResult::Advanced) ||
+                   playerState.options.repeatingContext;
   }
 
-  trackQueueHandler->updateTrackWindows();
+  trackQueueHandler->updateTrackWindows(forceQueueUpdate);
 
-  auto& playerState = putStateRequestProto.device.playerState;
   auto track = trackQueueHandler->currentTrack();
   // hasValue set explicitly - omitted (not sent empty) when there's no
   // current track.
@@ -822,15 +850,16 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked() {
     playerState.index.value = *contextIndex;
   }
 
-  // Always resumes (never stays paused) - matches go-librespot's
-  // advanceNext(), which hardcodes paused=false for this exact path.
-  // Re-announces isPlaying/isBuffering=true so this PUT doesn't pair
-  // the new track/index with the PREVIOUS, just-finished track's
-  // buffering state - traced on this repo's own master branch to a
-  // real playlist-switch UI flicker.
+  // Re-announces isPlaying/isBuffering=true so this PUT doesn't pair the
+  // new track/index with the PREVIOUS, just-finished track's buffering
+  // state - traced on this repo's own master branch to a real playlist-
+  // switch UI flicker. isPaused mirrors !hasNextTrack: a normal advance
+  // (or a repeat wrap) always resumes, matching go-librespot's
+  // advanceNext(); running out of context without repeat-context pauses
+  // on the wrapped-to-start track instead of looping or freezing.
   playerState.isPlaying = true;
   playerState.isBuffering = true;
-  playerState.isPaused = false;
+  playerState.isPaused = !hasNextTrack;
   playerState.playbackSpeed =
       computePlaybackSpeed(playerState.isPaused, playerState.isBuffering);
 
@@ -839,6 +868,13 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked() {
       std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count();
+
+  if (!hasNextTrack) {
+    // StreamPlayer's own isPlaying otherwise stays true from before this
+    // call (nothing else would clear it), which would start audio the
+    // instant the wrapped-to-start track loads instead of pausing there.
+    eventLoop->post(EventLoop::EventType::PLAYER_PLAY, false);
+  }
 
   auto putRes = putStateLocked();
   if (!putRes) {
@@ -967,6 +1003,21 @@ bell::Result<> ConnectStateHandler::handleUpdateContextCommandLocked(
           .count();
 
   return putStateLocked();
+}
+
+void ConnectStateHandler::applyPlayerOptionsLocked(
+    std::optional<bool> repeatingContext, std::optional<bool> repeatingTrack,
+    std::optional<bool> shufflingContext) {
+  auto& options = putStateRequestProto.device.playerState.options;
+  if (repeatingContext) {
+    options.repeatingContext = *repeatingContext;
+  }
+  if (repeatingTrack) {
+    options.repeatingTrack = *repeatingTrack;
+  }
+  if (shufflingContext) {
+    options.shufflingContext = *shufflingContext;
+  }
 }
 
 bool ConnectStateHandler::encodeProtoTracks(pb_ostream_t* stream,

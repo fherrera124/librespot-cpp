@@ -10,6 +10,12 @@
 
 namespace cspot {
 
+// Outcome of skipToNextTrack(): Advanced means the current track/index
+// moved forward within the existing queue/context; WrappedToStart means
+// the context ran out and the cursor was reset to its first track -
+// callers decide whether that counts as a real advance (repeat-context).
+enum class TrackAdvanceResult { Advanced, WrappedToStart };
+
 class TrackQueueHandler {
  public:
   virtual ~TrackQueueHandler() = default;
@@ -28,7 +34,8 @@ class TrackQueueHandler {
 
   virtual std::optional<cspot_proto::ContextIndex> currentContextIndex() = 0;
 
-  virtual bell::Result<> skipToNextTrack(const std::string& trackUri = "") = 0;
+  virtual bell::Result<TrackAdvanceResult> skipToNextTrack(
+      const std::string& trackUri = "") = 0;
 
   virtual bell::Result<> skipToPreviousTrack(
       const std::string& trackUri = "") = 0;
@@ -37,7 +44,12 @@ class TrackQueueHandler {
 
   virtual tcb::span<cspot_proto::ProvidedTrack> nextTracks() = 0;
   virtual tcb::span<cspot_proto::ProvidedTrack> previousTracks() = 0;
-  virtual void updateTrackWindows() = 0;
+
+  // forceNotify bypasses the "did anything actually change" dedup below -
+  // needed when a caller knows a fresh QUEUE_UPDATED must go out even
+  // though the current track's identity itself didn't change (e.g.
+  // repeat-track restarting the same track).
+  virtual void updateTrackWindows(bool forceNotify = false) = 0;
 };
 
 std::unique_ptr<TrackQueueHandler> createDefaultTrackQueueHandler(
