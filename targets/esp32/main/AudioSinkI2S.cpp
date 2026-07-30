@@ -100,7 +100,22 @@ void AudioSinkI2S::volumeChanged(uint16_t volume) {
   volumeScale.store(linear * linear, std::memory_order_relaxed);
 }
 
+void AudioSinkI2S::flush() {
+  ringBuffer.clear();
+  flushRequested = true;
+}
+
 void AudioSinkI2S::taskLoop() {
+  // Only this thread touches txChannel - flush() just clears the ring
+  // buffer and raises this flag. Disable+re-enable resets the channel's
+  // DMA queue, discarding whatever was already queued for playback -
+  // i2s_channel_write() has no separate "drop" primitive.
+  if (flushRequested.exchange(false)) {
+    i2s_channel_disable(txChannel);
+    i2s_channel_enable(txChannel);
+    return;
+  }
+
   std::byte chunk[512];
   size_t available = ringBuffer.read(chunk, sizeof(chunk));
   if (available == 0) {

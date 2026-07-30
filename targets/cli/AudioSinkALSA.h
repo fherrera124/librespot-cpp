@@ -1,6 +1,7 @@
 #pragma once
 
 #include <alsa/asoundlib.h>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -24,12 +25,20 @@ class AudioSinkALSA : public bell::Task {
   // that paces AudioDecoderImpl's decode loop against ALSA consumption.
   void feedPCMFrames(const uint8_t* data, size_t bytes);
 
+  // Discards anything queued (ring buffer) and whatever ALSA itself is
+  // still holding, so stale audio (e.g. from before a seek) doesn't keep
+  // playing. Callable from any thread - only clears the ring buffer and
+  // raises flushRequested; the actual snd_pcm_drop()/prepare() calls
+  // happen on taskLoop()'s own thread (only it may touch pcmHandle).
+  void flush();
+
  private:
   const char* LOG_TAG = "AudioSinkALSA";
 
   snd_pcm_t* pcmHandle = nullptr;
   snd_pcm_uframes_t periodFrames = 0;
   bell::io::CircularByteBuffer ringBuffer;
+  std::atomic<bool> flushRequested{false};
 
   void taskLoop() override;
 };

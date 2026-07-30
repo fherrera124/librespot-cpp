@@ -24,11 +24,13 @@ StreamPlayer::StreamPlayer(
     std::shared_ptr<cspot::EventLoop> eventLoop,
     std::unique_ptr<cspot::FileProvider> fileProvider,
     std::unique_ptr<cspot::AudioDecoder> audioDecoder,
-    PlayerStateAnnounceCallback playerStateAnnounceCallback)
+    PlayerStateAnnounceCallback playerStateAnnounceCallback,
+    AudioFlushCallback audioFlushCallback)
     : bell::Task("cspot_player", 32 * 1024),
       eventLoop(std::move(eventLoop)),
       fileProvider(std::move(fileProvider)),
       playerStateAnnounceCallback(std::move(playerStateAnnounceCallback)),
+      audioFlushCallback(std::move(audioFlushCallback)),
       audioDecoder(std::move(audioDecoder)) {
   registerHandlers();
   startTask();
@@ -177,7 +179,14 @@ void StreamPlayer::handleSeekEvent(int64_t positionMs) {
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Seek to {}ms failed: {}", positionMs,
              res.error());
+    return;
   }
+
+  // The decoder now reads from the new position, but whatever was decoded
+  // from the OLD position may still be queued in the sink (ring buffer,
+  // hardware DMA/FIFO) - without this, a seek plays a brief snippet of
+  // stale audio before the new position actually starts.
+  audioFlushCallback();
 }
 
 void StreamPlayer::maybeStartCurrentTrack() {
@@ -250,6 +259,10 @@ void StreamPlayer::taskLoop() {
       BELL_LOG(info, LOG_TAG, "Flush requested, resetting state");
       flushRequested = false;
       audioDecoder->resetStream();
+      // Same reasoning as handleSeekEvent()'s own comment - the sink can
+      // still be holding audio decoded from the track/position being
+      // abandoned.
+      audioFlushCallback();
     }
     maybeStartCurrentTrack();
   }

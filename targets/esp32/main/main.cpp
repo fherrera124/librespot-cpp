@@ -168,6 +168,9 @@ class CSpotTask : public bell::Task {
         };
     cspot::VolumeChangedCallback volumeCallback =
         [audioSink](uint16_t volume) { audioSink->volumeChanged(volume); };
+    cspot::AudioFlushCallback audioFlushCallback = [audioSink]() {
+      audioSink->flush();
+    };
 
     auto persistSession = [&authInfo]() {
       std::string sessionString = authInfo->toJson();
@@ -206,8 +209,8 @@ class CSpotTask : public bell::Task {
         }
       }
       session.reset();
-      session = std::make_shared<cspot::Session>(authInfo, audioCallback,
-                                                  volumeCallback);
+      session = std::make_shared<cspot::Session>(
+          authInfo, audioCallback, volumeCallback, audioFlushCallback);
       auto startRes = session->start();
       if (!startRes) {
         BELL_LOG(error, TAG,

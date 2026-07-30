@@ -41,6 +41,13 @@ class AudioSinkI2S : public bell::Task {
   // AudioDecoderImpl's decode loop) reads it on every call.
   void volumeChanged(uint16_t volume);
 
+  // Discards anything queued (ring buffer) and whatever the I2S DMA
+  // engine is still holding, so stale audio (e.g. from before a seek)
+  // doesn't keep playing. Callable from any thread - only clears the ring
+  // buffer and raises flushRequested; the actual channel reset happens on
+  // taskLoop()'s own thread (only it may touch txChannel).
+  void flush();
+
  private:
   const char* LOG_TAG = "AudioSinkI2S";
 
@@ -50,6 +57,7 @@ class AudioSinkI2S : public bell::Task {
   std::vector<int16_t> downmixScratch;
   // Squared, not the raw 0..1 fraction - see volumeChanged()'s comment.
   std::atomic<float> volumeScale{1.0f};
+  std::atomic<bool> flushRequested{false};
 
   void taskLoop() override;
 };

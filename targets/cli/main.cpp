@@ -134,6 +134,9 @@ int main(int argc, char** argv) {
         audioSink->feedPCMFrames(reinterpret_cast<const uint8_t*>(pcm.data()),
                                  pcm.size());
       };
+  cspot::AudioFlushCallback audioFlushCallback = [audioSink]() {
+    audioSink->flush();
+  };
 
   auto persistSession = [&authInfo]() {
     std::string sessionString = authInfo->toJson();
@@ -173,7 +176,8 @@ int main(int argc, char** argv) {
       }
     }
     session.reset();
-    session = std::make_shared<cspot::Session>(authInfo, audioCallback);
+    session = std::make_shared<cspot::Session>(
+        authInfo, audioCallback, [](uint16_t) {}, audioFlushCallback);
     auto startRes = session->start();
     if (!startRes) {
       BELL_LOG(error, "Main",

@@ -16,7 +16,8 @@ using namespace cspot;
 
 cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo,
                         cspot::AudioOutputCallback audioOutputCallback,
-                        cspot::VolumeChangedCallback volumeChangedCallback)
+                        cspot::VolumeChangedCallback volumeChangedCallback,
+                        cspot::AudioFlushCallback audioFlushCallback)
     : authInfo(std::move(authInfo)) {
   // Prepare the session context
   eventLoop = std::make_shared<cspot::EventLoop>();
@@ -40,7 +41,8 @@ cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo,
       [connectStateHandler = this->connectStateHandler](
           const PlayerStateUpdate& update) {
         connectStateHandler->onPlayerStateUpdate(update);
-      });
+      },
+      std::move(audioFlushCallback));
 
   eventLoop->registerHandler(EventLoop::EventType::DEALER_MESSAGE,
                              std::bind(&cspot::Session::handleDealerMessage,

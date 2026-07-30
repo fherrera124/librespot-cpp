@@ -84,3 +84,11 @@ size_t CircularByteBuffer::size() const {
 size_t CircularByteBuffer::capacity() const {
   return storageCapacity;
 }
+
+void CircularByteBuffer::clear() {
+  std::scoped_lock lock(accessMutex);
+  headPos = 0;
+  tailPos = 0;
+  currentSize = 0;
+  condFull.notify_all();
+}

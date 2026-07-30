@@ -82,7 +82,21 @@ void AudioSinkALSA::feedPCMFrames(const uint8_t* data, size_t bytes) {
   }
 }
 
+void AudioSinkALSA::flush() {
+  ringBuffer.clear();
+  flushRequested = true;
+}
+
 void AudioSinkALSA::taskLoop() {
+  // Only this thread touches pcmHandle - flush() just clears the ring
+  // buffer and raises this flag instead of calling snd_pcm_drop()/
+  // prepare() itself.
+  if (flushRequested.exchange(false)) {
+    snd_pcm_drop(pcmHandle);
+    snd_pcm_prepare(pcmHandle);
+    return;
+  }
+
   // Always reads a full period's worth of bytes (looping over read(),
   // which may return less than requested per call) so snd_pcm_writei()
   // below never gets handed a partial frame.

@@ -22,6 +22,12 @@ namespace cspot {
 // AudioOutputCallback) do.
 using PlayerStateAnnounceCallback = std::function<void(const PlayerStateUpdate&)>;
 
+// Tells the audio sink to discard whatever it's already queued/holding -
+// see handleFlushEvent()/handleSeekEvent()'s own comments for why the
+// decoder alone resetting isn't enough. Defaults to a no-op the same way
+// this codebase's other injected callbacks do.
+using AudioFlushCallback = std::function<void()>;
+
 class StreamPlayer : public bell::Task {
  public:
   StreamPlayer(
@@ -29,7 +35,8 @@ class StreamPlayer : public bell::Task {
       std::unique_ptr<cspot::FileProvider> fileProvider,
       std::unique_ptr<cspot::AudioDecoder> audioDecoder,
       PlayerStateAnnounceCallback playerStateAnnounceCallback =
-          [](const PlayerStateUpdate&) {});
+          [](const PlayerStateUpdate&) {},
+      AudioFlushCallback audioFlushCallback = []() {});
 
   ~StreamPlayer() override;
 
@@ -41,6 +48,7 @@ class StreamPlayer : public bell::Task {
   std::shared_ptr<cspot::ApClient> apClient;
   std::unique_ptr<cspot::FileProvider> fileProvider;
   PlayerStateAnnounceCallback playerStateAnnounceCallback;
+  AudioFlushCallback audioFlushCallback;
   bell::Semaphore queueUpdateSemaphore;
 
   std::recursive_mutex playbackMutex;

@@ -58,6 +58,13 @@ class CircularByteBuffer {
    */
   size_t capacity() const;
 
+  /**
+   * @brief Discards everything currently queued, resetting the buffer to
+   * empty. Safe to call from a different thread than the one calling
+   * read()/write() - wakes any writer currently blocked on a full buffer.
+   */
+  void clear();
+
  private:
   mutable std::mutex accessMutex;
   std::condition_variable condFull;
