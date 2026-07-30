@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -27,6 +28,10 @@ class AudioDecoder {
   virtual void resetStream() = 0;
 
   virtual bool isEOF() const = 0;
+
+  // Seeks the currently open stream to an absolute position. No-op-safe
+  // to call only while isOpen() - callers must check first.
+  virtual bell::Result<> seekToMs(int64_t positionMs) = 0;
 };
 
 std::unique_ptr<AudioDecoder> createAudioDecoder(

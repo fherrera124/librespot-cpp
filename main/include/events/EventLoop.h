@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bell/utils/Semaphore.h>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <queue>
@@ -37,13 +38,19 @@ class EventLoop : public bell::Task {
     TRACK_ENDED,
     // Posted by StreamPlayer when a track could never be loaded (CDN/audio
     // key failure) rather than reaching a natural end.
-    TRACK_UNPLAYABLE
+    TRACK_UNPLAYABLE,
+    // Posted by ConnectStateHandler on a seek_to command - payload is the
+    // already-resolved absolute target position in ms (relative/beginning/
+    // value math happens in ConnectStateHandler; StreamPlayer just seeks
+    // the open decoder to it).
+    PLAYER_SEEK
   };
 
   // Define all possible event payload types
   using EventPayload =
-      std::variant<std::monostate, bool, CurrentTrackMetadata, AudioKeyResponse,
-                   TrackQueueUpdate, ProvidedFile, tao::json::value>;
+      std::variant<std::monostate, bool, int64_t, CurrentTrackMetadata,
+                   AudioKeyResponse, TrackQueueUpdate, ProvidedFile,
+                   tao::json::value>;
 
   struct Event {
     EventType type;

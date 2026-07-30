@@ -1,5 +1,6 @@
 #include "tracks/AudioDecoder.h"
 
+#include <algorithm>
 #include <atomic>
 
 #include "audio/CDNDataStream.h"
@@ -36,6 +37,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
                openRes.error());
       return tl::make_unexpected(openRes.error());
     }
+
     dataStream = stream;
 
     container = std::make_unique<bell::audio::OggContainer>();
@@ -137,6 +139,30 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
   }
 
   bool isEOF() const override { return eof; }
+
+  bell::Result<> seekToMs(int64_t positionMs) override {
+    if (!isOpenFlag) {
+      return bell::make_unexpected_errc(std::errc::invalid_argument);
+    }
+
+    auto sampleRate = codec->getAudioFormat().getSampleRateValue();
+    auto frameIndex = static_cast<size_t>(
+        std::max<int64_t>(positionMs, 0) * sampleRate / 1000);
+
+    auto seekRes = container->seekToFrame(frameIndex);
+    if (!seekRes) {
+      BELL_LOG(error, LOG_TAG, "Failed to seek to {}ms: {}", positionMs,
+               seekRes.error());
+      return tl::make_unexpected(seekRes.error());
+    }
+
+    // A seek can land before EOF even if we'd already hit it (or clear a
+    // transient read-error streak) - let processPacket() resume from here
+    // instead of staying stuck in whatever state it was in before the seek.
+    eof = false;
+    consecutiveReadErrors = 0;
+    return {};
+  }
 
  private:
   AudioOutputCallback outputCallback;

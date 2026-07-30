@@ -206,6 +206,9 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
   } else if (endpoint == "play") {
     BELL_LOG(info, LOG_TAG, "Received play command");
     return handlePlayCommandLocked(command);
+  } else if (endpoint == "seek_to") {
+    BELL_LOG(info, LOG_TAG, "Received seek_to command");
+    return handleSeekCommandLocked(command);
   } else if (endpoint == "update_context") {
     BELL_LOG(info, LOG_TAG, "Received update_context command");
     return handleUpdateContextCommandLocked(command);
@@ -1007,6 +1010,60 @@ bell::Result<> ConnectStateHandler::handlePauseCommandLocked(bool pause) {
   auto putRes = putStateLocked();
   if (!putRes) {
     BELL_LOG(error, LOG_TAG, "Failed to put state after pause/resume");
+    return putRes;
+  }
+
+  return {};
+}
+
+bell::Result<> ConnectStateHandler::handleSeekCommandLocked(
+    const tao::json::value& command) {
+  auto& playerState = putStateRequestProto.device.playerState;
+
+  if (!playerState.track.hasValue) {
+    BELL_LOG(error, LOG_TAG, "seek_to with no current track");
+    return bell::make_unexpected_errc(std::errc::invalid_argument);
+  }
+
+  // Same extrapolation handlePauseCommandLocked() uses - the OLD
+  // playbackSpeed/timestamp, before they're reassigned below.
+  auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::system_clock::now().time_since_epoch())
+                   .count();
+  int64_t currentPosition =
+      playerState.positionAsOfTimestamp +
+      static_cast<int64_t>((nowMs - playerState.timestamp) *
+                           playerState.playbackSpeed);
+
+  auto relative = command.optional<std::string>("relative").value_or("");
+  int64_t targetPosition;
+  if (relative == "current") {
+    targetPosition =
+        currentPosition + command.optional<int64_t>("position").value_or(0);
+  } else if (relative == "beginning") {
+    targetPosition = command.optional<int64_t>("position").value_or(0);
+  } else if (relative.empty()) {
+    auto value = command.optional<double>("value");
+    if (!value) {
+      BELL_LOG(error, LOG_TAG, "seek_to missing value");
+      return bell::make_unexpected_errc(std::errc::bad_message);
+    }
+    targetPosition = static_cast<int64_t>(*value);
+  } else {
+    BELL_LOG(error, LOG_TAG, "Unsupported seek_to relative: {}", relative);
+    return bell::make_unexpected_errc(std::errc::invalid_argument);
+  }
+
+  targetPosition = std::clamp<int64_t>(targetPosition, 0, playerState.duration);
+
+  eventLoop->post(EventLoop::EventType::PLAYER_SEEK, targetPosition);
+
+  playerState.positionAsOfTimestamp = targetPosition;
+  playerState.timestamp = nowMs;
+
+  auto putRes = putStateLocked();
+  if (!putRes) {
+    BELL_LOG(error, LOG_TAG, "Failed to put state after seek");
     return putRes;
   }
 

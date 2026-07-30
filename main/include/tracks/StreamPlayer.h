@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 
@@ -63,6 +64,7 @@ class StreamPlayer : public bell::Task {
   bool isCurrentTrackReady();
   void handlePlayEvent(bool play);
   void handleFlushEvent();
+  void handleSeekEvent(int64_t positionMs);
 
   // Idempotent: opens the decoder for the current queue head once it's not
   // already open and the file's ready - deliberately regardless of

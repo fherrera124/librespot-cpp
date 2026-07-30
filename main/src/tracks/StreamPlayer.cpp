@@ -62,6 +62,12 @@ void StreamPlayer::registerHandlers() {
 
   eventLoop->registerHandler(EventLoop::EventType::PLAYER_FLUSH,
                              [&](auto&& /*ev*/) { handleFlushEvent(); });
+
+  eventLoop->registerHandler(
+      EventLoop::EventType::PLAYER_SEEK, [&](EventLoop::Event&& ev) {
+        auto event = std::move(ev);
+        handleSeekEvent(std::get<int64_t>(event.payload));
+      });
 }
 
 void StreamPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
@@ -157,6 +163,21 @@ void StreamPlayer::handleFlushEvent() {
   std::scoped_lock lock(playbackMutex);
   flushRequested = true;
   queueUpdateSemaphore.give();
+}
+
+void StreamPlayer::handleSeekEvent(int64_t positionMs) {
+  std::scoped_lock lock(playbackMutex);
+  if (!audioDecoder->isOpen()) {
+    BELL_LOG(warn, LOG_TAG, "Ignoring seek to {}ms - no track open",
+             positionMs);
+    return;
+  }
+
+  auto res = audioDecoder->seekToMs(positionMs);
+  if (!res) {
+    BELL_LOG(error, LOG_TAG, "Seek to {}ms failed: {}", positionMs,
+             res.error());
+  }
 }
 
 void StreamPlayer::maybeStartCurrentTrack() {

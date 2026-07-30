@@ -147,6 +147,12 @@ class ConnectStateHandler : public bell::Task {
   // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
   bell::Result<> handlePauseCommandLocked(bool pause);
 
+  // Resolves seek_to's relative/beginning/absolute position,
+  // clamps to [0, duration], posts PLAYER_SEEK with the resolved absolute ms,
+  // and PUTs the new position.
+  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
+  bell::Result<> handleSeekCommandLocked(const tao::json::value& command);
+
   // hm://connect-state/v1/player/command's "update_context" endpoint -
   // context metadata/restrictions sync, not a new queue/context. Always
   // acks, even on a uri mismatch (just skips applying) - matches master;
