@@ -86,14 +86,9 @@ class ConnectStateHandler : public bell::Task {
   // itself.
   std::mutex putStateMutex;
   std::condition_variable putStateCv;
-  std::chrono::steady_clock::time_point lastPutStateTime =
-      std::chrono::steady_clock::time_point::min();
-  // Short-circuits putState()'s rate-limit check on the very first call in
-  // this object's lifetime: `now - lastPutStateTime` would be a signed
-  // overflow otherwise (lastPutStateTime starts at time_point::min()),
-  // which silently wraps to a huge negative duration in an unsanitized
-  // build instead of the intended "elapsed forever" value.
-  bool hasEverSentPutState = false;
+  // nullopt until the first PUT is actually sent - putStateLocked() treats
+  // that as "elapsed forever" (send immediately, skip the rate-limit wait).
+  std::optional<std::chrono::steady_clock::time_point> lastPutStateTime;
   bool putStatePending = false;
   std::chrono::steady_clock::time_point putStateDueTime{};
   PutStateReason pendingPutStateReason = PutStateReason_PLAYER_STATE_CHANGED;

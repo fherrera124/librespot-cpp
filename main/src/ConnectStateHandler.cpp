@@ -259,10 +259,10 @@ bell::Result<> ConnectStateHandler::putStateLocked(PutStateReason reason) {
   putStateCv.notify_one();
 
   auto now = std::chrono::steady_clock::now();
-  if (!hasEverSentPutState || now - lastPutStateTime >= kStatePutMinInterval) {
+  if (!lastPutStateTime || now - *lastPutStateTime >= kStatePutMinInterval) {
     putStateDueTime = now;
   } else {
-    putStateDueTime = lastPutStateTime + kStatePutMinInterval;
+    putStateDueTime = *lastPutStateTime + kStatePutMinInterval;
   }
 
   return {};
@@ -284,7 +284,6 @@ bool ConnectStateHandler::prepareAndEncodeLocked(
   putStateRequestProto.messageId = ++nextMessageId;
 
   lastPutStateTime = std::chrono::steady_clock::now();
-  hasEverSentPutState = true;
   putStatePending = false;
 
   {
