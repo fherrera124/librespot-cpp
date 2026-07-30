@@ -25,10 +25,6 @@ StreamPlayer::StreamPlayer(
     std::unique_ptr<cspot::FileProvider> fileProvider,
     std::unique_ptr<cspot::AudioDecoder> audioDecoder,
     PlayerStateAnnounceCallback playerStateAnnounceCallback)
-    // taskLoop() calls directly into TLS handshake (HTTPS CDN fetch), AES
-    // decrypt, and Vorbis decode on this stack - this codebase's own git
-    // history already has two hardware stack-overflow crashes from
-    // undersized task stacks doing similar HTTPS/crypto work.
     : bell::Task("cspot_player", 32 * 1024),
       eventLoop(std::move(eventLoop)),
       fileProvider(std::move(fileProvider)),

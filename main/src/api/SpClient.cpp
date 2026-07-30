@@ -94,22 +94,8 @@ bell::Result<> DefaultSpClient::putConnectStateRaw(
     return credentialsRes;
   }
 
-  // No ?product=/salt= query params and Client-Token now included - matches
-  // this repo's own master branch (PutStateClient::put()) and
-  // go-librespot's PutConnectState(), neither of which use those query
-  // params; Client-Token was the one header every OTHER call in this file
-  // already sends but this one didn't, matching master's reference PUT.
-  // A device whose connect-state write returns 200 but whose cluster
-  // never actually transfers "active" to it (server accepts the write,
-  // never applies the transition) is consistent with the server
-  // distrusting/deprioritizing a request missing this token.
   auto url = fmt::format("https://{}/connect-state/v1/devices/{}",
                          spClientAddress, deviceId);
-  // Accept matches this repo's own master branch for this endpoint
-  // (HTTPClient.cpp's rawRequest(): always sends "Accept: */*" unless the
-  // caller overrides it - PutStateClient::put() relies on that default).
-  // Our own newer bell::http::Writer has no Accept default at all, so it's
-  // sent explicitly here instead.
   bell::HTTPHeaders headers = {
       {
           "Content-Type",
@@ -123,18 +109,12 @@ bell::Result<> DefaultSpClient::putConnectStateRaw(
   auto bodySpan = tcb::span(reinterpret_cast<std::byte*>(body.data()),
                             body.size());
 
-  // Bounded retry (2 attempts total, 1s apart) for a transport-level
-  // failure - matches this repo's own master branch (PutStateClient::
-  // put()'s HttpRetry(2, 1000ms, "connect-state PUT")). Confirmed
-  // necessary on real hardware: a transfer's own activation PUT failed
-  // with "Connection reset by peer", Client.cpp's own single pooled-
-  // connection-reuse fallback ALSO failed on its fresh-connection retry,
-  // and this call gave up outright with no further attempt - silently
-  // dropping the exact PUT a client's "Connecting..." state was waiting
-  // on. Only retries a transport-level failure (no response reached this
-  // client at all) - an actual HTTP status back from the server (200,
-  // 4xx, 429...) is handled below, unretried, since resending the
-  // identical request wouldn't change a server-side decision.
+  // Bounded retry (2 attempts, 1s apart) for a transport-level failure
+  // only. Without it, a single dropped connection can silently lose a
+  // PUT the client's "Connecting..." state was waiting on, with nothing
+  // to ever correct it. An actual HTTP status from the server (200,
+  // 4xx, 429...) is handled below, unretried - resending wouldn't
+  // change a server-side decision.
   constexpr int kMaxAttempts = 2;
   constexpr int kRetryBackoffMs = 1000;
   auto httpResponse = httpClient->put(url, headers, bodySpan);
@@ -153,16 +133,11 @@ bell::Result<> DefaultSpClient::putConnectStateRaw(
   }
 
   // Drain the response body (on success, the full updated cluster state -
-  // several KB) unconditionally, before even looking at the status code.
-  // A pooled HTTP/1.1 connection is only safe to reuse once the current
-  // response's body has been fully read, regardless of whether that
-  // response was a 200 or an error - draining only the success case
-  // (as this used to) left an error response's body (e.g. a 411/429) sitting
-  // unread on the wire, so the next request to reuse this pooled connection
-  // read that leftover error body instead of its own response headers.
-  // Reproduced on real hardware: contextResolve() intermittently failed to
-  // parse what should've been an HTTP response because it was actually
-  // reading a stale error response body from an earlier, unrelated PUT.
+  // several KB) unconditionally, before even looking at the status code -
+  // a pooled HTTP/1.1 connection is only safe to reuse once the current
+  // response's body has been fully read, success or error alike. Leaving
+  // an error body unread means the next request on this same connection
+  // reads that leftover body instead of its own response.
   auto bodyRes = httpResponse->bytes();
   if (!bodyRes) {
     BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",
@@ -176,12 +151,6 @@ bell::Result<> DefaultSpClient::putConnectStateRaw(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  // Decode this response as the Cluster it's documented to be (master's
-  // own PutStateClient comment: "on success, the full updated cluster
-  // state") - the server's own authoritative view immediately after
-  // accepting this exact PUT, no dependency on a separate WS push (which
-  // real hardware captures show frequently never arrives at all after a
-  // transfer).
   cspot_proto::Cluster cluster;
   if (nanopb_helper::decodeFromVector(cluster, *bodyRes)) {
     BELL_LOG(info, LOG_TAG,
@@ -206,13 +175,6 @@ bell::Result<> DefaultSpClient::putInactive(const std::string& deviceId,
     return credentialsRes;
   }
 
-  // Separate endpoint from putConnectState() - not a PutStateRequest body,
-  // matches go-librespot's PutConnectStateInactive and this repo's own
-  // master branch's PutStateClient::putInactive. notify=false matches what
-  // both references pass here. Client-Token and Accept were missing here -
-  // master's own putInactive() sends both (Client-Token alongside
-  // Authorization/X-Spotify-Connection-Id; Accept via rawRequest()'s own
-  // default, same as putConnectState() above).
   auto httpResponse = httpClient->put(
       fmt::format(
           "https://{}/connect-state/v1/devices/{}/inactive?notify=false",
@@ -240,12 +202,6 @@ bell::Result<> DefaultSpClient::putInactive(const std::string& deviceId,
     return tl::make_unexpected(bodyRes.error());
   }
 
-  // This endpoint replies 204 No Content on success, not 200 (it's a
-  // state-change acknowledgment with no body to return, unlike
-  // putConnectState()'s 200 + full cluster state) - matches go-librespot's
-  // own PutConnectStateInactive (spclient/spclient.go: "resp.StatusCode !=
-  // 204"). Checking for 200 here treated every successful call as an
-  // error.
   if (httpResponse->statusCode != 204) {
     BELL_LOG(error, LOG_TAG, "Error while sending inactive request: {}",
              httpResponse->statusCode);
@@ -424,12 +380,6 @@ bell::Result<cspot_proto::Track> DefaultSpClient::trackMetadata(
         std::errc::invalid_argument);
   }
 
-  // Was a GET to /metadata/4/track/{gid} - confirmed by hand-decoding a
-  // real response's raw wire bytes that this endpoint's modern schema
-  // just doesn't carry restriction/file/alternative anymore (fields 11-13
-  // absent entirely, not merely misparsed). Real, current clients
-  // (go-librespot) fetch this same data via TRACK_V4 extended-metadata
-  // instead - matching that exactly.
   auto rawBytes = extendedMetadataRaw(trackId.uri, ExtensionKind_TRACK_V4);
   if (!rawBytes) {
     return tl::make_unexpected(rawBytes.error());
@@ -487,11 +437,6 @@ bell::Result<cspot_proto::Episode> DefaultSpClient::episodeMetadata(
         std::errc::invalid_argument);
   }
 
-  // Didn't fetch its own credentials - relied on spClientAddress/tokens
-  // already being populated as a side effect of some earlier call (e.g.
-  // contextResolve). Same latent-ordering bug class as trackMetadata's
-  // (fixed above); matching the explicit updateCredentials() pattern
-  // every other method here already uses.
   auto credentialsRes = updateCredentials();
   if (!credentialsRes) {
     return tl::make_unexpected(credentialsRes.error());
@@ -553,7 +498,6 @@ bell::Result<std::string> DefaultSpClient::resolveStorageInteractive(
        << static_cast<unsigned>(byte);  // Convert byte to int for stream output
   }
 
-  // Construct the endpoint URL depending on prefetch flag
   std::string endpoint =
       prefetch
           ? fmt::format(
@@ -585,7 +529,6 @@ bell::Result<std::string> DefaultSpClient::resolveStorageInteractive(
   }
   auto responseBody = *textRes;
 
-  // BELL_LOG(debug, LOG_TAG, "Response body: {}", responseBody);
   tao::json::value obj = tao::json::from_string(responseBody);
 
   if (obj.at("cdnurl").is_array()) {

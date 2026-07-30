@@ -10,16 +10,6 @@
 #include "tao/json.hpp"
 
 namespace {
-// 20 random bytes, hex-encoded (40 chars) - matches go-librespot's device id
-// generation exactly (daemon/app.go: crypto/rand.Read into a 20-byte buffer,
-// then hex.EncodeToString), real per-installation entropy rather than a
-// hash of a fixed compile-time string (the old deviceIdPrefix + hash(
-// deviceName) scheme produced the *same* id for every build of this
-// firmware, since deviceName was itself a hardcoded literal - zero entropy,
-// not just "stable"). AuthInfo::assignDataFromJson() overwrites this with
-// the persisted value on every run after the first, so this generator only
-// actually matters once per device's lifetime (first-ever boot, or after
-// its session file is lost/cleared).
 std::string generateDeviceId() {
   static std::independent_bits_engine<std::default_random_engine, CHAR_BIT,
                                       unsigned char>
@@ -93,9 +83,6 @@ struct AuthInfo {
     }
   }
 
-  // Call once per boot, after attempting to load a persisted session
-  // (whether or not one was actually found) - mirrors go-librespot logging
-  // this same fact (daemon/app.go: "generated new device id: %s").
   inline void logDeviceIdOrigin() const {
     if (deviceIdWasPersisted) {
       BELL_LOG(info, "AuthInfo", "Using persisted device id: {}", deviceId);

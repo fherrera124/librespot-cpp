@@ -351,17 +351,18 @@ void ConnectStateHandler::runTask() {
       BELL_LOG(error, LOG_TAG, "Failed to encode PutStateRequest, dropping "
                                "this flush");
     } else {
-      // Network I/O deliberately outside putStateMutex - held across the
-      // full HTTPS round-trip before (250ms-1500ms+ observed, up to ~11s
-      // worst case given SpClient's own retry/timeout budget), blocking
-      // every other state mutator, including StreamPlayer's synchronous
-      // onPlayerStateUpdate() sitting on the track-load critical path.
-      // putConnectStateRaw() takes the already-encoded body so this can
-      // run unlocked.
+      // This runs with putStateMutex already released (see the unlock()
+      // above). Used to run locked, but the round-trip itself can take
+      // 250-1500ms normally, up to ~11s worst case (SpClient's own
+      // retry/timeout budget) - holding the lock that long blocked every
+      // other state mutator, including StreamPlayer's synchronous
+      // onPlayerStateUpdate(), which sits right on the track-load path.
+      // Safe to call unlocked because putConnectStateRaw() takes the
+      // already-encoded body, not the live proto.
       //
-      // Heap snapshot around the PUT's socket/TLS work - the AP
-      // connection, the dealer WS, and a CDN stream can all hold their
-      // own TLS contexts concurrently.
+      // The heap snapshots around it: this device can have up to three
+      // other TLS contexts alive at the same time (AP connection, dealer
+      // websocket, CDN stream), so it's worth watching memory here too.
       logHeapStatus(LOG_TAG, "before putConnectState");
       auto putStartTime = std::chrono::steady_clock::now();
       auto res = spClient->putConnectStateRaw(std::move(encodedBody),
