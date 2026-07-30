@@ -21,6 +21,16 @@ if(ESP_PLATFORM AND NOT CSPOT_TARGET_ESP32 AND NOT CSPOT_TARGET_TESTS)
     idf_build_set_property(COMPILE_OPTIONS "-Wno-error=template-id-cdtor" APPEND)
     idf_build_set_property(COMPILE_OPTIONS "-Wno-error=missing-field-initializers" APPEND)
 
+    # Not referenced anywhere in main/ (Session/api/tracks) - confirmed via
+    # grep, same reasoning targets/esp32/CMakeLists.txt already applies to
+    # AAC/Opus/MQTT. MP3 specifically also avoids a real build failure: its
+    # iqmath dependency (fixed-point math) fails -Werror=strict-aliasing on
+    # this toolchain.
+    set(BELL_CODEC_AAC OFF CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
+    set(BELL_CODEC_MP3 OFF CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
+    set(BELL_CODEC_OPUS OFF CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
+    set(BELL_DISABLE_MQTT ON CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
+
     option(BUILD_SHARED_LIBS OFF)
     option(BUILD_TESTING OFF)
 
