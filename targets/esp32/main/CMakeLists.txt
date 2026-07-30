@@ -3,14 +3,6 @@ cmake_minimum_required(VERSION 3.5)
 # Main target sources
 file(GLOB SOURCES "*.cpp" "*.c")
 
-# Not wired to the new Session/api architecture yet (this is the Stage C
-# checkpoint - proving Session/api/tracks + bell compile for ESP32, no
-# audio/status-LED wiring yet), and its header unconditionally includes
-# led_strip.h, whose component moved to the ESP Component Registry in
-# newer ESP-IDF (no longer bundled under examples/common_components/).
-# Revisit when status LED support actually gets wired up.
-list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ESPStatusLed.cpp")
-
 # Configure the target
 # Specifying REQUIRES/PRIV_REQUIRES at all (needed for esp_driver_i2s, the
 # new AudioSinkI2S dependency) turns off ESP-IDF's legacy fallback of

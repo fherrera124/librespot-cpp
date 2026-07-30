@@ -19,37 +19,4 @@ menu "CSPOT Configuration"
             bool "96 bps"
     endchoice
 
-    choice CSPOT_STATUS_LED_TYPE
-        prompt "Status LED type"
-        default CSPOT_STATUS_LED_TYPE_NONE
-        help
-            Defines the default peripheral for status led
-
-        config CSPOT_STATUS_LED_TYPE_NONE
-            bool "No status LED"
-        config CSPOT_STATUS_LED_TYPE_GPIO
-            bool "GPIO"
-        config CSPOT_STATUS_LED_TYPE_RMT
-            bool "RMT - Addressable LED"
-    endchoice
-
-    config CSPOT_STATUS_LED_GPIO
-        int "Status LED GPIO number"
-        range 0 48
-        default 5
-        help
-            Status GPIO number (IOxx) to blink or the RMT signal for the addressable LED.
-
-    config CSPOT_STATUS_LED_RMT_CHANNEL
-        depends on CSPOT_STATUS_LED_TYPE_RMT
-        int "Status LED RMT Channel"
-        range 0 7
-        default 0
-        help
-            Set the RMT peripheral channel.
-            ESP32 RMT channel from 0 to 7
-            ESP32-S2 RMT channel from 0 to 3
-            ESP32-S3 RMT channel from 0 to 3
-            ESP32-C3 RMT channel from 0 to 1
-
 endmenu
