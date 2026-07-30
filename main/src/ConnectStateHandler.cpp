@@ -406,24 +406,25 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  // Logs every cluster update, not just deactivations, so a backend
-  // contradiction (e.g. activeDeviceId isn't us right after we PUT
-  // isActive=true) is visible.
-  BELL_LOG(info, LOG_TAG,
-           "Cluster update: activeDeviceId={} (ours={}) ts={} ourIsActive={} "
-           "lastTransferTimestamp={}",
-           clusterUpdate.cluster.activeDeviceId, authInfo->deviceId,
-           clusterUpdate.cluster.playerState.timestamp,
-           putStateRequestProto.isActive, lastTransferTimestamp);
-
   // Someone else just became the active device while we thought we were -
   // back off. lastTransferTimestamp (matches go-librespot's own
   // daemon/player.go) guards against a stale/reordered ClusterUpdate
   // deactivating us right after a legitimate transfer to this device.
-  bool stopBeingActive =
+  bool contradictsOurActiveState =
       putStateRequestProto.isActive &&
-      clusterUpdate.cluster.activeDeviceId != authInfo->deviceId &&
+      clusterUpdate.cluster.activeDeviceId != authInfo->deviceId;
+  bool stopBeingActive =
+      contradictsOurActiveState &&
       clusterUpdate.cluster.playerState.timestamp > lastTransferTimestamp;
+
+  if (contradictsOurActiveState && !stopBeingActive) {
+    BELL_LOG(warn, LOG_TAG,
+             "Ignoring cluster update showing activeDeviceId={} while we "
+             "think we're active - older than our last transfer (ts={} <= "
+             "lastTransferTimestamp={})",
+             clusterUpdate.cluster.activeDeviceId,
+             clusterUpdate.cluster.playerState.timestamp, lastTransferTimestamp);
+  }
 
   if (!stopBeingActive) {
     return {};
@@ -468,9 +469,6 @@ bell::Result<> ConnectStateHandler::handleSetVolume(
 
   std::scoped_lock lock(putStateMutex);
 
-  // Connect-state volume is 0..65535 (player.MaxStateVolume in
-  // go-librespot) - matches DeviceInfo.volume's own range, no rescaling
-  // needed.
   uint16_t volume = static_cast<uint16_t>(
       std::clamp<int32_t>(setVolumeCommand.volume, 0, 65535));
 
@@ -578,9 +576,6 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   // tree). go-librespot does copy this from TransferState.Options on
   // every transfer - a known gap, not yet fixed.
   playerState.suppressions = transferState.current_session.suppressions;
-  // go-librespot always sets this on transfer: copies the source
-  // device's PlayOrigin, then overwrites deviceIdentifier with the
-  // command's own sent_by_device_id.
   playerState.playOrigin = transferState.current_session.playOrigin;
   playerState.playOrigin.deviceIdentifier =
       putStateRequestProto.lastCommandSentByDeviceId;
@@ -730,13 +725,9 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   consecutiveUnplayableSkips = 0;
 
   // A bare "play" (no preceding transfer) is just as much "this device
-  // is now active" as a transfer is - matches go-librespot's
-  // setActive(true) for "play". Without this, isActive stayed false
-  // even while genuinely playing audio.
+  // is now active" as a transfer is - without this, isActive stayed
+  // false even while genuinely playing audio.
   putStateRequestProto.isActive = true;
-  // Always regenerate here (never adopt) - a bare play has no source
-  // device's session id to adopt from, matching master's own
-  // handlePlay() ("adoptOrRegenerateSessionId(nullptr)").
   putStateRequestProto.device.playerState.sessionId = generateSessionId();
 
   // See handleTransferCommandLocked()'s own comment on this same network
