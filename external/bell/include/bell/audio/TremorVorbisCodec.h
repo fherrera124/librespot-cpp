@@ -49,7 +49,7 @@ struct tremor_error_category : public std::error_category {
   }
 };
 
-const tremor_error_category tremorErrorCategory{};
+inline const tremor_error_category tremorErrorCategory{};
 }  // namespace internal
 
 // std::error_code helper

@@ -35,7 +35,7 @@ struct http_error_category : public std::error_category {
   }
 };
 
-const http_error_category httpErrorCategory{};
+inline const http_error_category httpErrorCategory{};
 }  // namespace internal
 
 // Plug in the error code category for std::error_code

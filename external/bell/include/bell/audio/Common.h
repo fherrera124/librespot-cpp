@@ -50,7 +50,7 @@ struct audio_error_category : public std::error_category {
   }
 };
 
-const audio_error_category audioErrorCategory{};
+inline const audio_error_category audioErrorCategory{};
 }  // namespace internal
 
 // Plug in the error code category for std::error_code

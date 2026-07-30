@@ -36,7 +36,7 @@ struct opus_error_category : public std::error_category {
   }
 };
 
-const opus_error_category opusErrorCategory{};
+inline const opus_error_category opusErrorCategory{};
 }  // namespace internal
 
 // std::error_code helper

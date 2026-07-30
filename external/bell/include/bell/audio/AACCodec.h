@@ -142,8 +142,8 @@ struct fdk_aacenc_error_category : public std::error_category {
   }
 };
 
-const fdk_aacdec_error_category fdkAACDecErrorCategory{};
-const fdk_aacenc_error_category fdkAACEncErrorCategory{};
+inline const fdk_aacdec_error_category fdkAACDecErrorCategory{};
+inline const fdk_aacenc_error_category fdkAACEncErrorCategory{};
 }  // namespace internal
 
 // std::error_code helper
