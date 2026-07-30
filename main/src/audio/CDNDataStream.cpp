@@ -242,6 +242,26 @@ bell::Result<size_t> CDNDataStream::read(std::byte* outputBuffer,
   return totalCopied;
 }
 
+bell::Result<std::vector<std::byte>> CDNDataStream::readRawHeaderBytes(
+    size_t maxBytes) {
+  // requestRange()/decryptData() operate in raw/wire coordinates (see this
+  // class's own comment on kSpotifyHeaderSize) - offset 0 here is genuinely
+  // wire byte 0, not the logical (header-excluded) byte 0 every other
+  // caller of this class means.
+  auto res = requestRange(0, maxBytes, SeekOrigin::Begin);
+  if (!res) {
+    return tl::make_unexpected(res.error());
+  }
+
+  size_t available = (bytesInLastReadChunk > chunkStartPosition)
+                         ? (bytesInLastReadChunk - chunkStartPosition)
+                         : 0;
+  size_t toCopy = std::min(maxBytes, available);
+  return std::vector<std::byte>(
+      lastReadChunk.begin() + chunkStartPosition,
+      lastReadChunk.begin() + chunkStartPosition + toCopy);
+}
+
 CDNDataStream::RangeRequestPlan CDNDataStream::planRange(size_t desiredStart,
                                                          size_t desiredLength) {
   RangeRequestPlan plan;

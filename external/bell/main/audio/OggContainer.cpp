@@ -284,6 +284,52 @@ bell::Result<> OggContainer::seekToFrame(size_t frameIndex,
   return {};
 }
 
+bell::Result<> OggContainer::seekToByteOffset(size_t byteOffset,
+                                              uint64_t targetFrame,
+                                              size_t allowedDistance) {
+  if (!stream->isSeekable()) {
+    return tl::make_unexpected(audio::Errc::OperationNotSupported);
+  }
+
+  if (auto seekRes = stream->seek(byteOffset, io::DataStream::SeekOrigin::Begin);
+      !seekRes) {
+    return tl::make_unexpected(seekRes.error());
+  }
+
+  // Reset all decoder state - same as seekToFrame()'s own tail, but this
+  // caller doesn't already know the granulepos of whatever page it'll
+  // land on (seekToFrame() does, from its own bisection scan), so it has
+  // to read the landing page explicitly to find out.
+  ogg_sync_reset(&oggSyncState);
+  ogg_stream_reset(&oggStreamState);
+
+  auto pageRes = readNextPage();
+  if (!pageRes) {
+    return tl::make_unexpected(pageRes.error());
+  }
+  ogg_int64_t granulepos = ogg_page_granulepos(&oggPage);
+  currentFrame = (granulepos != -1) ? static_cast<uint64_t>(granulepos) : 0;
+  if (ogg_stream_pagein(&oggStreamState, &oggPage) < 0) {
+    return tl::make_unexpected(audio::Errc::CodecError);
+  }
+
+  if (targetFrame > currentFrame &&
+      (targetFrame - currentFrame) <= allowedDistance) {
+    return {};
+  }
+
+  while (currentFrame < targetFrame) {
+    auto packetRes = readNextPacket();
+    if (!packetRes) {
+      return (packetRes.error() == audio::Errc::EndOfStream)
+                 ? bell::Result<>()
+                 : tl::make_unexpected(packetRes.error());
+    }
+  }
+
+  return {};
+}
+
 void OggContainer::close() {
   ogg_stream_destroy(&oggStreamState);
   ogg_sync_destroy(&oggSyncState);

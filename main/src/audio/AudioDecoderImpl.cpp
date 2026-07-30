@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <optional>
 
 #include "audio/CDNDataStream.h"
+#include "audio/SpotifySeekTable.h"
 #include "bell/Logger.h"
 #include "bell/audio/OggContainer.h"
 #include "bell/audio/TremorVorbisCodec.h"
@@ -16,6 +18,10 @@ namespace {
 const char* LOG_TAG = "AudioDecoderImpl";
 const int kMaxConsecutiveReadErrors = 5;
 const uint32_t kReadErrorBackoffMs = 100;
+// The real header (confirmed against a hardware capture) is exactly 167
+// bytes - comfortable headroom for other formats/bitrates without
+// fetching much more than needed.
+const size_t kHeaderProbeSize = 256;
 }
 
 class AudioDecoderImpl : public cspot::AudioDecoder {
@@ -37,6 +43,15 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
                openRes.error());
       return tl::make_unexpected(openRes.error());
     }
+
+    // Best-effort: a missing/unparseable seek table just means seekToMs()
+    // falls back to bisection search below, not an open failure.
+    auto headerRes = stream->readRawHeaderBytes(kHeaderProbeSize);
+    if (headerRes) {
+      seekTable = SpotifySeekTable::tryParse(*headerRes);
+    }
+    BELL_LOG(info, LOG_TAG, "Spotify seek table {}",
+             seekTable ? "found" : "not found - will use bisection search");
 
     dataStream = stream;
 
@@ -136,6 +151,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
     codec.reset();
     container.reset();
     dataStream.reset();
+    seekTable.reset();
   }
 
   bool isEOF() const override { return eof; }
@@ -149,7 +165,14 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
     auto frameIndex = static_cast<size_t>(
         std::max<int64_t>(positionMs, 0) * sampleRate / 1000);
 
-    auto seekRes = container->seekToFrame(frameIndex);
+    // Table lookup is O(1) (one HTTP range request at the resulting
+    // offset); bisection costs several round-trips to search for that
+    // same offset. Same fallback either way once we have a byte offset -
+    // land on a valid page, resync, fine-tune forward if needed.
+    auto seekRes =
+        seekTable ? container->seekToByteOffset(
+                        seekTable->getBytePosition(frameIndex), frameIndex)
+                  : container->seekToFrame(frameIndex);
     if (!seekRes) {
       BELL_LOG(error, LOG_TAG, "Failed to seek to {}ms: {}", positionMs,
                seekRes.error());
@@ -170,6 +193,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
   std::shared_ptr<bell::io::DataStream> dataStream;
   std::unique_ptr<bell::audio::OggContainer> container;
   std::unique_ptr<bell::TremorVorbisCodec> codec;
+  std::optional<SpotifySeekTable> seekTable;
   SpotifyId currentTrackId;
   // isOpen()/isEOF() are read from StreamPlayer's player thread without
   // holding playbackMutex (deliberately, to avoid blocking flush/queue

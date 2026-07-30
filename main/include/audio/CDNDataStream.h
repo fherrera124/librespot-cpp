@@ -51,6 +51,15 @@ class CDNDataStream : public bell::io::DataStream {
   bell::Result<size_t> read(std::byte* outputBuffer,
                             size_t outputBufferLen) override;
 
+  // Fetches and decrypts the raw bytes [0, maxBytes) at the very start of
+  // the wire stream - the fixed-size proprietary Spotify header every
+  // other public method here (seek/size/position) deliberately hides
+  // behind kSpotifyHeaderSize. Only useful to a caller that actually wants
+  // to parse that header. Mutates this object's read position/buffer
+  // state like any other range fetch - call before any real reading
+  // begins.
+  bell::Result<std::vector<std::byte>> readRawHeaderBytes(size_t maxBytes);
+
  private:
   const char* LOG_TAG = "CDNDataStream";
 

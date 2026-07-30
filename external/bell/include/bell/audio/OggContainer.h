@@ -17,6 +17,16 @@ class OggContainer : public Container {
   bell::Result<EncodedPacket> readNextPacket() override;
   bell::Result<> seekToFrame(size_t frameIndex,
                              size_t allowedDistance = 0) override;
+
+  // Seeks directly to an already-known byte offset (e.g. from a Spotify
+  // seek-table lookup) rather than bisecting for one - resyncs decoder
+  // state to the next valid page there, then fine-tunes forward to
+  // targetFrame the same way seekToFrame() does once it's found its own
+  // candidate offset. allowedDistance: skip the fine-tune walk if landing
+  // within this many frames of targetFrame already.
+  bell::Result<> seekToByteOffset(size_t byteOffset, uint64_t targetFrame,
+                                  size_t allowedDistance = 0);
+
   uint64_t tellFrame() const override;
   uint64_t getTotalFrames() override;
 
