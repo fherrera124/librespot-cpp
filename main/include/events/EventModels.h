@@ -1,14 +1,23 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
+#include <string>
 #include "proto/MetadataPb.h"
 #include "proto/SpotifyId.h"
 
 namespace cspot {
-struct CurrentTrackMetadata {
-  SpotifyId trackId;
+// Display metadata for the outward "now playing" notification
+// (PlaybackNotifications.h) - projected from cspot_proto::Track by
+// StreamPlayer::announceState(), same fields master's TrackInfo flattens a
+// Track/Episode proto into (src/TrackQueue.cpp).
+struct TrackMetadata {
+  std::string uri;
   std::string name;
-  int32_t durationMs = 0;
+  std::string artist;  // first artist only, matches master's TrackInfo
+  std::string album;
+  std::string imageUrl;
+  uint32_t durationMs = 0;
 };
 
 struct AudioKeyResponse {
@@ -36,6 +45,10 @@ struct PlayerStateUpdate {
   // isBuffering=false announce (nullopt on the earlier isBuffering=true
   // one - not known yet). See StreamPlayer::announceState()'s comment.
   std::optional<std::string> playbackId;
+  // Display metadata for the outward TrackChanged notification - same
+  // isBuffering=false-only timing as playbackId above (the real metadata
+  // isn't resolved yet on the earlier announce).
+  std::optional<TrackMetadata> trackMetadata;
 };
 
 struct ProvidedFile {

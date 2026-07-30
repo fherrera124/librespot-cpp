@@ -17,15 +17,17 @@
 namespace cspot {
 class Session {
  public:
-  // audioOutputCallback/volumeChangedCallback/audioFlushCallback default
-  // to no-ops so host targets that don't wire up a real audio sink don't
-  // need to pass anything.
+  // audioOutputCallback/volumeChangedCallback/audioFlushCallback/
+  // playbackNotificationCallback default to no-ops so host targets that
+  // don't care about a given one don't need to pass anything.
   Session(std::shared_ptr<AuthInfo> authInfo,
           cspot::AudioOutputCallback audioOutputCallback =
               [](tcb::span<const std::byte>, const SpotifyId&) {},
           cspot::VolumeChangedCallback volumeChangedCallback =
               [](uint16_t) {},
-          cspot::AudioFlushCallback audioFlushCallback = []() {});
+          cspot::AudioFlushCallback audioFlushCallback = []() {},
+          cspot::PlaybackNotificationCallback playbackNotificationCallback =
+              [](const PlaybackNotificationEvent&) {});
 
   bell::Result<> start();
 
@@ -43,6 +45,18 @@ class Session {
   // True if runPoller() returned because the AP explicitly rejected our
   // login credentials - see ApClient::loginWasDeclined()'s own comment.
   bool credentialsRejected() const;
+
+  // --- Local control ---
+  // Thin passthrough to connectStateHandler - see
+  // ConnectStateHandler::requestPlayPause() et al. for the actual
+  // semantics/thread-safety. connectStateHandler is always valid once a
+  // Session exists, so there's no "not ready yet" case to handle here.
+  bool requestPlayPause(bool play);
+  bool requestNext();
+  bool requestPrevious();
+  bool requestSeek(uint32_t positionMs);
+  bool requestSetRepeatContext(bool enabled);
+  uint32_t getPositionMs();
 
  private:
   const char* LOG_TAG = "Session";

@@ -14,10 +14,12 @@
 
 using namespace cspot;
 
-cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo,
-                        cspot::AudioOutputCallback audioOutputCallback,
-                        cspot::VolumeChangedCallback volumeChangedCallback,
-                        cspot::AudioFlushCallback audioFlushCallback)
+cspot::Session::Session(
+    std::shared_ptr<AuthInfo> authInfo,
+    cspot::AudioOutputCallback audioOutputCallback,
+    cspot::VolumeChangedCallback volumeChangedCallback,
+    cspot::AudioFlushCallback audioFlushCallback,
+    cspot::PlaybackNotificationCallback playbackNotificationCallback)
     : authInfo(std::move(authInfo)) {
   // Prepare the session context
   eventLoop = std::make_shared<cspot::EventLoop>();
@@ -30,7 +32,8 @@ cspot::Session::Session(std::shared_ptr<AuthInfo> authInfo,
   apClient = std::make_unique<ApClient>(eventLoop, this->authInfo);
 
   connectStateHandler = std::make_shared<ConnectStateHandler>(
-      eventLoop, this->authInfo, spClient, std::move(volumeChangedCallback));
+      eventLoop, this->authInfo, spClient, std::move(volumeChangedCallback),
+      std::move(playbackNotificationCallback));
 
   auto fileProvider = createDefaultFileProvider(eventLoop, spClient, apClient);
   auto audioDecoder = createAudioDecoder(std::move(audioOutputCallback));
@@ -221,6 +224,30 @@ bell::Result<> cspot::Session::putInactive() {
 
 bool cspot::Session::credentialsRejected() const {
   return apClient->loginWasDeclined();
+}
+
+bool cspot::Session::requestPlayPause(bool play) {
+  return connectStateHandler->requestPlayPause(play);
+}
+
+bool cspot::Session::requestNext() {
+  return connectStateHandler->requestNext();
+}
+
+bool cspot::Session::requestPrevious() {
+  return connectStateHandler->requestPrevious();
+}
+
+bool cspot::Session::requestSeek(uint32_t positionMs) {
+  return connectStateHandler->requestSeek(positionMs);
+}
+
+bool cspot::Session::requestSetRepeatContext(bool enabled) {
+  return connectStateHandler->requestSetRepeatContext(enabled);
+}
+
+uint32_t cspot::Session::getPositionMs() {
+  return connectStateHandler->getPositionMs();
 }
 
 void cspot::Session::runPoller(std::atomic<bool>& restartRequested) {

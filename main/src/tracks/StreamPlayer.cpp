@@ -18,6 +18,40 @@ std::string generatePlaybackId() {
                   [] { return hexDigits[randomEngine() % 16]; });
   return id;
 }
+
+// Flattens a resolved Track proto into the outward TrackChanged
+// notification's display fields - same projection master's
+// TrackInfo::loadPbTrack() does (src/TrackQueue.cpp): first artist only,
+// album name, cover art URL from the album's first cover image. Episodes
+// aren't handled here - FileProvider doesn't fetch episode metadata yet
+// (its own TODO), so currentFile->trackMetadata is Track-only in practice.
+cspot::TrackMetadata toTrackMetadata(const cspot::SpotifyId& trackId,
+                                     const cspot_proto::Track& track) {
+  cspot::TrackMetadata metadata;
+  metadata.uri = trackId.uri;
+  metadata.name = track.name;
+  if (!track.artists.empty()) {
+    metadata.artist = track.artists[0].name;
+  }
+  if (track.album.hasValue) {
+    metadata.album = track.album.value.name;
+    auto& coverGroup = track.album.value.coverGroup;
+    if (coverGroup.hasValue && !coverGroup.value.images.empty()) {
+      static const char* hexDigits = "0123456789abcdef";
+      std::string hex;
+      auto& fileId = coverGroup.value.images[0].fileId;
+      hex.reserve(fileId.size() * 2);
+      for (std::byte b : fileId) {
+        auto v = std::to_integer<uint8_t>(b);
+        hex += hexDigits[v >> 4];
+        hex += hexDigits[v & 0x0f];
+      }
+      metadata.imageUrl = "https://i.scdn.co/image/" + hex;
+    }
+  }
+  metadata.durationMs = static_cast<uint32_t>(track.durationMs);
+  return metadata;
+}
 }  // namespace
 
 StreamPlayer::StreamPlayer(
@@ -247,6 +281,13 @@ void StreamPlayer::announceState(bool isBuffering,
 
   if (currentFile && currentFile->trackMetadata) {
     stateUpdate.playbackDurationMs = currentFile->trackMetadata->durationMs;
+    // Only once the track is actually ready to play (matches playbackId's
+    // own timing above) - the isBuffering=true announce fires before the
+    // metadata fetch in FileProvider even starts.
+    if (!isBuffering && currentTrackId) {
+      stateUpdate.trackMetadata =
+          toTrackMetadata(*currentTrackId, *currentFile->trackMetadata);
+    }
   }
 
   playerStateAnnounceCallback(stateUpdate);

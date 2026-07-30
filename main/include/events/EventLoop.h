@@ -23,7 +23,6 @@ class EventLoop : public bell::Task {
     DEALER_REQUEST,
     DEALER_MESSAGE,
     FILE_PROVIDED,
-    CURRENT_TRACK_METADATA,
     AUDIO_KEY,
     QUEUE_UPDATED,
     PLAYER_PLAY,
@@ -43,14 +42,26 @@ class EventLoop : public bell::Task {
     // already-resolved absolute target position in ms (relative/beginning/
     // value math happens in ConnectStateHandler; StreamPlayer just seeks
     // the open decoder to it).
-    PLAYER_SEEK
+    PLAYER_SEEK,
+    // Outward "now playing" notifications (PlaybackNotifications.h) -
+    // posted and handled both by ConnectStateHandler itself (see its
+    // constructor), translating between this internal plumbing shape and
+    // the public PlaybackNotificationEvent one. Distinct from PLAYER_PLAY/
+    // PLAYER_SEEK above: those are commands going INTO StreamPlayer:
+    // these are notifications going OUT to the embedding app - reusing the
+    // same EventType for both would collide on EventLoop's one-handler-
+    // per-type registration (StreamPlayer already owns PLAYER_PLAY/
+    // PLAYER_SEEK).
+    LOCAL_TRACK_CHANGED,
+    LOCAL_PLAY_PAUSE_CHANGED,
+    LOCAL_SEEKED
   };
 
   // Define all possible event payload types
   using EventPayload =
-      std::variant<std::monostate, bool, int64_t, CurrentTrackMetadata,
-                   AudioKeyResponse, TrackQueueUpdate, ProvidedFile,
-                   tao::json::value>;
+      std::variant<std::monostate, bool, int64_t, AudioKeyResponse,
+                   TrackQueueUpdate, ProvidedFile, tao::json::value,
+                   TrackMetadata>;
 
   struct Event {
     EventType type;

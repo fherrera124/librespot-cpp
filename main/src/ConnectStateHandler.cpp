@@ -57,7 +57,8 @@ std::string generateSessionId() {
 ConnectStateHandler::ConnectStateHandler(
     std::shared_ptr<cspot::EventLoop> eventLoop,
     std::shared_ptr<AuthInfo> authInfo, std::shared_ptr<SpClient> spClient,
-    VolumeChangedCallback volumeChangedCallback)
+    VolumeChangedCallback volumeChangedCallback,
+    PlaybackNotificationCallback playbackNotificationCallback)
     // Stack sized for this task's own network work (the connect-state PUT
     // round-trip), same as every other network-doing task in this
     // codebase.
@@ -65,7 +66,8 @@ ConnectStateHandler::ConnectStateHandler(
       eventLoop(std::move(eventLoop)),
       authInfo(std::move(authInfo)),
       spClient(std::move(spClient)),
-      volumeChangedCallback(std::move(volumeChangedCallback)) {
+      volumeChangedCallback(std::move(volumeChangedCallback)),
+      playbackNotificationCallback(std::move(playbackNotificationCallback)) {
   trackQueueHandler =
       createDefaultTrackQueueHandler(this->spClient, this->eventLoop);
 
@@ -83,6 +85,35 @@ ConnectStateHandler::ConnectStateHandler(
       EventLoop::EventType::TRACK_UNPLAYABLE,
       [this](cspot::EventLoop::Event&&) {
         handleTrackAdvanceSignal(/*forceNext=*/true);
+      });
+
+  // Outward "now playing" notifications (PlaybackNotifications.h) - posted
+  // from onPlayerStateUpdate()/handlePauseCommandLocked()/applySeekLocked()
+  // while putStateMutex is held, delivered here (this class's own
+  // registration, on the eventLoop's dispatch thread) once it's been
+  // released - see EventLoop::EventType::LOCAL_TRACK_CHANGED's own comment
+  // for why this can't reuse PLAYER_PLAY/PLAYER_SEEK.
+  this->eventLoop->registerHandler(
+      EventLoop::EventType::LOCAL_TRACK_CHANGED,
+      [this](cspot::EventLoop::Event&& ev) {
+        auto& metadata = std::get<TrackMetadata>(ev.payload);
+        this->playbackNotificationCallback(
+            {PlaybackNotification::TrackChanged, metadata});
+      });
+  this->eventLoop->registerHandler(
+      EventLoop::EventType::LOCAL_PLAY_PAUSE_CHANGED,
+      [this](cspot::EventLoop::Event&& ev) {
+        auto paused = std::get<bool>(ev.payload);
+        this->playbackNotificationCallback(
+            {PlaybackNotification::PlayPauseChanged, paused});
+      });
+  this->eventLoop->registerHandler(
+      EventLoop::EventType::LOCAL_SEEKED,
+      [this](cspot::EventLoop::Event&& ev) {
+        auto positionMs = std::get<int64_t>(ev.payload);
+        this->playbackNotificationCallback(
+            {PlaybackNotification::Seeked,
+             static_cast<uint32_t>(positionMs)});
       });
 
   initialize();
@@ -109,6 +140,11 @@ void ConnectStateHandler::onPlayerStateUpdate(
   // playback id is known) rather than cleared.
   if (playerStateUpdate.playbackId) {
     playerState.playbackId = *playerStateUpdate.playbackId;
+  }
+
+  if (playerStateUpdate.trackMetadata) {
+    eventLoop->post(EventLoop::EventType::LOCAL_TRACK_CHANGED,
+                    *playerStateUpdate.trackMetadata);
   }
 
   (void)putStateLocked();
@@ -214,9 +250,7 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
     return handleUpdateContextCommandLocked(command);
   } else if (endpoint == "set_repeating_context") {
     BELL_LOG(info, LOG_TAG, "Received set_repeating_context command");
-    applyPlayerOptionsLocked(command.optional<bool>("value"), std::nullopt,
-                             std::nullopt);
-    return putStateLocked();
+    return applyRepeatContextLocked(command.optional<bool>("value"));
   } else if (endpoint == "set_repeating_track") {
     BELL_LOG(info, LOG_TAG, "Received set_repeating_track command");
     applyPlayerOptionsLocked(std::nullopt, command.optional<bool>("value"),
@@ -239,6 +273,41 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
   }
 
   return {};
+}
+
+bool ConnectStateHandler::requestPlayPause(bool play) {
+  std::scoped_lock lock(putStateMutex);
+  return bool(handlePauseCommandLocked(!play));
+}
+
+bool ConnectStateHandler::requestNext() {
+  std::scoped_lock lock(putStateMutex);
+  return bool(handleSkipNextCommandLocked());
+}
+
+bool ConnectStateHandler::requestPrevious() {
+  std::scoped_lock lock(putStateMutex);
+  return bool(handleSkipPrevCommandLocked());
+}
+
+bool ConnectStateHandler::requestSeek(uint32_t positionMs) {
+  std::scoped_lock lock(putStateMutex);
+  return bool(applySeekLocked(static_cast<int64_t>(positionMs)));
+}
+
+bool ConnectStateHandler::requestSetRepeatContext(bool enabled) {
+  std::scoped_lock lock(putStateMutex);
+  return bool(applyRepeatContextLocked(enabled));
+}
+
+uint32_t ConnectStateHandler::getPositionMs() {
+  std::scoped_lock lock(putStateMutex);
+  auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::system_clock::now().time_since_epoch())
+                   .count();
+  auto& playerState = putStateRequestProto.device.playerState;
+  return static_cast<uint32_t>(std::clamp<int64_t>(
+      currentPositionMsLocked(nowMs), 0, playerState.duration));
 }
 
 bell::Result<> ConnectStateHandler::putState(PutStateReason reason) {
@@ -986,6 +1055,13 @@ bell::Result<> ConnectStateHandler::handleSkipPrevCommandLocked() {
   return {};
 }
 
+int64_t ConnectStateHandler::currentPositionMsLocked(int64_t nowMs) const {
+  auto& playerState = putStateRequestProto.device.playerState;
+  return playerState.positionAsOfTimestamp +
+         static_cast<int64_t>((nowMs - playerState.timestamp) *
+                              playerState.playbackSpeed);
+}
+
 bell::Result<> ConnectStateHandler::handlePauseCommandLocked(bool pause) {
   // Not routed through StreamPlayer's own announceState() flow - that's
   // a no-op once the decoder is already open (the common pause/resume
@@ -994,18 +1070,19 @@ bell::Result<> ConnectStateHandler::handlePauseCommandLocked(bool pause) {
 
   auto& playerState = putStateRequestProto.device.playerState;
 
-  // Uses the OLD playbackSpeed (before it's reassigned below).
+  // Uses the OLD playbackSpeed/timestamp (before they're reassigned below).
   auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                    std::chrono::system_clock::now().time_since_epoch())
                    .count();
-  playerState.positionAsOfTimestamp += static_cast<int64_t>(
-      (nowMs - playerState.timestamp) * playerState.playbackSpeed);
+  playerState.positionAsOfTimestamp = currentPositionMsLocked(nowMs);
 
   playerState.isPlaying = true;
   playerState.isPaused = pause;
   playerState.playbackSpeed =
       computePlaybackSpeed(playerState.isPaused, playerState.isBuffering);
   playerState.timestamp = nowMs;
+
+  eventLoop->post(EventLoop::EventType::LOCAL_PLAY_PAUSE_CHANGED, pause);
 
   auto putRes = putStateLocked();
   if (!putRes) {
@@ -1026,14 +1103,11 @@ bell::Result<> ConnectStateHandler::handleSeekCommandLocked(
   }
 
   // Same extrapolation handlePauseCommandLocked() uses - the OLD
-  // playbackSpeed/timestamp, before they're reassigned below.
+  // playbackSpeed/timestamp, before applySeekLocked() reassigns them.
   auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                    std::chrono::system_clock::now().time_since_epoch())
                    .count();
-  int64_t currentPosition =
-      playerState.positionAsOfTimestamp +
-      static_cast<int64_t>((nowMs - playerState.timestamp) *
-                           playerState.playbackSpeed);
+  int64_t currentPosition = currentPositionMsLocked(nowMs);
 
   auto relative = command.optional<std::string>("relative").value_or("");
   int64_t targetPosition;
@@ -1054,11 +1128,23 @@ bell::Result<> ConnectStateHandler::handleSeekCommandLocked(
     return bell::make_unexpected_errc(std::errc::invalid_argument);
   }
 
-  targetPosition = std::clamp<int64_t>(targetPosition, 0, playerState.duration);
+  return applySeekLocked(targetPosition);
+}
 
-  eventLoop->post(EventLoop::EventType::PLAYER_SEEK, targetPosition);
+bell::Result<> ConnectStateHandler::applySeekLocked(int64_t targetPositionMs) {
+  auto& playerState = putStateRequestProto.device.playerState;
 
-  playerState.positionAsOfTimestamp = targetPosition;
+  auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::system_clock::now().time_since_epoch())
+                   .count();
+
+  targetPositionMs =
+      std::clamp<int64_t>(targetPositionMs, 0, playerState.duration);
+
+  eventLoop->post(EventLoop::EventType::PLAYER_SEEK, targetPositionMs);
+  eventLoop->post(EventLoop::EventType::LOCAL_SEEKED, targetPositionMs);
+
+  playerState.positionAsOfTimestamp = targetPositionMs;
   playerState.timestamp = nowMs;
 
   auto putRes = putStateLocked();
@@ -1119,6 +1205,12 @@ void ConnectStateHandler::applyPlayerOptionsLocked(
   if (shufflingContext) {
     options.shufflingContext = *shufflingContext;
   }
+}
+
+bell::Result<> ConnectStateHandler::applyRepeatContextLocked(
+    std::optional<bool> repeatingContext) {
+  applyPlayerOptionsLocked(repeatingContext, std::nullopt, std::nullopt);
+  return putStateLocked();
 }
 
 bool ConnectStateHandler::encodeProtoTracks(pb_ostream_t* stream,

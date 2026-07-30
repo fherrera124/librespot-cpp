@@ -15,16 +15,18 @@ namespace {
 const char* LOG_TAG = "ConnectReceiver";
 }
 
-ConnectReceiver::ConnectReceiver(std::shared_ptr<AuthInfo> authInfo,
-                                 std::string sessionFilePath,
-                                 cspot::AudioOutputCallback audioCallback,
-                                 cspot::VolumeChangedCallback volumeCallback,
-                                 cspot::AudioFlushCallback audioFlushCallback)
+ConnectReceiver::ConnectReceiver(
+    std::shared_ptr<AuthInfo> authInfo, std::string sessionFilePath,
+    cspot::AudioOutputCallback audioCallback,
+    cspot::VolumeChangedCallback volumeCallback,
+    cspot::AudioFlushCallback audioFlushCallback,
+    cspot::PlaybackNotificationCallback playbackNotificationCallback)
     : authInfo(std::move(authInfo)),
       sessionStore(std::move(sessionFilePath)),
       audioCallback(std::move(audioCallback)),
       volumeCallback(std::move(volumeCallback)),
-      audioFlushCallback(std::move(audioFlushCallback)) {}
+      audioFlushCallback(std::move(audioFlushCallback)),
+      playbackNotificationCallback(std::move(playbackNotificationCallback)) {}
 
 void ConnectReceiver::run() {
   sessionStore.load(*authInfo);
@@ -74,9 +76,13 @@ void ConnectReceiver::run() {
       }
     }
     session.reset();
-    session = std::make_shared<cspot::Session>(authInfo, audioCallback,
-                                                volumeCallback,
-                                                audioFlushCallback);
+    session = std::make_shared<cspot::Session>(
+        authInfo, audioCallback, volumeCallback, audioFlushCallback,
+        playbackNotificationCallback);
+    {
+      std::scoped_lock lock(activeSessionMutex);
+      activeSession = session;
+    }
     auto startRes = session->start();
     if (!startRes) {
       BELL_LOG(error, LOG_TAG,
@@ -100,4 +106,39 @@ void ConnectReceiver::run() {
       sessionStore.save(*authInfo);
     }
   }
+}
+
+std::shared_ptr<cspot::Session> ConnectReceiver::lockActiveSession() {
+  std::scoped_lock lock(activeSessionMutex);
+  return activeSession.lock();
+}
+
+bool ConnectReceiver::requestPlayPause(bool play) {
+  auto session = lockActiveSession();
+  return session && session->requestPlayPause(play);
+}
+
+bool ConnectReceiver::requestNext() {
+  auto session = lockActiveSession();
+  return session && session->requestNext();
+}
+
+bool ConnectReceiver::requestPrevious() {
+  auto session = lockActiveSession();
+  return session && session->requestPrevious();
+}
+
+bool ConnectReceiver::requestSeek(uint32_t positionMs) {
+  auto session = lockActiveSession();
+  return session && session->requestSeek(positionMs);
+}
+
+bool ConnectReceiver::requestSetRepeatContext(bool enabled) {
+  auto session = lockActiveSession();
+  return session && session->requestSetRepeatContext(enabled);
+}
+
+uint32_t ConnectReceiver::getPositionMs() {
+  auto session = lockActiveSession();
+  return session ? session->getPositionMs() : 0;
 }

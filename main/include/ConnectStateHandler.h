@@ -14,6 +14,7 @@
 #include <optional>
 #include <vector>
 
+#include "PlaybackNotifications.h"
 #include "SessionContext.h"
 #include "api/SpClient.h"
 #include "events/EventModels.h"
@@ -36,7 +37,9 @@ class ConnectStateHandler : public bell::Task {
   ConnectStateHandler(
       std::shared_ptr<EventLoop> eventLoop, std::shared_ptr<AuthInfo> authInfo,
       std::shared_ptr<SpClient> spClient,
-      VolumeChangedCallback volumeChangedCallback = [](uint16_t) {});
+      VolumeChangedCallback volumeChangedCallback = [](uint16_t) {},
+      PlaybackNotificationCallback playbackNotificationCallback =
+          [](const PlaybackNotificationEvent&) {});
   ~ConnectStateHandler() override;
 
   bell::Result<> handlePlayerCommand(tao::json::value& messageJson);
@@ -66,6 +69,25 @@ class ConnectStateHandler : public bell::Task {
   // disconnects - matches master's own PlayerEngine::putStateInactive().
   bell::Result<> putInactive();
 
+  // --- Local control ---
+  // Same commands a remote hm://connect-state/v1/player/command reaches
+  // through handlePlayerCommand() - callable directly from any thread (a
+  // GPIO button task, an app's own HTTP handler, ...), not just the
+  // dealer's. Each one takes putStateMutex itself and calls the very same
+  // ...Locked() method the matching remote endpoint does, so there's never
+  // a second implementation of what "pause" or "skip" means. Safe to call
+  // from any thread: none of these invoke any caller-supplied callback
+  // while putStateMutex is held, so there's no reentrancy hazard to guard
+  // against here (unlike the outward notification callback - see
+  // PlaybackNotifications.h).
+  bool requestPlayPause(bool play);
+  bool requestNext();
+  bool requestPrevious();
+  bool requestSeek(uint32_t positionMs);
+  bool requestSetRepeatContext(bool enabled);
+  // 0 if nothing is loaded yet (no current track).
+  uint32_t getPositionMs();
+
  private:
   const char* LOG_TAG = "ConnectStateHandler";
 
@@ -74,6 +96,7 @@ class ConnectStateHandler : public bell::Task {
   std::shared_ptr<SpClient> spClient;
   std::shared_ptr<TrackQueueHandler> trackQueueHandler;
   VolumeChangedCallback volumeChangedCallback;
+  PlaybackNotificationCallback playbackNotificationCallback;
 
   cspot_proto::PutStateRequest putStateRequestProto;
 
@@ -128,6 +151,14 @@ class ConnectStateHandler : public bell::Task {
 
   void initialize();
 
+  // Extrapolates the current playback position from
+  // playerState.positionAsOfTimestamp/timestamp/playbackSpeed as of `nowMs`
+  // - the formula handlePauseCommandLocked()/handleSeekCommandLocked()/
+  // getPositionMs() all need, factored out to one place. playbackSpeed is 0
+  // while paused/buffering, so this is a no-op extrapolation in that case.
+  // Assumes putStateMutex is ALREADY held by the caller.
+  int64_t currentPositionMsLocked(int64_t nowMs) const;
+
   // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand(),
   // its sole dispatcher) - matches putStateLocked()'s own naming/contract.
   bell::Result<> handleTransferCommandLocked(std::string_view payloadDataStr,
@@ -152,6 +183,14 @@ class ConnectStateHandler : public bell::Task {
   // and PUTs the new position.
   // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
   bell::Result<> handleSeekCommandLocked(const tao::json::value& command);
+
+  // The non-JSON half of handleSeekCommandLocked(): clamps targetPositionMs
+  // to [0, duration], posts PLAYER_SEEK, updates
+  // positionAsOfTimestamp/timestamp and PUTs the new position. Shared with
+  // the local-control seek entry point, which already has a plain absolute
+  // ms value and no JSON to parse.
+  // Assumes putStateMutex is ALREADY held by the caller.
+  bell::Result<> applySeekLocked(int64_t targetPositionMs);
 
   // hm://connect-state/v1/player/command's "update_context" endpoint -
   // context metadata/restrictions sync, not a new queue/context. Always
@@ -180,6 +219,15 @@ class ConnectStateHandler : public bell::Task {
   void applyPlayerOptionsLocked(std::optional<bool> repeatingContext,
                                 std::optional<bool> repeatingTrack,
                                 std::optional<bool> shufflingContext);
+
+  // set_repeating_context's applyPlayerOptionsLocked() + putStateLocked()
+  // combo, factored out so the local-control entry point can reuse it
+  // without going through JSON. repeatingContext: nullopt leaves the
+  // existing value unchanged, matching applyPlayerOptionsLocked()'s own
+  // semantics - see there for why endpoint's "value" being absent isn't
+  // the same as "set to false".
+  // Assumes putStateMutex is ALREADY held by the caller.
+  bell::Result<> applyRepeatContextLocked(std::optional<bool> repeatingContext);
 
   // Shared by handleSkipNextCommandLocked() (remote skip_next) and
   // handleTrackAdvanceSignal() (TRACK_ENDED/TRACK_UNPLAYABLE) - all decide
