@@ -1,6 +1,8 @@
 #include <atomic>
 #include <fstream>
+#include <memory>
 
+#include "AudioSinkALSA.h"
 #include "AuthInfo.h"
 #include "Authenticator.h"
 #include "Session.h"
@@ -124,6 +126,15 @@ int main(int argc, char** argv) {
   auto mdnsService = startZeroconfService(authInfo, httpServer, authenticator,
                                           authSemaphore, needsSessionRestart);
 
+  // audioSink outlives every Session rebuild below - same pattern as the
+  // ESP32 target's own main.cpp.
+  auto audioSink = std::make_shared<cspot::AudioSinkALSA>();
+  cspot::AudioOutputCallback audioCallback =
+      [audioSink](tcb::span<const std::byte> pcm, const cspot::SpotifyId&) {
+        audioSink->feedPCMFrames(reinterpret_cast<const uint8_t*>(pcm.data()),
+                                 pcm.size());
+      };
+
   auto persistSession = [&authInfo]() {
     std::string sessionString = authInfo->toJson();
     std::ofstream outFile(sessionFilePath, std::ios::binary);
@@ -162,7 +173,7 @@ int main(int argc, char** argv) {
       }
     }
     session.reset();
-    session = std::make_shared<cspot::Session>(authInfo);
+    session = std::make_shared<cspot::Session>(authInfo, audioCallback);
     auto startRes = session->start();
     if (!startRes) {
       BELL_LOG(error, "Main",

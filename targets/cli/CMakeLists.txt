@@ -10,5 +10,8 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../main ${CMAKE_CURRENT_BINARY_D
 file(GLOB SOURCES "*.cpp")
 include_directories(".")
 
+find_package(ALSA REQUIRED)
+
 add_executable(cspot_cli ${SOURCES})
-target_link_libraries(cspot_cli cspot ${CMAKE_DL_LIBS})
+target_include_directories(cspot_cli PRIVATE ${ALSA_INCLUDE_DIRS})
+target_link_libraries(cspot_cli cspot ${CMAKE_DL_LIBS} ${ALSA_LIBRARIES})
