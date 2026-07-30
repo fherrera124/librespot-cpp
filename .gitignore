@@ -1,4 +1,5 @@
 .cache/
+.gradle/
 .DS_Store
 __pycache__/
 build/
