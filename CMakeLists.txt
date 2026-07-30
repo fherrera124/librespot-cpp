@@ -26,8 +26,12 @@ if(ESP_PLATFORM AND NOT CSPOT_TARGET_ESP32 AND NOT CSPOT_TARGET_TESTS)
 
     add_subdirectory(main ${CMAKE_CURRENT_BINARY_DIR}/cspot)
 
-    target_link_libraries(${COMPONENT_LIB} PUBLIC cspot)
-    target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu++17)
+    # No SRCS above (this component has none of its own - everything comes
+    # from the cspot static lib main/ builds) means idf_component_register()
+    # made COMPONENT_LIB an INTERFACE library, not a real static lib -
+    # PUBLIC/PRIVATE linkage isn't valid on one, only INTERFACE.
+    target_link_libraries(${COMPONENT_LIB} INTERFACE cspot)
+    target_compile_options(${COMPONENT_LIB} INTERFACE -std=gnu++17)
     return()
 endif()
 
