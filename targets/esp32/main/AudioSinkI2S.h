@@ -59,6 +59,12 @@ class AudioSinkI2S : public bell::Task {
   std::atomic<float> volumeScale{1.0f};
   std::atomic<bool> flushRequested{false};
 
+  // Temporary diagnostic: logs this task's FreeRTOS stack high-water mark
+  // every kStackLogInterval calls - see taskLoop(). This task runs with a
+  // small, SRAM-only stack (see the constructor), a candidate for
+  // corrupting nearby heap allocations if it's ever tighter than expected.
+  int taskLoopCount = 0;
+
   void taskLoop() override;
 };
 

@@ -21,6 +21,8 @@ class Task::Impl {
   Impl(const Impl&) = delete;
   Impl& operator=(const Impl&) = delete;
 
+  size_t getStackHighWaterMarkWords() const { return 0; }
+
   bool startTask(Task* task) {
     if (threadAttrInitialized) {
       pthread_attr_destroy(&threadAttr);
@@ -73,4 +75,8 @@ Task::~Task() {
 
 bool Task::startTask() {
   return pImpl->startTask(this);
+}
+
+size_t Task::getStackHighWaterMarkWords() const {
+  return pImpl->getStackHighWaterMarkWords();
 }

@@ -59,6 +59,12 @@ class Task {
   // @brief Starts the task's execution. This method is implemented per-platform.
   bool startTask();
 
+  // @brief Remaining stack, in words, since this task started - the
+  // FreeRTOS high-water mark (uxTaskGetStackHighWaterMark). 0 on
+  // platforms without a real per-task stack (POSIX) or before startTask()
+  // has run.
+  size_t getStackHighWaterMarkWords() const;
+
   // Used to keep track of the task state during runTask execution
   std::mutex taskRunningMutex;
   std::atomic<bool> taskRunning = false;

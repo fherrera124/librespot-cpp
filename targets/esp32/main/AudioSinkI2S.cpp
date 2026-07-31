@@ -106,6 +106,14 @@ void AudioSinkI2S::flush() {
 }
 
 void AudioSinkI2S::taskLoop() {
+  // Temporary diagnostic - see taskLoopCount's own comment in the header.
+  constexpr int kStackLogInterval = 1000;
+  if (++taskLoopCount >= kStackLogInterval) {
+    taskLoopCount = 0;
+    BELL_LOG(info, LOG_TAG, "Stack high-water mark: {} words",
+             getStackHighWaterMarkWords());
+  }
+
   // Only this thread touches txChannel - flush() just clears the ring
   // buffer and raises this flag. Disable+re-enable resets the channel's
   // DMA queue, discarding whatever was already queued for playback -
