@@ -331,14 +331,16 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
     return tl::make_unexpected(response.error());
   }
   activeResponse = std::move(*response);
-
   auto* stream = activeResponse->stream();
-  // Ensure buffer size
-  if (lastReadChunk.size() < *activeResponse->contentLength) {
-    lastReadChunk.resize(*activeResponse->contentLength);
+
+  size_t expectedSize = activeResponse->contentLength.value_or(
+      tailRequest ? provisionalAlignedTail : plan.requestSize);
+
+  if (lastReadChunk.size() < expectedSize) {
+    lastReadChunk.resize(expectedSize);
   }
-  stream->read(reinterpret_cast<char*>(lastReadChunk.data()),
-               *activeResponse->contentLength);
+  
+  stream->read(reinterpret_cast<char*>(lastReadChunk.data()), expectedSize);
 
   auto elapsed = std::chrono::steady_clock::now() - startTime;
   totalRequestTimeMs +=
@@ -357,105 +359,93 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
   }
 
   auto rangeHeader = activeResponse->headers.at("Content-Range");
-  // Expected format: bytes START-END/TOTAL
   size_t spacePos = rangeHeader.find(' ');
   size_t dashPos = rangeHeader.find('-');
   size_t slashPos = rangeHeader.find('/');
   size_t startVal = 0;
   size_t totalRaw = 0;
+  
   try {
     if (spacePos != std::string::npos && dashPos != std::string::npos &&
         slashPos != std::string::npos) {
       startVal = static_cast<size_t>(std::stoull(
           rangeHeader.substr(spacePos + 1, dashPos - (spacePos + 1))));
-
       totalRaw =
           static_cast<size_t>(std::stoull(rangeHeader.substr(slashPos + 1)));
     } else {
-      BELL_LOG(error, LOG_TAG, "Invalid Content-Range header: {}", rangeHeader);
       return bell::make_unexpected_errc<>(std::errc::bad_message);
     }
-  } catch (const std::exception& e) {
-    BELL_LOG(error, LOG_TAG, "Failed parsing Content-Range: {} ({})",
-             rangeHeader, e.what());
+  } catch (...) {
     return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
 
-  bytesInLastReadChunk = static_cast<size_t>(stream->gcount());
+  // 2. CORRECCIÓN: Capturar los bytes reales que llegaron por la red
+  size_t actualReceived = static_cast<size_t>(stream->gcount());
 
-  // Update total size info
   originalTotalSizeRaw = totalRaw;
   tailRemainderBytes = originalTotalSizeRaw % 16;
   size_t trimmed = originalTotalSizeRaw - tailRemainderBytes;
   totalSize = trimmed;
 
   if (tailRequest) {
-    // Determine desired logical start for this tail read
     size_t desiredTailStart = (trimmed > length) ? (trimmed - length) : 0;
-
-    // Build plan now that size is known.
     plan = planRange(desiredTailStart,
                      std::min(length, trimmed - desiredTailStart));
 
-    // We requested 'bytes=-provisionalAlignedTail', actual startVal may be 0 or (totalRaw - provisionalAlignedTail)
-    // Need to ensure we have enough prefix for alignment
     if (startVal > plan.requestStart) {
-      // Not enough prefix fetched; fall back to re-issuing with proper aligned explicit range
       size_t newStart = plan.requestStart;
       size_t newEnd = plan.requestStart + plan.requestSize - 1;
-      httpRequest.headers["Range"] =
-          fmt::format("bytes={}-{}", newStart, newEnd);
-      BELL_LOG(debug, LOG_TAG, "Re-issuing tail request for alignment: {}",
-               httpRequest.headers["Range"]);
+      httpRequest.headers["Range"] = fmt::format("bytes={}-{}", newStart, newEnd);
       return requestRange(plan.desiredStart, plan.desiredLength,
                           bell::io::DataStream::SeekOrigin::Begin);
     }
 
-    // Decrypt only the aligned portion we will expose
     size_t alignedOffsetInBuffer = plan.requestStart - startVal;
+    
+    // DESENCRIPTAR SOLO LO QUE REALMENTE LLEGÓ
+    size_t toDecrypt = (actualReceived > alignedOffsetInBuffer) ? 
+                       (actualReceived - alignedOffsetInBuffer) : 0;
+                       
     auto decryptRes = decryptData(lastReadChunk.data() + alignedOffsetInBuffer,
-                                  plan.requestSize, plan.requestStart);
-    if (!decryptRes) {
-      BELL_LOG(error, LOG_TAG, "Failed to decrypt data (tail): {}",
-               decryptRes.error());
-      return decryptRes;
-    }
+                                  toDecrypt, plan.requestStart);
+    if (!decryptRes) return decryptRes;
 
     chunkStartPosition = alignedOffsetInBuffer + plan.skipPrefix;
-    bytesInLastReadChunk =
-        alignedOffsetInBuffer + plan.requestSize - plan.skipSuffix;
+    // LIMITAR EL TAMAÑO DEL CHUNK A LOS BYTES REALES DESCARGADOS
+    size_t plannedEnd = alignedOffsetInBuffer + plan.requestSize - plan.skipSuffix;
+    bytesInLastReadChunk = std::min(actualReceived, plannedEnd);
+    
     currentPosition = plan.desiredStart;
-    // Update reuse metadata (tail request)
     bufferAlignedStart = plan.requestStart;
     bufferAlignedEnd = plan.requestStart + plan.requestSize;
     bufferVisibleStart = plan.desiredStart;
     bufferVisibleEnd = plan.desiredStart + plan.desiredLength;
+    
   } else {
-    // Normal forward/aligned read
-    auto decryptRes =
-        decryptData(lastReadChunk.data() + (plan.requestStart - startVal),
-                    plan.requestSize, plan.requestStart);
-    if (!decryptRes) {
-      BELL_LOG(error, LOG_TAG, "Failed to decrypt data: {}",
-               decryptRes.error());
-      return decryptRes;
-    }
+    size_t dataOffset = plan.requestStart - startVal;
+    
+    // DESENCRIPTAR SOLO LO QUE REALMENTE LLEGÓ
+    size_t toDecrypt = (actualReceived > dataOffset) ? 
+                       (actualReceived - dataOffset) : 0;
+                       
+    auto decryptRes = decryptData(lastReadChunk.data() + dataOffset,
+                                  toDecrypt, plan.requestStart);
+    if (!decryptRes) return decryptRes;
 
-    chunkStartPosition = (plan.requestStart - startVal) + plan.skipPrefix;
-    bytesInLastReadChunk =
-        (plan.requestStart - startVal) + plan.requestSize - plan.skipSuffix;
+    chunkStartPosition = dataOffset + plan.skipPrefix;
+    // LIMITAR EL TAMAÑO DEL CHUNK A LOS BYTES REALES DESCARGADOS
+    size_t plannedEnd = dataOffset + plan.requestSize - plan.skipSuffix;
+    bytesInLastReadChunk = std::min(actualReceived, plannedEnd);
+    
     currentPosition = plan.desiredStart;
-    // Update reuse metadata (normal request)
     bufferAlignedStart = plan.requestStart;
     bufferAlignedEnd = plan.requestStart + plan.requestSize;
     bufferVisibleStart = plan.desiredStart;
     bufferVisibleEnd = plan.desiredStart + plan.desiredLength;
   }
 
-  // Ensure indices are sane
   if (bytesInLastReadChunk < chunkStartPosition) {
-    BELL_LOG(error, LOG_TAG, "Internal alignment error: start {} end {}",
-             chunkStartPosition, bytesInLastReadChunk);
+    BELL_LOG(error, LOG_TAG, "Internal alignment error");
     return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
 
