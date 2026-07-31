@@ -64,6 +64,10 @@ class Task::Impl {
     vTaskDelete(NULL);
   }
 
+  size_t getStackHighWaterMarkWords() const {
+    return xTaskHandle ? uxTaskGetStackHighWaterMark(xTaskHandle) : 0;
+  }
+
   bool startTask(Task* task) {
     taskPtr = task;
     if (espStackOnPsram) {
@@ -92,9 +96,9 @@ class Task::Impl {
   int espPriority;
   std::string taskName;
 
-  StaticTask_t* xTaskBuffer;
-  StackType_t* xStack;
-  TaskHandle_t xTaskHandle;
+  StaticTask_t* xTaskBuffer = nullptr;
+  StackType_t* xStack = nullptr;
+  TaskHandle_t xTaskHandle = nullptr;
   Task* taskPtr = nullptr;
 
   // Returns the FreeRTOS task core
@@ -122,4 +126,8 @@ Task::~Task() {}
 
 bool Task::startTask() {
   return pImpl->startTask(this);
+}
+
+size_t Task::getStackHighWaterMarkWords() const {
+  return pImpl->getStackHighWaterMarkWords();
 }
