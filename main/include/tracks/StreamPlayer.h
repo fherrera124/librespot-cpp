@@ -23,7 +23,7 @@ namespace cspot {
 using PlayerStateAnnounceCallback = std::function<void(const PlayerStateUpdate&)>;
 
 // Tells the audio sink to discard whatever it's already queued/holding -
-// see handleFlushEvent()/handleSeekEvent()'s own comments for why the
+// see handleFlushEvent()'s and taskLoop()'s own comments for why the
 // decoder alone resetting isn't enough. Defaults to a no-op the same way
 // this codebase's other injected callbacks do.
 using AudioFlushCallback = std::function<void()>;
@@ -61,6 +61,12 @@ class StreamPlayer : public bell::Task {
 
   bool flushRequested = false;
   bool isPlaying = false;
+
+  // Set by handleSeekEvent() (EventLoop's dispatch thread), consumed by
+  // taskLoop() (this class's own thread) - see handleSeekEvent()'s comment
+  // for why the seek can't be applied directly from the thread that
+  // receives it.
+  std::optional<int64_t> pendingSeekMs;
 
   std::unique_ptr<AudioDecoder> audioDecoder;
 

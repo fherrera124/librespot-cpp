@@ -203,24 +203,15 @@ void StreamPlayer::handleFlushEvent() {
 
 void StreamPlayer::handleSeekEvent(int64_t positionMs) {
   std::scoped_lock lock(playbackMutex);
-  if (!audioDecoder->isOpen()) {
-    BELL_LOG(warn, LOG_TAG, "Ignoring seek to {}ms - no track open",
-             positionMs);
-    return;
-  }
-
-  auto res = audioDecoder->seekToMs(positionMs);
-  if (!res) {
-    BELL_LOG(error, LOG_TAG, "Seek to {}ms failed: {}", positionMs,
-             res.error());
-    return;
-  }
-
-  // The decoder now reads from the new position, but whatever was decoded
-  // from the OLD position may still be queued in the sink (ring buffer,
-  // hardware DMA/FIFO) - without this, a seek plays a brief snippet of
-  // stale audio before the new position actually starts.
-  audioFlushCallback();
+  // Deferred to taskLoop() instead of calling audioDecoder->seekToMs()
+  // here: taskLoop() calls processPacket() without holding playbackMutex
+  // (see its own comment on why), so a direct call from this thread (the
+  // EventLoop's dispatch task) would race it on the same decoder/
+  // CDNDataStream, which has no locking of its own - reproduced on real
+  // hardware as a crash inside CDNDataStream::requestRange() triggered by
+  // a manual seek during playback.
+  pendingSeekMs = positionMs;
+  queueUpdateSemaphore.give();
 }
 
 void StreamPlayer::maybeStartCurrentTrack() {
@@ -300,11 +291,39 @@ void StreamPlayer::taskLoop() {
       BELL_LOG(info, LOG_TAG, "Flush requested, resetting state");
       flushRequested = false;
       audioDecoder->resetStream();
-      // Same reasoning as handleSeekEvent()'s own comment - the sink can
+      // Same reasoning as the pendingSeekMs block below - the sink can
       // still be holding audio decoded from the track/position being
       // abandoned.
       audioFlushCallback();
     }
+
+    // Applied here, not in handleSeekEvent(), so that seekToMs() only ever
+    // runs on this task's own thread - the same one that calls
+    // processPacket() a few lines below, deliberately without holding
+    // playbackMutex. See handleSeekEvent()'s comment.
+    if (pendingSeekMs) {
+      int64_t positionMs = *pendingSeekMs;
+      pendingSeekMs.reset();
+
+      if (!audioDecoder->isOpen()) {
+        BELL_LOG(warn, LOG_TAG, "Ignoring seek to {}ms - no track open",
+                 positionMs);
+      } else {
+        auto res = audioDecoder->seekToMs(positionMs);
+        if (!res) {
+          BELL_LOG(error, LOG_TAG, "Seek to {}ms failed: {}", positionMs,
+                   res.error());
+        } else {
+          // The decoder now reads from the new position, but whatever was
+          // decoded from the OLD position may still be queued in the sink
+          // (ring buffer, hardware DMA/FIFO) - without this, a seek plays
+          // a brief snippet of stale audio before the new position
+          // actually starts.
+          audioFlushCallback();
+        }
+      }
+    }
+
     maybeStartCurrentTrack();
   }
 
