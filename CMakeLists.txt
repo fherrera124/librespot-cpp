@@ -28,6 +28,13 @@ if(ESP_PLATFORM AND NOT CSPOT_TARGET_ESP32 AND NOT CSPOT_TARGET_TESTS)
     # suppressions above: third-party vendored code, not ours to fix here.
     idf_build_set_property(COMPILE_OPTIONS "-Wno-error=strict-aliasing" APPEND)
 
+    # tl::expected<void, std::error_code> (bell::Result<>'s underlying
+    # vendored implementation) trips a GCC false-positive
+    # maybe-uninitialized in bell/main/http/Writer.cpp and DataStream.cpp
+    # under this toolchain's optimization level - same category as the
+    # above, third-party vendored code.
+    idf_build_set_property(COMPILE_OPTIONS "-Wno-error=maybe-uninitialized" APPEND)
+
     # Not referenced anywhere in main/ (Session/api/tracks) - confirmed via
     # grep, same reasoning targets/esp32/CMakeLists.txt already applies to
     # AAC/Opus/MQTT.
