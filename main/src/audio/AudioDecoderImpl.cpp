@@ -130,6 +130,8 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
 
     auto decodeRes = codec->decode(packetRes->data);
     if (!decodeRes) {
+      // NotEnoughBytes is expected while Vorbis's windowing lookahead
+      // fills up right after the headers - not a real error.
       if (decodeRes.error() != bell::audio::Errc::NotEnoughBytes) {
         BELL_LOG(error, LOG_TAG, "Failed to decode Vorbis packet: {}",
                  decodeRes.error());
@@ -137,36 +139,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
       return;
     }
 
-    // --- INICIO DE INYECCIÓN DE TONO (440Hz) ---
-    static float phase = 0.0f;
-    const float sampleRate = 44100.0f;
-    const float frequency = 440.0f; 
-    const float phaseIncrement = 2.0f * M_PI * frequency / sampleRate;
-    const size_t numFrames = 512; 
-    const int16_t amplitude = 10000; // Volumen seguro
-
-    std::vector<int16_t> dummyPcm(numFrames * 2);
-    for (size_t i = 0; i < numFrames; i++) {
-        int16_t sample = static_cast<int16_t>(sin(phase) * amplitude);
-        dummyPcm[i * 2] = sample;     // Canal Izquierdo
-        dummyPcm[i * 2 + 1] = sample; // Canal Derecho
-        
-        phase += phaseIncrement;
-        if (phase >= 2.0f * M_PI) {
-            phase -= 2.0f * M_PI;
-        }
-    }
-
-    tcb::span<const std::byte> dummySpan(
-        reinterpret_cast<const std::byte*>(dummyPcm.data()),
-        dummyPcm.size() * sizeof(int16_t)
-    );
-
-    outputCallback(dummySpan, currentTrackId);
-    // --- FIN DE INYECCIÓN DE TONO ---
-
-    // La llamada original está comentada para evitar enviar basura:
-    // outputCallback(decodeRes->pcm, currentTrackId);
+    outputCallback(decodeRes->pcm, currentTrackId);
   }
 
   bool isOpen() const override { return isOpenFlag; }
