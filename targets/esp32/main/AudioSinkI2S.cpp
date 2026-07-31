@@ -8,9 +8,13 @@
 using namespace cspot;
 
 namespace {
-// ~740ms of headroom at 44.1kHz mono S16 - decouples decode/HTTP jitter
-// from the I2S feed without introducing much added latency.
-constexpr size_t kRingBufferBytes = 64 * 1024;
+// ~3s of headroom at 44.1kHz mono S16 - decouples decode/HTTP jitter from
+// the I2S feed. Matches master's own BufferedAudioSink default (256KB) -
+// the earlier 64KB here (~740ms) wasn't enough margin against scheduling
+// jitter from WiFi/LVGL sharing the CPU, audible as frequent brief
+// underrun gaps (auto_clear silences them instead of repeating stale
+// audio) rather than obvious dropouts.
+constexpr size_t kRingBufferBytes = 256 * 1024;
 }  // namespace
 
 AudioSinkI2S::AudioSinkI2S(const Config& config)
