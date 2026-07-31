@@ -74,7 +74,14 @@ std::unique_ptr<bell::mdns::Advertiser> ZeroconfServer::start(uint16_t port) {
         cspot::logHeapStatus("Zeroconf", "POST /spotify_handler exit");
       });
 
-  (void)httpServer->listen(port);
+  auto listenRes = httpServer->listen(port);
+  if (!listenRes) {
+    BELL_LOG(error, "Zeroconf",
+             "HTTP server failed to listen on port {}: {} - device won't be "
+             "reachable even if mDNS discovery works",
+             port, listenRes.error());
+  }
+
   auto service = bell::mdns::getDefaultManager()->advertise(
       authInfo->deviceName, "_spotify-connect._tcp", "", "", port,
       {{"VERSION", "1.0"}, {"CPath", "/spotify_handler"}, {"Stack", "SP"}});
@@ -83,5 +90,8 @@ std::unique_ptr<bell::mdns::Advertiser> ZeroconfServer::start(uint16_t port) {
                                 "discoverable by the Spotify app");
     return nullptr;
   }
+  BELL_LOG(info, "Zeroconf",
+           "Advertising '{}' as _spotify-connect._tcp on port {}",
+           authInfo->deviceName, port);
   return std::move(*service);
 }
