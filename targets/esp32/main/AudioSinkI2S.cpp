@@ -9,11 +9,7 @@ using namespace cspot;
 
 namespace {
 // ~3s of headroom at 44.1kHz mono S16 - decouples decode/HTTP jitter from
-// the I2S feed. Matches master's own BufferedAudioSink default (256KB) -
-// the earlier 64KB here (~740ms) wasn't enough margin against scheduling
-// jitter from WiFi/LVGL sharing the CPU, audible as frequent brief
-// underrun gaps (auto_clear silences them instead of repeating stale
-// audio) rather than obvious dropouts.
+// the I2S feed.
 constexpr size_t kRingBufferBytes = 256 * 1024;
 }  // namespace
 
@@ -24,8 +20,7 @@ AudioSinkI2S::AudioSinkI2S(const Config& config)
       ringBuffer(kRingBufferBytes) {
   i2s_chan_config_t chanConfig =
       I2S_CHANNEL_DEFAULT_CONFIG(config.port, I2S_ROLE_MASTER);
-  // Same DMA sizing as librespot-cpp's own hardware-proven I2S sink on
-  // this exact board: 10 descriptors * 1000 frames stays under the DMA
+  // 10 descriptors * 1000 frames stays under the DMA
   // descriptor's ~4092-byte-per-buffer limit; auto_clear zeroes a buffer
   // instead of repeating the last one (audible stutter) on underrun.
   chanConfig.dma_desc_num = 10;
@@ -63,16 +58,16 @@ AudioSinkI2S::~AudioSinkI2S() {
 void AudioSinkI2S::feedPCMFrames(const uint8_t* data, size_t bytes) {
   const std::byte* src = reinterpret_cast<const std::byte*>(data);
   float scale = volumeScale.load(std::memory_order_relaxed);
+  int32_t fixedScale = static_cast<int32_t>(scale * 32768.0f);
 
   if (config.monoOutput) {
     const int16_t* samples = reinterpret_cast<const int16_t*>(data);
     size_t frameCount = (bytes / sizeof(int16_t)) / 2;
-    downmixScratch.resize(frameCount);
+    downmixScratch.resize(frameCount); 
     for (size_t i = 0; i < frameCount; i++) {
-      float mixed = (static_cast<int32_t>(samples[2 * i]) + samples[2 * i + 1]) /
-                    2.0f;
-      downmixScratch[i] = static_cast<int16_t>(
-          std::clamp(mixed * scale, -32768.0f, 32767.0f));
+      int32_t mixed = (static_cast<int32_t>(samples[2 * i]) + samples[2 * i + 1]) >> 1;
+
+      downmixScratch[i] = static_cast<int16_t>((mixed * fixedScale) >> 15);
     }
     src = reinterpret_cast<const std::byte*>(downmixScratch.data());
     bytes = frameCount * sizeof(int16_t);
@@ -81,8 +76,7 @@ void AudioSinkI2S::feedPCMFrames(const uint8_t* data, size_t bytes) {
     size_t sampleCount = bytes / sizeof(int16_t);
     downmixScratch.resize(sampleCount);
     for (size_t i = 0; i < sampleCount; i++) {
-      downmixScratch[i] = static_cast<int16_t>(
-          std::clamp(samples[i] * scale, -32768.0f, 32767.0f));
+      downmixScratch[i] = static_cast<int16_t>((samples[i] * fixedScale) >> 15);
     }
     src = reinterpret_cast<const std::byte*>(downmixScratch.data());
     bytes = sampleCount * sizeof(int16_t);
@@ -95,11 +89,7 @@ void AudioSinkI2S::feedPCMFrames(const uint8_t* data, size_t bytes) {
 }
 
 void AudioSinkI2S::volumeChanged(uint16_t volume) {
-  // Squared, not linear - approximates how humans perceive loudness
-  // (matches go-librespot's software-volume path, output/driver-pipe.go:
-  // "map volume ... to what is perceived as linear by humans"). A
-  // straight linear scale crams most of the audible change into the top
-  // of the range.
+  // Squared, not linear - approximates how humans perceive loudness.
   float linear = static_cast<float>(volume) / static_cast<float>(UINT16_MAX);
   volumeScale.store(linear * linear, std::memory_order_relaxed);
 }
@@ -110,13 +100,6 @@ void AudioSinkI2S::flush() {
 }
 
 void AudioSinkI2S::taskLoop() {
-  // Temporary diagnostic - see taskLoopCount's own comment in the header.
-  constexpr int kStackLogInterval = 1000;
-  if (++taskLoopCount >= kStackLogInterval) {
-    taskLoopCount = 0;
-    BELL_LOG(info, LOG_TAG, "Stack high-water mark: {} words",
-             getStackHighWaterMarkWords());
-  }
 
   // Only this thread touches txChannel - flush() just clears the ring
   // buffer and raises this flag. Disable+re-enable resets the channel's
