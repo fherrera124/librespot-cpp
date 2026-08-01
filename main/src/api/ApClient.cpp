@@ -146,14 +146,11 @@ void ApClient::apPacketHandler(uint8_t packetType, const std::byte* data,
       lastPingTime = std::chrono::steady_clock::now();
 
       // Spotify's own AP ping carries a real Unix timestamp (seconds,
-      // big-endian) in its first 4 bytes - matches master's own
-      // TimeProvider::syncWithPingPacket(), avoiding any NTP dependency.
-      // Sets the system clock directly (rather than threading a separate
-      // offset through every call site) so every system_clock::now()
+      // big-endian) in its first 4 bytes, avoiding any NTP dependency.
+      // Sets the system clock directly so every system_clock::now()
       // call already in this codebase is correct without touching any of
       // them. Recalibrated on every ping (~2min) to correct for clock
-      // drift. On host builds settimeofday() just fails with EPERM
-      // (unprivileged process) - harmless no-op there.
+      // drift.
       if (len >= sizeof(uint32_t)) {
         uint32_t remoteSeconds;
         std::memcpy(&remoteSeconds, data, sizeof(remoteSeconds));

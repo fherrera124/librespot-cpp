@@ -153,7 +153,8 @@ bell::Result<> DefaultSpClient::putConnectStateRaw(
 
   cspot_proto::Cluster cluster;
   if (nanopb_helper::decodeFromVector(cluster, *bodyRes)) {
-    BELL_LOG(info, LOG_TAG,
+    // TODO: Consider wheter we should verufy that the echoed activeDeviceId/sessionId matches ours
+    BELL_LOG(debug, LOG_TAG,
              "PUT response Cluster: activeDeviceId={} (ours={}) echoed "
              "sessionId={} isPlaying={} isPaused={} timestamp={}",
              cluster.activeDeviceId, deviceId, cluster.playerState.sessionId,

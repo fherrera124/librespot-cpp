@@ -254,11 +254,7 @@ void StreamPlayer::announceState(bool isBuffering,
       // known/loading (handleFileProvided's isBuffering=true announce,
       // maybeStartCurrentTrack()'s isBuffering=false one) - isPlaying
       // means "a session is loaded", never "audio already flowing", so it
-      // stays true through buffering too. Tying it to !isBuffering here
-      // reported the device as having nothing loaded for the whole
-      // buffering window on the real desktop client - see
-      // ConnectStateHandler::handleTransferCommand()'s own comment on the
-      // same fix.
+      // stays true through buffering too.
       .isPlaying = true,
       .isPaused = !isPlaying,
       .isBuffering = isBuffering,
