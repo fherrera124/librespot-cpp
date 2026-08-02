@@ -71,7 +71,7 @@ bell::Result<> OggContainer::openForRead(
     }
 
     totalFrames = ogg_page_granulepos(&oggPage);
-    BELL_LOG(info, LOG_TAG, "Stream has {} total frames", totalFrames);
+    BELL_LOG(debug, LOG_TAG, "Stream has {} total frames", totalFrames);
 
     // Seek back to start
     seekRes = stream->seek(0, bell::io::DataStream::SeekOrigin::Begin);

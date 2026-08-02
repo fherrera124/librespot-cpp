@@ -284,7 +284,7 @@ void StreamPlayer::taskLoop() {
   {
     std::scoped_lock lock(playbackMutex);
     if (flushRequested) {
-      BELL_LOG(info, LOG_TAG, "Flush requested, resetting state");
+      BELL_LOG(debug, LOG_TAG, "Flush requested, resetting state");
       flushRequested = false;
       audioDecoder->resetStream();
       // Same reasoning as the pendingSeekMs block below - the sink can
