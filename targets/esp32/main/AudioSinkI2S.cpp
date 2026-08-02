@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "audio/PCMGain.h"
 #include "bell/Logger.h"
 #include "freertos/FreeRTOS.h"
 
@@ -58,16 +59,16 @@ AudioSinkI2S::~AudioSinkI2S() {
 void AudioSinkI2S::feedPCMFrames(const uint8_t* data, size_t bytes) {
   const std::byte* src = reinterpret_cast<const std::byte*>(data);
   float scale = volumeScale.load(std::memory_order_relaxed);
-  int32_t fixedScale = static_cast<int32_t>(scale * 32768.0f);
+  int32_t fixedScale = gainToQ15(scale);
 
   if (config.monoOutput) {
     const int16_t* samples = reinterpret_cast<const int16_t*>(data);
     size_t frameCount = (bytes / sizeof(int16_t)) / 2;
-    downmixScratch.resize(frameCount); 
+    downmixScratch.resize(frameCount);
     for (size_t i = 0; i < frameCount; i++) {
       int32_t mixed = (static_cast<int32_t>(samples[2 * i]) + samples[2 * i + 1]) >> 1;
 
-      downmixScratch[i] = static_cast<int16_t>((mixed * fixedScale) >> 15);
+      downmixScratch[i] = applyQ15Gain(mixed, fixedScale);
     }
     src = reinterpret_cast<const std::byte*>(downmixScratch.data());
     bytes = frameCount * sizeof(int16_t);
@@ -76,7 +77,7 @@ void AudioSinkI2S::feedPCMFrames(const uint8_t* data, size_t bytes) {
     size_t sampleCount = bytes / sizeof(int16_t);
     downmixScratch.resize(sampleCount);
     for (size_t i = 0; i < sampleCount; i++) {
-      downmixScratch[i] = static_cast<int16_t>((samples[i] * fixedScale) >> 15);
+      downmixScratch[i] = applyQ15Gain(samples[i], fixedScale);
     }
     src = reinterpret_cast<const std::byte*>(downmixScratch.data());
     bytes = sampleCount * sizeof(int16_t);
@@ -89,9 +90,7 @@ void AudioSinkI2S::feedPCMFrames(const uint8_t* data, size_t bytes) {
 }
 
 void AudioSinkI2S::volumeChanged(uint16_t volume) {
-  // Squared, not linear - approximates how humans perceive loudness.
-  float linear = static_cast<float>(volume) / static_cast<float>(UINT16_MAX);
-  volumeScale.store(linear * linear, std::memory_order_relaxed);
+  volumeScale.store(volumeToGain(volume), std::memory_order_relaxed);
 }
 
 void AudioSinkI2S::flush() {

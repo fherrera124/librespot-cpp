@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "audio/PCMGain.h"
 #include "bell/Logger.h"
 
 using namespace cspot;
@@ -76,10 +77,27 @@ AudioSinkALSA::~AudioSinkALSA() {
 
 void AudioSinkALSA::feedPCMFrames(const uint8_t* data, size_t bytes) {
   const std::byte* src = reinterpret_cast<const std::byte*>(data);
+  float scale = volumeScale.load(std::memory_order_relaxed);
+
+  if (scale < 0.999f) {
+    int32_t fixedScale = gainToQ15(scale);
+    const int16_t* samples = reinterpret_cast<const int16_t*>(data);
+    size_t sampleCount = bytes / sizeof(int16_t);
+    gainScratch.resize(sampleCount);
+    for (size_t i = 0; i < sampleCount; i++) {
+      gainScratch[i] = applyQ15Gain(samples[i], fixedScale);
+    }
+    src = reinterpret_cast<const std::byte*>(gainScratch.data());
+  }
+
   size_t written = 0;
   while (written < bytes) {
     written += ringBuffer.write(src + written, bytes - written);
   }
+}
+
+void AudioSinkALSA::volumeChanged(uint16_t volume) {
+  volumeScale.store(volumeToGain(volume), std::memory_order_relaxed);
 }
 
 void AudioSinkALSA::flush() {

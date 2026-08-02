@@ -26,15 +26,14 @@ const size_t kHeaderProbeSize = 256;
 
 class AudioDecoderImpl : public cspot::AudioDecoder {
  public:
-  explicit AudioDecoderImpl(AudioOutputCallback outputCallback)
-      : outputCallback(std::move(outputCallback)),
+  explicit AudioDecoderImpl(std::shared_ptr<AudioSink> audioSink)
+      : audioSink(std::move(audioSink)),
         httpClient(std::make_shared<bell::HTTPClient>()) {}
 
   bell::Result<> openStream(const std::string& cdnUrl,
                             const std::vector<std::byte>& decryptKey,
-                            const SpotifyId& trackId) override {
+                            const SpotifyId&) override {
     resetStream();
-    currentTrackId = trackId;
 
     auto stream = std::make_shared<CDNDataStream>(httpClient);
     auto openRes = stream->open(cdnUrl, decryptKey);
@@ -139,7 +138,9 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
       return;
     }
 
-    outputCallback(decodeRes->pcm, currentTrackId);
+    audioSink->feedPCMFrames(
+        reinterpret_cast<const uint8_t*>(decodeRes->pcm.data()),
+        decodeRes->pcm.size());
   }
 
   bool isOpen() const override { return isOpenFlag; }
@@ -188,13 +189,12 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
   }
 
  private:
-  AudioOutputCallback outputCallback;
+  std::shared_ptr<AudioSink> audioSink;
   std::shared_ptr<bell::HTTPClient> httpClient;
   std::shared_ptr<bell::io::DataStream> dataStream;
   std::unique_ptr<bell::audio::OggContainer> container;
   std::unique_ptr<bell::TremorVorbisCodec> codec;
   std::optional<SpotifySeekTable> seekTable;
-  SpotifyId currentTrackId;
   // isOpen()/isEOF() are read from StreamPlayer's player thread without
   // holding playbackMutex (deliberately, to avoid blocking flush/queue
   // handling on the EventLoop thread during a blocking processPacket()
@@ -210,6 +210,6 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
 };
 
 std::unique_ptr<AudioDecoder> cspot::createAudioDecoder(
-    AudioOutputCallback outputCallback) {
-  return std::make_unique<AudioDecoderImpl>(std::move(outputCallback));
+    std::shared_ptr<AudioSink> audioSink) {
+  return std::make_unique<AudioDecoderImpl>(std::move(audioSink));
 }

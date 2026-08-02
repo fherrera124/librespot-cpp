@@ -57,7 +57,7 @@ std::string generateSessionId() {
 ConnectStateHandler::ConnectStateHandler(
     std::shared_ptr<cspot::EventLoop> eventLoop,
     std::shared_ptr<AuthInfo> authInfo, std::shared_ptr<SpClient> spClient,
-    VolumeChangedCallback volumeChangedCallback,
+    std::shared_ptr<AudioSink> audioSink,
     PlaybackNotificationCallback playbackNotificationCallback)
     // Stack sized for this task's own network work (the connect-state PUT
     // round-trip), same as every other network-doing task in this
@@ -66,7 +66,7 @@ ConnectStateHandler::ConnectStateHandler(
       eventLoop(std::move(eventLoop)),
       authInfo(std::move(authInfo)),
       spClient(std::move(spClient)),
-      volumeChangedCallback(std::move(volumeChangedCallback)),
+      audioSink(std::move(audioSink)),
       playbackNotificationCallback(std::move(playbackNotificationCallback)) {
   trackQueueHandler =
       createDefaultTrackQueueHandler(this->spClient, this->eventLoop);
@@ -547,7 +547,7 @@ bell::Result<> ConnectStateHandler::handleSetVolume(
   BELL_LOG(info, LOG_TAG, "Set volume to {}", volume);
   putStateRequestProto.device.deviceInfo.volume = volume;
 
-  volumeChangedCallback(volume);
+  audioSink->volumeChanged(volume);
 
   auto putRes = putStateLocked(PutStateReason_VOLUME_CHANGED);
   if (!putRes) {

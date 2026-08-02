@@ -1,18 +1,15 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "AudioSink.h"
 #include "bell/Result.h"
 #include "proto/SpotifyId.h"
-#include "tcb/span.hpp"
 
 namespace cspot {
-using AudioOutputCallback = std::function<void(
-    tcb::span<const std::byte> pcmBytes, const SpotifyId& id)>;
 class AudioDecoder {
  public:
   virtual ~AudioDecoder() = default;
@@ -35,5 +32,5 @@ class AudioDecoder {
 };
 
 std::unique_ptr<AudioDecoder> createAudioDecoder(
-    AudioOutputCallback outputCallback);
+    std::shared_ptr<AudioSink> audioSink);
 }  // namespace cspot

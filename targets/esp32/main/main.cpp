@@ -53,20 +53,8 @@ class CSpotTask : public bell::Task {
         .monoOutput = true,
     };
     auto audioSink = std::make_shared<cspot::AudioSinkI2S>(sinkConfig);
-    cspot::AudioOutputCallback audioCallback =
-        [audioSink](tcb::span<const std::byte> pcm, const cspot::SpotifyId&) {
-          audioSink->feedPCMFrames(
-              reinterpret_cast<const uint8_t*>(pcm.data()), pcm.size());
-        };
-    cspot::VolumeChangedCallback volumeCallback =
-        [audioSink](uint16_t volume) { audioSink->volumeChanged(volume); };
-    cspot::AudioFlushCallback audioFlushCallback = [audioSink]() {
-      audioSink->flush();
-    };
 
-    cspot::ConnectReceiver(authInfo, sessionFilePath, audioCallback,
-                           volumeCallback, audioFlushCallback)
-        .run();
+    cspot::ConnectReceiver(authInfo, sessionFilePath, audioSink).run();
   }
 };
 

@@ -16,9 +16,7 @@ using namespace cspot;
 
 cspot::Session::Session(
     std::shared_ptr<AuthInfo> authInfo,
-    cspot::AudioOutputCallback audioOutputCallback,
-    cspot::VolumeChangedCallback volumeChangedCallback,
-    cspot::AudioFlushCallback audioFlushCallback,
+    std::shared_ptr<AudioSink> audioSink,
     cspot::PlaybackNotificationCallback playbackNotificationCallback)
     : authInfo(std::move(authInfo)) {
   // Prepare the session context
@@ -32,11 +30,11 @@ cspot::Session::Session(
   apClient = std::make_unique<ApClient>(eventLoop, this->authInfo);
 
   connectStateHandler = std::make_shared<ConnectStateHandler>(
-      eventLoop, this->authInfo, spClient, std::move(volumeChangedCallback),
+      eventLoop, this->authInfo, spClient, audioSink,
       std::move(playbackNotificationCallback));
 
   auto fileProvider = createDefaultFileProvider(eventLoop, spClient, apClient);
-  auto audioDecoder = createAudioDecoder(std::move(audioOutputCallback));
+  auto audioDecoder = createAudioDecoder(audioSink);
   // Direct callback, not an EventLoop-posted event - see
   // ConnectStateHandler::onPlayerStateUpdate()'s own comment.
   streamPlayer = std::make_shared<StreamPlayer>(
@@ -45,7 +43,7 @@ cspot::Session::Session(
           const PlayerStateUpdate& update) {
         connectStateHandler->onPlayerStateUpdate(update);
       },
-      std::move(audioFlushCallback));
+      std::move(audioSink));
 
   eventLoop->registerHandler(EventLoop::EventType::DEALER_MESSAGE,
                              std::bind(&cspot::Session::handleDealerMessage,

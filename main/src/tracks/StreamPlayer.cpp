@@ -20,11 +20,10 @@ std::string generatePlaybackId() {
 }
 
 // Flattens a resolved Track proto into the outward TrackChanged
-// notification's display fields - same projection master's
-// TrackInfo::loadPbTrack() does (src/TrackQueue.cpp): first artist only,
-// album name, cover art URL from the album's first cover image. Episodes
-// aren't handled here - FileProvider doesn't fetch episode metadata yet
-// (its own TODO), so currentFile->trackMetadata is Track-only in practice.
+// notification's display fields: first artist only, album name, cover art
+// URL from the album's first cover image. Episodes aren't handled here -
+// FileProvider doesn't fetch episode metadata yet (its own TODO), so
+// currentFile->trackMetadata is Track-only in practice.
 cspot::TrackMetadata toTrackMetadata(const cspot::SpotifyId& trackId,
                                      const cspot_proto::Track& track) {
   cspot::TrackMetadata metadata;
@@ -59,12 +58,12 @@ StreamPlayer::StreamPlayer(
     std::unique_ptr<cspot::FileProvider> fileProvider,
     std::unique_ptr<cspot::AudioDecoder> audioDecoder,
     PlayerStateAnnounceCallback playerStateAnnounceCallback,
-    AudioFlushCallback audioFlushCallback)
+    std::shared_ptr<cspot::AudioSink> audioSink)
     : bell::Task("cspot_player", 32 * 1024),
       eventLoop(std::move(eventLoop)),
       fileProvider(std::move(fileProvider)),
       playerStateAnnounceCallback(std::move(playerStateAnnounceCallback)),
-      audioFlushCallback(std::move(audioFlushCallback)),
+      audioSink(std::move(audioSink)),
       audioDecoder(std::move(audioDecoder)) {
   registerHandlers();
   startTask();
@@ -228,9 +227,7 @@ void StreamPlayer::maybeStartCurrentTrack() {
   // left isBuffering stuck at true forever for any transfer that started
   // paused (the only place that ever corrected it to false required
   // isPlaying=true first) - the real app read that as the device being
-  // permanently stuck loading and greyed out its Play button. Mirrors
-  // librespot-cpp's TrackPlayer, which always loads a track regardless of
-  // its own startPaused flag.
+  // permanently stuck loading and greyed out its Play button.
   auto& file = *currentFile;
   BELL_LOG(info, LOG_TAG, "Opening CDN stream for {}: {}", file.itemId.uri,
            file.cdnUrl);
@@ -252,9 +249,8 @@ void StreamPlayer::announceState(bool isBuffering,
   PlayerStateUpdate stateUpdate{
       // Both of announceState()'s callers only fire once a track is
       // known/loading (handleFileProvided's isBuffering=true announce,
-      // maybeStartCurrentTrack()'s isBuffering=false one) - isPlaying
-      // means "a session is loaded", never "audio already flowing", so it
-      // stays true through buffering too.
+      // maybeStartCurrentTrack()'s isBuffering=false one) - see this
+      // method's own doc comment for why isPlaying stays true here.
       .isPlaying = true,
       .isPaused = !isPlaying,
       .isBuffering = isBuffering,
@@ -290,7 +286,7 @@ void StreamPlayer::taskLoop() {
       // Same reasoning as the pendingSeekMs block below - the sink can
       // still be holding audio decoded from the track/position being
       // abandoned.
-      audioFlushCallback();
+      audioSink->flush();
     }
 
     // Applied here, not in handleSeekEvent(), so that seekToMs() only ever
@@ -315,7 +311,7 @@ void StreamPlayer::taskLoop() {
           // (ring buffer, hardware DMA/FIFO) - without this, a seek plays
           // a brief snippet of stale audio before the new position
           // actually starts.
-          audioFlushCallback();
+          audioSink->flush();
         }
       }
     }

@@ -17,15 +17,11 @@ const char* LOG_TAG = "ConnectReceiver";
 
 ConnectReceiver::ConnectReceiver(
     std::shared_ptr<AuthInfo> authInfo, std::string sessionFilePath,
-    cspot::AudioOutputCallback audioCallback,
-    cspot::VolumeChangedCallback volumeCallback,
-    cspot::AudioFlushCallback audioFlushCallback,
+    std::shared_ptr<AudioSink> audioSink,
     cspot::PlaybackNotificationCallback playbackNotificationCallback)
     : authInfo(std::move(authInfo)),
       sessionStore(std::move(sessionFilePath)),
-      audioCallback(std::move(audioCallback)),
-      volumeCallback(std::move(volumeCallback)),
-      audioFlushCallback(std::move(audioFlushCallback)),
+      audioSink(std::move(audioSink)),
       playbackNotificationCallback(std::move(playbackNotificationCallback)) {}
 
 void ConnectReceiver::run() {
@@ -76,9 +72,8 @@ void ConnectReceiver::run() {
       }
     }
     session.reset();
-    session = std::make_shared<cspot::Session>(
-        authInfo, audioCallback, volumeCallback, audioFlushCallback,
-        playbackNotificationCallback);
+    session = std::make_shared<cspot::Session>(authInfo, audioSink,
+                                               playbackNotificationCallback);
     {
       std::scoped_lock lock(activeSessionMutex);
       activeSession = session;

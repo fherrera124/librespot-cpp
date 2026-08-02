@@ -4,6 +4,7 @@
 #include <chrono>
 #include <memory>
 
+#include "AudioSink.h"
 #include "AuthInfo.h"
 #include "ConnectStateHandler.h"
 #include "api/CredentialsResolver.h"
@@ -17,15 +18,11 @@
 namespace cspot {
 class Session {
  public:
-  // audioOutputCallback/volumeChangedCallback/audioFlushCallback/
-  // playbackNotificationCallback default to no-ops so host targets that
-  // don't care about a given one don't need to pass anything.
+  // audioSink/playbackNotificationCallback default to no-ops so host
+  // targets that don't care about a given one don't need to pass anything.
   Session(std::shared_ptr<AuthInfo> authInfo,
-          cspot::AudioOutputCallback audioOutputCallback =
-              [](tcb::span<const std::byte>, const SpotifyId&) {},
-          cspot::VolumeChangedCallback volumeChangedCallback =
-              [](uint16_t) {},
-          cspot::AudioFlushCallback audioFlushCallback = []() {},
+          std::shared_ptr<AudioSink> audioSink =
+              std::make_shared<NullAudioSink>(),
           cspot::PlaybackNotificationCallback playbackNotificationCallback =
               [](const PlaybackNotificationEvent&) {});
 
