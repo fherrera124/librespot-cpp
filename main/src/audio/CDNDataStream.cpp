@@ -27,23 +27,6 @@ const size_t kChunkCacheCapacity = 4;
 // hardware run ~300ms typically, with occasional spikes past 3s.
 const std::chrono::milliseconds kInFlightWaitTimeoutMs{1000};
 
-// RAII: cancels a ChunkCache claim on any early return out of
-// requestRange() unless publish() (which disarms it) is reached first -
-// several failure exits below all need this, and repeating an explicit
-// cancel() at each one is exactly the kind of thing a future added
-// return would forget, permanently stranding a slot as "Fetching".
-struct ChunkClaimGuard {
-  ChunkCache* cache = nullptr;
-  std::optional<size_t> idx;
-  bool disarmed = false;
-
-  ~ChunkClaimGuard() {
-    if (idx && !disarmed) {
-      cache->cancel(*idx);
-    }
-  }
-};
-
 // Every Spotify CDN audio file (confirmed for plain OGG_VORBIS_160, not
 // just Opus, against librespot-cpp's CDNAudioFile - same IV above, same
 // mechanism) is prefixed with a fixed-size proprietary header (loudness
@@ -308,8 +291,7 @@ void CDNDataStream::advancePrefetchWindow(size_t chunkIndex) {
       chunkIndex);
 }
 
-std::pair<bool, std::optional<size_t>> CDNDataStream::tryServeFromCache(
-    size_t desiredStart, size_t desiredLen) {
+bool CDNDataStream::tryServeFromCache(size_t desiredStart, size_t desiredLen) {
   // A "phase" is a run of chunkSize-sized fetches whose desiredStart
   // values form an exact arithmetic sequence phaseAnchor,
   // phaseAnchor+chunkSize, ... - true for this class's own sequential
@@ -329,7 +311,7 @@ std::pair<bool, std::optional<size_t>> CDNDataStream::tryServeFromCache(
     // ever happens, start a fresh phase rather than risk mixing grids.
     phaseAnchor = desiredStart;
     chunkCache->reset();
-    return {false, std::nullopt};
+    return false;
   }
 
   // Computed once, regardless of which branch below ends up needing it -
@@ -341,13 +323,13 @@ std::pair<bool, std::optional<size_t>> CDNDataStream::tryServeFromCache(
     if (auto cached = chunkCache->tryGet(*idx)) {
       if (adoptCachedChunk(*cached, cachePlan)) {
         advancePrefetchWindow(*idx);
-        return {true, std::nullopt};
+        return true;
       }
     }
     // Size mismatch (shouldn't happen given PrefetchWorker's own check) -
     // fall through to a normal synchronous fetch instead of trusting a
     // possibly-corrupt cached buffer.
-    return {false, std::nullopt};
+    return false;
   }
 
   if (outcome == ChunkCache::ClaimOutcome::AlreadyFetching) {
@@ -368,7 +350,7 @@ std::pair<bool, std::optional<size_t>> CDNDataStream::tryServeFromCache(
                      .count(),
                  desiredStart);
         advancePrefetchWindow(*idx);
-        return {true, std::nullopt};
+        return true;
       }
     }
     BELL_LOG(debug, LOG_TAG,
@@ -377,32 +359,40 @@ std::pair<bool, std::optional<size_t>> CDNDataStream::tryServeFromCache(
              desiredStart, kInFlightWaitTimeoutMs.count());
     // Timed out, failed, or size mismatch - fall through to an
     // independent synchronous fetch, same as before this fix existed.
-    return {false, std::nullopt};
+    return false;
   }
 
   if (outcome == ChunkCache::ClaimOutcome::MustFetch) {
-    return {false, *idx};
+    // We own this claim now - fetchDecryptAndPublishChunk() always
+    // resolves it (publish on success, cancel on any failure, including
+    // an exception), so there's never anything left for this class to
+    // clean up either way.
+    auto fetchRes = fetchDecryptAndPublishChunk(rangeFetcher, *aesCipher,
+                                               *chunkCache, *cdnUrl, *idx,
+                                               cachePlan);
+    if (fetchRes && adoptCachedChunk(*fetchRes->data, cachePlan)) {
+      // Same bookkeeping requestRange()'s general path does on every one
+      // of its own fetches - this class otherwise only learns/reconfirms
+      // the wire total size from a header/tail probe (desiredLen !=
+      // chunkSize), and this call may be the very first fetch this
+      // stream ever makes (nothing prefetched yet at track start), so it
+      // has to do this itself rather than assume some earlier fetch
+      // already did.
+      originalTotalSizeRaw = fetchRes->totalWireSize;
+      tailRemainderBytes = originalTotalSizeRaw % 16;
+      totalSize = originalTotalSizeRaw - tailRemainderBytes;
+      advancePrefetchWindow(*idx);
+      return true;
+    }
+    // Fetch failed (already logged inside fetchDecryptAndPublishChunk())
+    // or somehow size-mismatched - fall through to requestRange()'s
+    // general path for one unclaimed retry, same as every other miss
+    // case above.
+    return false;
   }
 
   // WindowFull: proceed unclaimed, same as before this fix.
-  return {false, std::nullopt};
-}
-
-void CDNDataStream::publishAndAdvance(const RangeRequestPlan& plan,
-                                      size_t alignedOffsetInBuffer,
-                                      bool ownsClaimedSlot) {
-  auto idx = chunkIndexInPhase(plan.desiredStart);
-  if (!idx) {
-    return;
-  }
-  if (ownsClaimedSlot) {
-    chunkCache->publish(
-        *idx, std::vector<std::byte>(
-                 lastReadChunk.begin() + alignedOffsetInBuffer,
-                 lastReadChunk.begin() + alignedOffsetInBuffer +
-                     plan.requestSize));
-  }
-  advancePrefetchWindow(*idx);
+  return false;
 }
 
 bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
@@ -432,18 +422,8 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
   // have produced. Anything else (header probe, tail probe, the
   // undersized final chunk near EOF) skips this and falls straight to the
   // synchronous fetch below, exactly as before read-ahead existed.
-  ChunkClaimGuard claimGuard;
-  if (!tailRequest && desiredLen == chunkSize) {
-    auto [served, claimedIdx] = tryServeFromCache(desiredStart, desiredLen);
-    if (served) {
-      return {};
-    }
-    if (claimedIdx) {
-      // We now own this slot - claimGuard cancels it on any early return
-      // below; the success path further down publishes it.
-      claimGuard.cache = chunkCache.get();
-      claimGuard.idx = *claimedIdx;
-    }
+  if (!tailRequest && desiredLen == chunkSize && tryServeFromCache(desiredStart, desiredLen)) {
+    return {};
   }
 
   // If it's a tail request (size unknown possibly), request a padded aligned tail.
@@ -546,15 +526,17 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
     return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
 
-  // Successful synchronous fetch of a cacheable chunk - now that
-  // totalSize (and, if this was the very first one, phaseAnchor) are
-  // known, let the prefetch worker look further ahead from here, and
-  // publish what we fetched if we own the claim on it (the MustFetch case
-  // above) - lets PrefetchWorker (or a future caller) see it as ready
-  // instead of independently re-fetching what we just got ourselves.
+  // Successful synchronous fetch of a cacheable chunk that tryServeFromCache()
+  // couldn't resolve on its own (window full, an in-flight wait that timed
+  // out, or its own fetch attempt failing) - this fetch was never claimed
+  // (tryServeFromCache() already resolves the MustFetch case entirely on
+  // its own, claim included), so there's nothing new to publish here, just
+  // let the prefetch worker look further ahead from the now-confirmed
+  // position.
   if (!tailRequest && desiredLen == chunkSize) {
-    publishAndAdvance(plan, alignedOffsetInBuffer, claimGuard.idx.has_value());
-    claimGuard.disarmed = true;
+    if (auto idx = chunkIndexInPhase(plan.desiredStart)) {
+      advancePrefetchWindow(*idx);
+    }
   }
 
   return {};

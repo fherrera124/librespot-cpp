@@ -4,12 +4,12 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <utility>
 
 // Library includes
 #include "audio/AesCtrCipher.h"
 #include "audio/CDNRangeFetcher.h"
 #include "audio/ChunkCache.h"
+#include "audio/ChunkFetcher.h"
 #include "audio/PrefetchWorker.h"
 #include "audio/RangeAlignment.h"
 #include "bell/http/Client.h"
@@ -167,22 +167,16 @@ class CDNDataStream : public bell::io::DataStream {
   void advancePrefetchWindow(size_t chunkIndex);
 
   // Tries to serve a cacheable (non-tail, chunkSize-length) request out of
-  // chunkCache - the whole "phase"/claim/wait dance requestRange() used to
-  // inline directly. First: true if fully served (this object's read
-  // state is already updated - caller should return {} immediately).
-  // Second: set only when this call claimed ownership of fetching the
-  // chunk itself (a genuine miss) - the caller's subsequent synchronous
-  // fetch is then responsible for publishing (or, via ChunkClaimGuard,
-  // cancelling) that same index.
-  std::pair<bool, std::optional<size_t>> tryServeFromCache(
-      size_t desiredStart, size_t desiredLen);
-
-  // After a successful synchronous fetch of a cacheable chunk: publishes
-  // it into chunkCache if this object owns the claim on that slot
-  // (ownsClaimedSlot, from tryServeFromCache()'s second return value), and
-  // always asks PrefetchWorker to look further ahead from here.
-  void publishAndAdvance(const RangeRequestPlan& plan,
-                        size_t alignedOffsetInBuffer, bool ownsClaimedSlot);
+  // chunkCache - the whole "phase"/claim/wait/fetch dance requestRange()
+  // used to inline directly. Returns true if fully served (this object's
+  // read state is already updated, including telling PrefetchWorker to
+  // look further ahead - caller should return {} immediately). A false
+  // return never leaves a claim behind to clean up - a genuine miss
+  // (window full, an in-flight wait that timed out, or this call's own
+  // fetch attempt failing) always resolves its own claim, if any, before
+  // returning; the caller's fallback synchronous fetch runs unclaimed,
+  // exactly like the pre-read-ahead baseline.
+  bool tryServeFromCache(size_t desiredStart, size_t desiredLen);
 
   // Requests a new range of data from the server, filling the lastReadChunk buffer.
   // 'offset' is the logical user-visible offset (not necessarily 16-aligned).

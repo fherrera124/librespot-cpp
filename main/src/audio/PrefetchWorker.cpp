@@ -2,6 +2,7 @@
 
 #include <chrono>
 
+#include "audio/ChunkFetcher.h"
 #include "audio/RangeAlignment.h"
 #include "bell/Logger.h"
 #include "bell/http/Common.h"
@@ -75,61 +76,30 @@ void PrefetchWorker::taskLoop() {
 
     size_t desiredStart = session.phaseAnchor + idx * session.chunkSize;
     auto plan = planRange(desiredStart, session.chunkSize);
-    size_t rangeEnd = plan.requestStart + plan.requestSize - 1;
 
     // The last chunk of a track is usually shorter than a full chunkSize -
-    // fetching it would just come back short and get cancelled below
-    // anyway (see the short-response check further down). totalWireSize
-    // is already known by the time any prefetching starts (set from the
-    // very first fetch in CDNDataStream::open()), so this is knowable
-    // ahead of time - no point spending a network round-trip on a result
-    // we can already predict. The synchronous foreground path handles
-    // this exact boundary correctly on its own (read()'s own remaining-
-    // bytes clamp), so nothing is lost by skipping it here.
+    // fetching it would just come back short (see fetchDecryptAndPublish
+    // Chunk()'s own short-response handling). totalWireSize is already
+    // known by the time any prefetching starts (set from the very first
+    // fetch in CDNDataStream::open()), so this is knowable ahead of time -
+    // no point spending a network round-trip on a result we can already
+    // predict. The synchronous foreground path handles this exact
+    // boundary correctly on its own (read()'s own remaining-bytes clamp),
+    // so nothing is lost by skipping it here.
     if (plan.requestStart + plan.requestSize > session.totalWireSize) {
       BELL_LOG(debug, LOG_TAG,
                "Skipping prefetch of chunk {} (bytes={}-{}) - known to be "
                "the partial final chunk",
-               idx, plan.requestStart, rangeEnd);
+               idx, plan.requestStart, plan.requestStart + plan.requestSize - 1);
       session.chunkCache->cancel(idx);
       continue;
     }
 
-    auto startTime = std::chrono::steady_clock::now();
-    auto fetchRes = rangeFetcher.fetch(
-        *session.cdnUrl, fmt::format("bytes={}-{}", plan.requestStart, rangeEnd));
-    auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - startTime)
-                        .count();
-
-    if (!fetchRes) {
-      BELL_LOG(debug, LOG_TAG,
-               "Prefetch of chunk {} (bytes={}-{}) failed after {} ms: {}",
-               idx, plan.requestStart, rangeEnd, elapsedMs, fetchRes.error());
-      session.chunkCache->cancel(idx);
-      continue;
-    }
-    if (fetchRes->data.size() < plan.requestSize) {
-      BELL_LOG(debug, LOG_TAG,
-               "Prefetch of chunk {} (bytes={}-{}) got a short response "
-               "({} of {} bytes) after {} ms",
-               idx, plan.requestStart, rangeEnd, fetchRes->data.size(),
-               plan.requestSize, elapsedMs);
-      session.chunkCache->cancel(idx);
-      continue;
-    }
-    BELL_LOG(debug, LOG_TAG, "Prefetched chunk {} (bytes={}-{}) in {} ms", idx,
-             plan.requestStart, rangeEnd, elapsedMs);
-
-    auto decryptRes = session.aesCipher->decrypt(
-        fetchRes->data.data(), plan.requestSize, plan.requestStart);
-    if (!decryptRes) {
-      BELL_LOG(debug, LOG_TAG, "Prefetch decrypt failed for chunk {}: {}", idx,
-               decryptRes.error());
-      session.chunkCache->cancel(idx);
-      continue;
-    }
-
-    session.chunkCache->publish(idx, std::move(fetchRes->data));
+    // Any failure is already logged (with detail) and the claim already
+    // cancelled inside fetchDecryptAndPublishChunk() - nothing else to do
+    // here either way, prefetch is always best-effort.
+    (void)fetchDecryptAndPublishChunk(rangeFetcher, *session.aesCipher,
+                                      *session.chunkCache, *session.cdnUrl,
+                                      idx, plan);
   }
 }
