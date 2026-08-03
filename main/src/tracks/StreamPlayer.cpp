@@ -239,25 +239,24 @@ void StreamPlayer::maybeStartCurrentTrack() {
     return;
   }
 
-  announceState(/*isBuffering=*/false, generatePlaybackId());
+  announceState(/*isBuffering=*/false, generatePlaybackId(), /*positionMs=*/0);
 }
 
 void StreamPlayer::announceState(bool isBuffering,
-                                 std::optional<std::string> playbackId) {
+                                 std::optional<std::string> playbackId,
+                                 int64_t positionMs) {
   std::scoped_lock lock(playbackMutex);
 
   PlayerStateUpdate stateUpdate{
-      // Both of announceState()'s callers only fire once a track is
-      // known/loading (handleFileProvided's isBuffering=true announce,
-      // maybeStartCurrentTrack()'s isBuffering=false one) - see this
-      // method's own doc comment for why isPlaying stays true here.
+      // See this method's own doc comment for why isPlaying stays true
+      // here regardless of the local isPlaying member.
       .isPlaying = true,
       .isPaused = !isPlaying,
       .isBuffering = isBuffering,
       .timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
                        .count(),
-      .positionAsOfTimestamp = 0,
+      .positionAsOfTimestamp = positionMs,
       .playbackDurationMs = 0,
       .playbackId = playbackId,
   };

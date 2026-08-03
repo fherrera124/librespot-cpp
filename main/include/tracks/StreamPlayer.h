@@ -15,11 +15,8 @@
 
 namespace cspot {
 
-// Fires synchronously (not posted through EventLoop) whenever
-// announceState() has a new isPlaying/isPaused/isBuffering snapshot ready -
-// see announceState()'s own comment for why this must be a direct call
-// rather than a queued event. Defaults to a no-op the same way this
-// codebase's other injected callbacks do.
+// Called synchronously by announceState() - not posted through EventLoop.
+// Defaults to a no-op.
 using PlayerStateAnnounceCallback = std::function<void(const PlayerStateUpdate&)>;
 
 class StreamPlayer : public bell::Task {
@@ -48,25 +45,21 @@ class StreamPlayer : public bell::Task {
 
   std::recursive_mutex playbackMutex;
 
-  // What's playing (or about to). TrackQueueHandler is the sole authority
-  // on *which* track this is - StreamPlayer only gets told, via
-  // handleQueueUpdate(), never decides order itself.
+  // TrackQueueHandler is the sole authority on track order; StreamPlayer
+  // only receives it via handleQueueUpdate().
   std::optional<SpotifyId> currentTrackId;
   std::optional<ProvidedFile> currentFile;
 
   bool flushRequested = false;
   bool isPlaying = false;
 
-  // Set on a natural end-of-track (taskLoop()), consumed by the next
-  // flushRequested cycle to skip audioSink->flush() there - that audio is
-  // the track's own tail, not stale audio from an abandoned position like
-  // a real pause/seek/skip/prev (which don't set this).
+  // Set on natural end-of-track; skips the next flushRequested's
+  // audioSink->flush(), since that audio is the track's own tail, not
+  // stale audio from pause/seek/skip/prev.
   bool suppressNextSinkFlush = false;
 
-  // Set by handleSeekEvent() (EventLoop's dispatch thread), consumed by
-  // taskLoop() (this class's own thread) - see handleSeekEvent()'s comment
-  // for why the seek can't be applied directly from the thread that
-  // receives it.
+  // Set by handleSeekEvent() (EventLoop thread), applied by taskLoop()
+  // (this class's own thread) - see handleSeekEvent()'s comment.
   std::optional<int64_t> pendingSeekMs;
 
   std::unique_ptr<AudioDecoder> audioDecoder;
@@ -81,37 +74,32 @@ class StreamPlayer : public bell::Task {
   void handleFlushEvent();
   void handleSeekEvent(int64_t positionMs);
 
-  // Idempotent: opens the decoder for the current queue head once it's not
-  // already open and the file's ready - deliberately regardless of
-  // isPlaying (a paused transfer still needs to reach a real "ready"
-  // state, not stay stuck "buffering" forever - see the .cpp). Safe to
-  // call speculatively from handleFileProvided/handlePlayEvent/taskLoop:
-  // playbackMutex is recursive, so nested calls from a caller already
-  // holding it are fine.
+  // Idempotent: opens the decoder once the file's ready, regardless of
+  // isPlaying (a paused transfer still needs to leave "buffering" - see
+  // the .cpp). Safe to call speculatively; playbackMutex is recursive.
   void maybeStartCurrentTrack();
 
-  // Announces PlayerState.isPlaying/isPaused/isBuffering to the server via
-  // playerStateAnnounceCallback (see ConnectStateHandler::onPlayerStateUpdate,
-  // wired in directly by Session.cpp - not through EventLoop). Direct,
-  // synchronous callback, dispatched before this function returns.
+  // Announces PlayerState to the server via playerStateAnnounceCallback
+  // (ConnectStateHandler::onPlayerStateUpdate, wired by Session.cpp) - a
+  // direct synchronous call, not through EventLoop.
   //
-  // isPlaying=false claims no session is loaded at all - callers must only
-  // pass isBuffering=true (which implies isPlaying=false) once, for the
-  // very first track, not merely once a CDN url/decrypt key are resolved.
+  // isBuffering=true must only be passed once, for the very first track -
+  // it implies isPlaying=false, i.e. no session loaded at all.
   //
-  // isPlaying itself is derived as !isBuffering, NOT from this class's own
-  // isPlaying member (that member is the local decode gate, toggled by
-  // pause/resume). Reporting it directly as PlayerState.isPlaying would
-  // conflate "a session is loaded" with "audio is currently flowing",
-  // making a paused device read as having nothing loaded in the real app -
-  // isPaused is what reports the local decode gate instead.
+  // PlayerState.isPlaying is !isBuffering, not this class's isPlaying
+  // member (the local pause/resume gate) - reporting that directly would
+  // make a paused device look like nothing's loaded; isPaused reports the
+  // local gate instead.
   //
-  // playbackId: only meaningful (and only ever passed) on the isBuffering=
-  // false call - a fresh random id per track, never reused. nullopt on the
-  // earlier isBuffering=true announce, since it isn't known yet;
-  // ConnectStateHandler leaves the previous value untouched in that case
-  // rather than clearing it.
+  // playbackId: fresh per track, only passed on the isBuffering=false
+  // call. nullopt while buffering (not known yet); ConnectStateHandler
+  // leaves the previous value untouched then.
+  //
+  // positionMs: the caller's decision, not an assumption here - both
+  // current callers pass 0, since a track just starting genuinely has no
+  // position yet.
   void announceState(bool isBuffering,
-                     std::optional<std::string> playbackId = std::nullopt);
+                     std::optional<std::string> playbackId = std::nullopt,
+                     int64_t positionMs = 0);
 };
 }  // namespace cspot
