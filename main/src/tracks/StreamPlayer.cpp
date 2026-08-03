@@ -283,16 +283,18 @@ void StreamPlayer::taskLoop() {
       BELL_LOG(debug, LOG_TAG, "Flush requested, resetting state");
       flushRequested = false;
       audioDecoder->resetStream();
-      // Same reasoning as the pendingSeekMs block below - the sink can
-      // still be holding audio decoded from the track/position being
-      // abandoned.
-      audioSink->flush();
+      if (suppressNextSinkFlush) {
+        suppressNextSinkFlush = false;  // natural end - see its own comment
+      } else {
+        // Sink may still hold audio from the abandoned track/position
+        // (same reasoning as the seek flush below).
+        audioSink->flush();
+      }
     }
 
-    // Applied here, not in handleSeekEvent(), so that seekToMs() only ever
-    // runs on this task's own thread - the same one that calls
-    // processPacket() a few lines below, deliberately without holding
-    // playbackMutex. See handleSeekEvent()'s comment.
+    // Applied here (not in handleSeekEvent()) so seekToMs() only runs on
+    // this task's own thread, matching processPacket() below - see
+    // handleSeekEvent()'s comment.
     if (pendingSeekMs) {
       int64_t positionMs = *pendingSeekMs;
       pendingSeekMs.reset();
@@ -306,11 +308,8 @@ void StreamPlayer::taskLoop() {
           BELL_LOG(error, LOG_TAG, "Seek to {}ms failed: {}", positionMs,
                    res.error());
         } else {
-          // The decoder now reads from the new position, but whatever was
-          // decoded from the OLD position may still be queued in the sink
-          // (ring buffer, hardware DMA/FIFO) - without this, a seek plays
-          // a brief snippet of stale audio before the new position
-          // actually starts.
+          // Sink may still hold audio decoded from the old position -
+          // without this, a seek briefly plays stale audio first.
           audioSink->flush();
         }
       }
@@ -320,32 +319,26 @@ void StreamPlayer::taskLoop() {
   }
 
   if (isPlaying && audioDecoder->isOpen()) {
-    // Deliberately outside playbackMutex: this can block for an HTTP
-    // round-trip or on the I2S sink's ring buffer, and holding the lock
-    // here would stall handleFlushEvent/handleQueueUpdate/handlePlayEvent,
-    // which run on the EventLoop's own dispatch task, not this one.
+    // Outside playbackMutex: this can block on network/I2S, and holding
+    // the lock would stall handleFlushEvent/handleQueueUpdate/
+    // handlePlayEvent (EventLoop's own dispatch task).
     audioDecoder->processPacket();
 
     std::scoped_lock lock(playbackMutex);
     if (audioDecoder->isEOF()) {
       BELL_LOG(info, LOG_TAG, "Track ended");
       audioDecoder->resetStream();
-      // Also drop currentFile/currentTrackId here, not just the decoder:
-      // the next taskLoop() iteration's maybeStartCurrentTrack() (top of
-      // this function) runs before QUEUE_UPDATED can possibly arrive back
-      // from ConnectStateHandler's advanceToNextTrackLocked(), and without this
-      // it still sees isCurrentTrackReady()==true for the track that just
-      // ended - reopening it from scratch for ~1s before the real next
-      // track's QUEUE_UPDATE lands and flushes it back out again
-      // (reproduced on real hardware: a spurious re-open/immediate-flush
-      // of the just-finished track on every natural advance).
+      // Also drop currentFile/currentTrackId (not just the decoder):
+      // maybeStartCurrentTrack() runs again before QUEUE_UPDATED can
+      // arrive, and would otherwise see the just-ended track as still
+      // ready and reopen it for ~1s (reproduced on hardware: spurious
+      // re-open/flush on every natural advance).
       currentFile.reset();
       currentTrackId.reset();
-      // TrackQueueHandler (via ConnectStateHandler) is the sole authority
-      // on what's next, same as a remote skip_next - this just signals
-      // that we ran out of audio, and the resulting QUEUE_UPDATED is what
-      // actually advances playback (handleQueueUpdate() requests the new
-      // current track's file from scratch, no prefetch to promote).
+      suppressNextSinkFlush = true;  // see its own comment (StreamPlayer.h)
+      // TrackQueueHandler is the sole authority on what's next (same as
+      // skip_next) - this just signals we ran out of audio; the
+      // resulting QUEUE_UPDATED is what actually advances playback.
       eventLoop->post(EventLoop::EventType::TRACK_ENDED, std::monostate{});
     }
   } else {

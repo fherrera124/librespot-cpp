@@ -57,6 +57,12 @@ class StreamPlayer : public bell::Task {
   bool flushRequested = false;
   bool isPlaying = false;
 
+  // Set on a natural end-of-track (taskLoop()), consumed by the next
+  // flushRequested cycle to skip audioSink->flush() there - that audio is
+  // the track's own tail, not stale audio from an abandoned position like
+  // a real pause/seek/skip/prev (which don't set this).
+  bool suppressNextSinkFlush = false;
+
   // Set by handleSeekEvent() (EventLoop's dispatch thread), consumed by
   // taskLoop() (this class's own thread) - see handleSeekEvent()'s comment
   // for why the seek can't be applied directly from the thread that
