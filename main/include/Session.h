@@ -20,11 +20,14 @@ class Session {
  public:
   // audioSink/playbackNotificationCallback default to no-ops so host
   // targets that don't care about a given one don't need to pass anything.
+  // prefetchDepth: forwarded to createAudioDecoder() - see its own
+  // comment (AudioDecoder.h) for what it controls.
   Session(std::shared_ptr<AuthInfo> authInfo,
           std::shared_ptr<AudioSink> audioSink =
               std::make_shared<NullAudioSink>(),
           cspot::PlaybackNotificationCallback playbackNotificationCallback =
-              [](const PlaybackNotificationEvent&) {});
+              [](const PlaybackNotificationEvent&) {},
+          size_t prefetchDepth = 2);
 
   bell::Result<> start();
 

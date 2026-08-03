@@ -48,7 +48,7 @@ struct PlayerStateUpdate {
   // Display metadata for the outward TrackChanged notification - same
   // isBuffering=false-only timing as playbackId above (the real metadata
   // isn't resolved yet on the earlier announce).
-  std::optional<TrackMetadata> trackMetadata;
+  std::optional<TrackMetadata> trackMetadata = std::nullopt;
 };
 
 struct ProvidedFile {

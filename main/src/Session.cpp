@@ -17,7 +17,8 @@ using namespace cspot;
 cspot::Session::Session(
     std::shared_ptr<AuthInfo> authInfo,
     std::shared_ptr<AudioSink> audioSink,
-    cspot::PlaybackNotificationCallback playbackNotificationCallback)
+    cspot::PlaybackNotificationCallback playbackNotificationCallback,
+    size_t prefetchDepth)
     : authInfo(std::move(authInfo)) {
   // Prepare the session context
   eventLoop = std::make_shared<cspot::EventLoop>();
@@ -34,7 +35,7 @@ cspot::Session::Session(
       std::move(playbackNotificationCallback));
 
   auto fileProvider = createDefaultFileProvider(eventLoop, spClient, apClient);
-  auto audioDecoder = createAudioDecoder(audioSink);
+  auto audioDecoder = createAudioDecoder(audioSink, prefetchDepth);
   // Direct callback, not an EventLoop-posted event - see
   // ConnectStateHandler::onPlayerStateUpdate()'s own comment.
   streamPlayer = std::make_shared<StreamPlayer>(

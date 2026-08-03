@@ -199,11 +199,11 @@ NANOPB_STRUCT(cspot_proto::ContextPlayerOptions, ContextPlayerOptions_fields)
 namespace cspot_proto {
 struct ProvidedTrack {
   std::string uri;
-  std::string uid;
-  std::string provider;
+  std::string uid = "";
+  std::string provider = "";
 
-  std::optional<std::array<std::byte, 16>>
-      gid;  // Not part of protobuf, added for convenience
+  std::optional<std::array<std::byte, 16>> gid =
+      std::nullopt;  // Not part of protobuf, added for convenience
 
   static auto bindFields(ProvidedTrack* self, bool isDecode) {
     _ProvidedTrack rawProto = ProvidedTrack_init_zero;

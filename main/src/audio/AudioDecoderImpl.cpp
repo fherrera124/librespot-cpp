@@ -5,6 +5,8 @@
 #include <optional>
 
 #include "audio/CDNDataStream.h"
+#include "audio/PrefetchWorker.h"
+#include "audio/ReadAheadPolicy.h"
 #include "audio/SpotifySeekTable.h"
 #include "bell/Logger.h"
 #include "bell/audio/OggContainer.h"
@@ -26,16 +28,23 @@ const size_t kHeaderProbeSize = 256;
 
 class AudioDecoderImpl : public cspot::AudioDecoder {
  public:
-  explicit AudioDecoderImpl(std::shared_ptr<AudioSink> audioSink)
+  explicit AudioDecoderImpl(std::shared_ptr<AudioSink> audioSink,
+                            size_t prefetchDepth)
       : audioSink(std::move(audioSink)),
-        httpClient(std::make_shared<bell::HTTPClient>()) {}
+        httpClient(std::make_shared<bell::HTTPClient>()),
+        // One long-lived worker for this decoder's whole lifetime, reused
+        // across tracks - see PrefetchWorker's own header comment for why
+        // (mirrors AudioSinkI2S's own bell::Task, not spun up per track).
+        prefetchWorker(std::make_shared<PrefetchWorker>(
+            httpClient,
+            std::make_shared<FixedDepthReadAheadPolicy>(prefetchDepth))) {}
 
   bell::Result<> openStream(const std::string& cdnUrl,
                             const std::vector<std::byte>& decryptKey,
                             const SpotifyId&) override {
     resetStream();
 
-    auto stream = std::make_shared<CDNDataStream>(httpClient);
+    auto stream = std::make_shared<CDNDataStream>(httpClient, prefetchWorker);
     auto openRes = stream->open(cdnUrl, decryptKey);
     if (!openRes) {
       BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}",
@@ -191,6 +200,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
  private:
   std::shared_ptr<AudioSink> audioSink;
   std::shared_ptr<bell::HTTPClient> httpClient;
+  std::shared_ptr<PrefetchWorker> prefetchWorker;
   std::shared_ptr<bell::io::DataStream> dataStream;
   std::unique_ptr<bell::audio::OggContainer> container;
   std::unique_ptr<bell::TremorVorbisCodec> codec;
@@ -210,6 +220,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
 };
 
 std::unique_ptr<AudioDecoder> cspot::createAudioDecoder(
-    std::shared_ptr<AudioSink> audioSink) {
-  return std::make_unique<AudioDecoderImpl>(std::move(audioSink));
+    std::shared_ptr<AudioSink> audioSink, size_t prefetchDepth) {
+  return std::make_unique<AudioDecoderImpl>(std::move(audioSink),
+                                            prefetchDepth);
 }

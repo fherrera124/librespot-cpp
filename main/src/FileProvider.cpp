@@ -221,8 +221,7 @@ void DefaultFileProvider::taskLoop() {
     file->fileId = selectedAudioFile->fileId;
     file->trackMetadata = *metadataRes;
 
-    BELL_LOG(info, LOG_TAG, "Resolved CDN url for track {}: {}",
-             file->itemId.uri, file->cdnUrl);
+    BELL_LOG(info, LOG_TAG, "Resolved CDN url for track {}", file->itemId.uri);
 
     {
       std::scoped_lock lock(pendingAudioKeyFilesMutex);
@@ -271,8 +270,8 @@ void DefaultFileProvider::handleAudioKeyResponse(
 
     file.isError = false;  // success
 
-    BELL_LOG(info, LOG_TAG, "File ready for track {}: cdnUrl={}, keyLen={}",
-             file.itemId.uri, file.cdnUrl, file.decryptionKey.size());
+    BELL_LOG(info, LOG_TAG, "File ready for track {} (keyLen={})",
+             file.itemId.uri, file.decryptionKey.size());
 
     eventLoop->post(EventLoop::EventType::FILE_PROVIDED, file);
   } else {

@@ -1,23 +1,47 @@
 
 #include "audio/CDNDataStream.h"
 
+#include <algorithm>
 #include <chrono>
-#include <iostream>
 
 #include "bell/Logger.h"
-#include "bell/http/Client.h"
 #include "bell/http/Common.h"
 #include "bell/io/DataStream.h"
 
 using namespace cspot;
 
 namespace {
-size_t chunkSize = 32 * 1024L;  // 32KB chunks
+const size_t chunkSize = 32 * 1024L;  // 32KB chunks
 
-// Base IV for AES decryption, incremented per block
-const std::array<uint8_t, 16> aesIVBase = {
-    0x72, 0xe0, 0x67, 0xfb, 0xdd, 0xcb, 0xcf, 0x77,
-    0xeb, 0xe8, 0xbc, 0x64, 0x3f, 0x63, 0x0d, 0x93,
+// Small safety margin over whatever depth ReadAheadPolicy actually asks
+// for - claim()'s eviction means an undersized window would just degrade
+// to less effective prefetching, never a correctness issue, so this
+// doesn't need to track the runtime-configurable depth exactly.
+const size_t kChunkCacheCapacity = 4;
+
+// How long requestRange() waits for a chunk PrefetchWorker is already
+// fetching before giving up and doing its own independent fetch anyway.
+// Bounded well under AudioSinkI2S's ~1.5s PCM ring buffer cushion so that
+// even the worst case (wait times out, then a fresh fetch is still slow)
+// doesn't reliably blow through it - real CDN range fetches observed on
+// hardware run ~300ms typically, with occasional spikes past 3s.
+const std::chrono::milliseconds kInFlightWaitTimeoutMs{1000};
+
+// RAII: cancels a ChunkCache claim on any early return out of
+// requestRange() unless publish() (which disarms it) is reached first -
+// several failure exits below all need this, and repeating an explicit
+// cancel() at each one is exactly the kind of thing a future added
+// return would forget, permanently stranding a slot as "Fetching".
+struct ChunkClaimGuard {
+  ChunkCache* cache = nullptr;
+  std::optional<size_t> idx;
+  bool disarmed = false;
+
+  ~ChunkClaimGuard() {
+    if (idx && !disarmed) {
+      cache->cancel(*idx);
+    }
+  }
 };
 
 // Every Spotify CDN audio file (confirmed for plain OGG_VORBIS_160, not
@@ -27,33 +51,24 @@ const std::array<uint8_t, 16> aesIVBase = {
 // the real Ogg container begins - raw byte 0 of the HTTP response is NOT
 // byte 0 of the Ogg stream. Reproduced on real hardware: every attempt to
 // open a real track failed identically with "Not a Vorbis stream" - the
-// Ogg/AES layer below (requestRange/decryptData) stays entirely in RAW
+// Ogg/AES layer below (requestRange/AesCtrCipher) stays entirely in RAW
 // (wire) coordinates and is otherwise correct; this offset is applied
 // only at the public seek()/size()/position() boundary so OggContainer
 // and everything above it sees byte 0 as the real start of the Ogg data.
 const size_t kSpotifyHeaderSize = 167;
 }  // namespace
 
-CDNDataStream::CDNDataStream(std::shared_ptr<bell::HTTPClient> httpClient)
-    : httpClient(std::move(httpClient)) {
+CDNDataStream::CDNDataStream(std::shared_ptr<bell::HTTPClient> httpClient,
+                             std::shared_ptr<PrefetchWorker> prefetchWorker)
+    : rangeFetcher(std::move(httpClient)),
+      prefetchWorker(std::move(prefetchWorker)),
+      chunkCache(std::make_shared<ChunkCache>(kChunkCacheCapacity)) {}
 
-  // Initialize the AES context and IV
-  mbedtls_aes_init(&aesCtx);
-  mbedtls_mpi_init(&aesIV);
-}
-
-CDNDataStream::~CDNDataStream() {
-  activeResponse.reset();
-  // Free the AES context and IV
-  mbedtls_aes_free(&aesCtx);
-  mbedtls_mpi_free(&aesIV);
-}
+CDNDataStream::~CDNDataStream() = default;
 
 bell::Result<> CDNDataStream::open(const std::string& cdnUrl,
                                    const std::vector<std::byte>& decryptKey) {
-
-  // Store key (optional reuse)
-  this->decryptKey = decryptKey;
+  this->cdnUrl = std::make_shared<const std::string>(cdnUrl);
 
   // Reset sizes & state
   totalSize.reset();
@@ -63,30 +78,20 @@ bell::Result<> CDNDataStream::open(const std::string& cdnUrl,
   chunkStartPosition = 0;
   pendingDiscardBack = 0;
   currentPosition = 0;
-  ivPosition = 0;
-  activeResponse.reset();
+  resetPrefetchPhase();
 
-  // Re-init AES contexts (in case of reopen)
-  mbedtls_aes_free(&aesCtx);
-  mbedtls_aes_init(&aesCtx);
-  mbedtls_mpi_free(&aesIV);
-  mbedtls_mpi_init(&aesIV);
-
-  // Set the AES key for decryption
-  if (mbedtls_aes_setkey_enc(
-          &aesCtx, reinterpret_cast<const uint8_t*>(decryptKey.data()),
-          decryptKey.size() * 8) != 0) {
+  // Re-init (in case of reopen) - std::optional::emplace() destroys the
+  // previous AesCtrCipher (if any) before constructing the new one.
+  aesCipher.emplace(decryptKey);
+  if (!aesCipher->hasValidKey()) {
     BELL_LOG(error, LOG_TAG, "Failed to set AES key");
     return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
-
-  // Set the IV to the base value
-  int mbedtlsRes =
-      mbedtls_mpi_read_binary(&aesIV, aesIVBase.data(), aesIVBase.size());
-
-  if (mbedtlsRes != 0) {
-    BELL_LOG(error, LOG_TAG, "Failed to initialize AES IV, mbedtls error: {}",
-             mbedtlsRes);
+  // Separate instance for PrefetchWorker's own thread - never shared with
+  // the one above (see AesCtrCipher's header comment on why).
+  prefetchAesCipher = std::make_shared<AesCtrCipher>(decryptKey);
+  if (!prefetchAesCipher->hasValidKey()) {
+    BELL_LOG(error, LOG_TAG, "Failed to set AES key (prefetch cipher)");
     return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
 
@@ -94,15 +99,6 @@ bell::Result<> CDNDataStream::open(const std::string& cdnUrl,
   // Initialize reuse metadata
   bufferAlignedStart = bufferAlignedEnd = bufferVisibleStart =
       bufferVisibleEnd = 0;
-
-  auto req = bell::HTTPRequest::create(bell::http::Method::GET, cdnUrl);
-  if (!req) {
-    return tl::make_unexpected(req.error());
-  }
-
-  req->operationTimeoutMs = 3000;
-  req->headers = {};
-  this->httpRequest = *req;
 
   return {};
 }
@@ -138,7 +134,7 @@ bell::Result<> CDNDataStream::seek(size_t offset, SeekOrigin origin) {
   size_t targetPos = currentPosition;
   if (origin == SeekOrigin::Begin) {
     // 'offset' is a logical (header-excluded) position from the caller;
-    // requestRange()/decryptData() below operate purely in raw/wire
+    // requestRange()/AesCtrCipher below operate purely in raw/wire
     // coordinates, so translate here at the public boundary.
     targetPos = offset + kSpotifyHeaderSize;
   } else if (origin == SeekOrigin::Current) {
@@ -181,11 +177,13 @@ bell::Result<> CDNDataStream::seek(size_t offset, SeekOrigin origin) {
     }
   }
 
-  // Miss: need a new range; reset chunk state
+  // Miss: a new range is needed, possibly starting a new prefetch phase
+  // (see requestRange()'s comment) - reset chunk state.
   bytesInLastReadChunk = 0;
   chunkStartPosition = 0;
   pendingDiscardBack = 0;
   currentPosition = targetPos;
+  resetPrefetchPhase();
 
   return requestRange(currentPosition, chunkSize, SeekOrigin::Begin);
 }
@@ -244,7 +242,7 @@ bell::Result<size_t> CDNDataStream::read(std::byte* outputBuffer,
 
 bell::Result<std::vector<std::byte>> CDNDataStream::readRawHeaderBytes(
     size_t maxBytes) {
-  // requestRange()/decryptData() operate in raw/wire coordinates (see this
+  // requestRange()/AesCtrCipher operate in raw/wire coordinates (see this
   // class's own comment on kSpotifyHeaderSize) - offset 0 here is genuinely
   // wire byte 0, not the logical (header-excluded) byte 0 every other
   // caller of this class means.
@@ -262,25 +260,149 @@ bell::Result<std::vector<std::byte>> CDNDataStream::readRawHeaderBytes(
       lastReadChunk.begin() + chunkStartPosition + toCopy);
 }
 
-CDNDataStream::RangeRequestPlan CDNDataStream::planRange(size_t desiredStart,
-                                                         size_t desiredLength) {
-  RangeRequestPlan plan;
-  plan.desiredStart = desiredStart;
-  plan.desiredLength = desiredLength;
-
-  plan.requestStart = alignDown16(desiredStart);
-  plan.skipPrefix = desiredStart - plan.requestStart;
-
-  size_t totalVisible = plan.skipPrefix + desiredLength;
-  plan.requestSize = alignUp16(totalVisible);
-  plan.skipSuffix = plan.requestSize - totalVisible;
-
-  return plan;
+void CDNDataStream::resetPrefetchPhase() {
+  phaseAnchor.reset();
+  chunkCache->reset();
 }
 
-bool CDNDataStream::canReuse(size_t offset, size_t length) const {
-  return (bytesInLastReadChunk > 0) && (offset >= bufferVisibleStart) &&
-         (offset + length) <= bufferVisibleEnd;
+std::optional<size_t> CDNDataStream::chunkIndexInPhase(
+    size_t desiredStart) const {
+  if (!phaseAnchor || desiredStart < *phaseAnchor) {
+    return std::nullopt;
+  }
+  size_t delta = desiredStart - *phaseAnchor;
+  if (delta % chunkSize != 0) {
+    return std::nullopt;
+  }
+  return delta / chunkSize;
+}
+
+bool CDNDataStream::adoptCachedChunk(const std::vector<std::byte>& data,
+                                    const RangeRequestPlan& plan) {
+  if (data.size() != plan.requestSize) {
+    return false;
+  }
+
+  lastReadChunk = data;
+  chunkStartPosition = plan.skipPrefix;
+  bytesInLastReadChunk = plan.requestSize - plan.skipSuffix;
+  currentPosition = plan.desiredStart;
+  bufferAlignedStart = plan.requestStart;
+  bufferAlignedEnd = plan.requestStart + plan.requestSize;
+  bufferVisibleStart = plan.desiredStart;
+  bufferVisibleEnd = plan.desiredStart + plan.desiredLength;
+  return true;
+}
+
+void CDNDataStream::advancePrefetchWindow(size_t chunkIndex) {
+  chunkCache->advanceWindow(chunkIndex);
+  // .value() (not *phaseAnchor): every current call site only reaches
+  // here after chunkIndexInPhase() already confirmed phaseAnchor is set,
+  // but that guarantee lives outside this function - a future call site
+  // that skips it should get a loud, debuggable throw here instead of
+  // silently dereferencing an empty optional.
+  prefetchWorker->requestPrefetch(
+      PrefetchWorker::Session{chunkCache, cdnUrl, prefetchAesCipher,
+                              chunkSize, phaseAnchor.value(),
+                              originalTotalSizeRaw},
+      chunkIndex);
+}
+
+std::pair<bool, std::optional<size_t>> CDNDataStream::tryServeFromCache(
+    size_t desiredStart, size_t desiredLen) {
+  // A "phase" is a run of chunkSize-sized fetches whose desiredStart
+  // values form an exact arithmetic sequence phaseAnchor,
+  // phaseAnchor+chunkSize, ... - true for this class's own sequential
+  // access pattern (read() only asks for more once currentPosition
+  // reaches the end of what it has), and PrefetchWorker computes byte
+  // ranges for chunk n the same way via planRange(phaseAnchor +
+  // n*chunkSize, chunkSize), so a cache hit here is always byte-for-byte
+  // what a synchronous fetch would have produced.
+  if (!phaseAnchor) {
+    phaseAnchor = desiredStart;
+  }
+
+  auto idx = chunkIndexInPhase(desiredStart);
+  if (!idx) {
+    // desiredStart isn't reachable from phaseAnchor by whole chunkSize
+    // steps - not expected from this class's own call sites, but if it
+    // ever happens, start a fresh phase rather than risk mixing grids.
+    phaseAnchor = desiredStart;
+    chunkCache->reset();
+    return {false, std::nullopt};
+  }
+
+  // Computed once, regardless of which branch below ends up needing it -
+  // desiredStart/desiredLen don't change between them.
+  auto cachePlan = planRange(desiredStart, desiredLen);
+  auto outcome = chunkCache->claim(*idx);
+
+  if (outcome == ChunkCache::ClaimOutcome::AlreadyReady) {
+    if (auto cached = chunkCache->tryGet(*idx)) {
+      if (adoptCachedChunk(*cached, cachePlan)) {
+        advancePrefetchWindow(*idx);
+        return {true, std::nullopt};
+      }
+    }
+    // Size mismatch (shouldn't happen given PrefetchWorker's own check) -
+    // fall through to a normal synchronous fetch instead of trusting a
+    // possibly-corrupt cached buffer.
+    return {false, std::nullopt};
+  }
+
+  if (outcome == ChunkCache::ClaimOutcome::AlreadyFetching) {
+    // PrefetchWorker (or, rarely, a concurrent caller) is already fetching
+    // this exact chunk - wait for it instead of duplicating a CDN round-
+    // trip. Observed on real hardware: without this, requestRange() would
+    // routinely re-request a range the worker was already mid-fetch on,
+    // doubling network cost on a link where a single 32KB range can
+    // already take 1-3+ seconds.
+    auto waitStart = std::chrono::steady_clock::now();
+    if (auto data = chunkCache->waitFor(*idx, kInFlightWaitTimeoutMs)) {
+      if (adoptCachedChunk(*data, cachePlan)) {
+        BELL_LOG(debug, LOG_TAG,
+                 "Waited {} ms for in-flight prefetch of chunk at offset "
+                 "{} - avoided a duplicate fetch",
+                 std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - waitStart)
+                     .count(),
+                 desiredStart);
+        advancePrefetchWindow(*idx);
+        return {true, std::nullopt};
+      }
+    }
+    BELL_LOG(debug, LOG_TAG,
+             "In-flight prefetch of chunk at offset {} didn't finish "
+             "within {} ms - falling back to an independent fetch",
+             desiredStart, kInFlightWaitTimeoutMs.count());
+    // Timed out, failed, or size mismatch - fall through to an
+    // independent synchronous fetch, same as before this fix existed.
+    return {false, std::nullopt};
+  }
+
+  if (outcome == ChunkCache::ClaimOutcome::MustFetch) {
+    return {false, *idx};
+  }
+
+  // WindowFull: proceed unclaimed, same as before this fix.
+  return {false, std::nullopt};
+}
+
+void CDNDataStream::publishAndAdvance(const RangeRequestPlan& plan,
+                                      size_t alignedOffsetInBuffer,
+                                      bool ownsClaimedSlot) {
+  auto idx = chunkIndexInPhase(plan.desiredStart);
+  if (!idx) {
+    return;
+  }
+  if (ownsClaimedSlot) {
+    chunkCache->publish(
+        *idx, std::vector<std::byte>(
+                 lastReadChunk.begin() + alignedOffsetInBuffer,
+                 lastReadChunk.begin() + alignedOffsetInBuffer +
+                     plan.requestSize));
+  }
+  advancePrefetchWindow(*idx);
 }
 
 bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
@@ -303,85 +425,60 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
     desiredLen = std::min(desiredLen, *totalSize - desiredStart);
   }
 
+  // Fast path: this is exactly the "give me the next chunkSize-sized
+  // window" shape PrefetchWorker fills in ahead of the read cursor - see
+  // tryServeFromCache()'s own comment for what a "phase" is and why a
+  // cache hit here is always byte-for-byte what a synchronous fetch would
+  // have produced. Anything else (header probe, tail probe, the
+  // undersized final chunk near EOF) skips this and falls straight to the
+  // synchronous fetch below, exactly as before read-ahead existed.
+  ChunkClaimGuard claimGuard;
+  if (!tailRequest && desiredLen == chunkSize) {
+    auto [served, claimedIdx] = tryServeFromCache(desiredStart, desiredLen);
+    if (served) {
+      return {};
+    }
+    if (claimedIdx) {
+      // We now own this slot - claimGuard cancels it on any early return
+      // below; the success path further down publishes it.
+      claimGuard.cache = chunkCache.get();
+      claimGuard.idx = *claimedIdx;
+    }
+  }
+
   // If it's a tail request (size unknown possibly), request a padded aligned tail.
   RangeRequestPlan plan;
-  size_t provisionalAlignedTail = 0;
+  std::string rangeHeaderValue;
   if (tailRequest) {
     // Request enough bytes from end to cover alignment + desired length
-    provisionalAlignedTail =
+    size_t provisionalAlignedTail =
         alignUp16(length + 16);  // +16 ensures room for prefix alignment
-    httpRequest.headers["Range"] =
-        fmt::format("bytes=-{}", provisionalAlignedTail);
+    rangeHeaderValue = fmt::format("bytes=-{}", provisionalAlignedTail);
   } else {
     plan = planRange(desiredStart, desiredLen);
-    httpRequest.headers["Range"] =
-        fmt::format("bytes={}-{}", plan.requestStart,
-                    plan.requestStart + plan.requestSize - 1);
+    rangeHeaderValue = fmt::format("bytes={}-{}", plan.requestStart,
+                                   plan.requestStart + plan.requestSize - 1);
   }
-
-  // Reset old response
-  activeResponse.reset();
-  BELL_LOG(debug, LOG_TAG, "Requesting range: {}",
-           httpRequest.headers["Range"]);
 
   auto startTime = std::chrono::steady_clock::now();
-  auto response = httpClient->rawRequest(httpRequest);
-  if (!response) {
-    BELL_LOG(error, LOG_TAG, "HTTP request error: {}", response.error());
-    return tl::make_unexpected(response.error());
-  }
-  activeResponse = std::move(*response);
-
-  auto* stream = activeResponse->stream();
-  // Ensure buffer size
-  if (lastReadChunk.size() < *activeResponse->contentLength) {
-    lastReadChunk.resize(*activeResponse->contentLength);
-  }
-  stream->read(reinterpret_cast<char*>(lastReadChunk.data()),
-               *activeResponse->contentLength);
-
+  auto fetchRes = rangeFetcher.fetch(*cdnUrl, rangeHeaderValue);
   auto elapsed = std::chrono::steady_clock::now() - startTime;
   totalRequestTimeMs +=
       std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+
+  if (!fetchRes) {
+    BELL_LOG(error, LOG_TAG, "Fetch of {} failed: {}", rangeHeaderValue,
+             fetchRes.error());
+    return tl::make_unexpected(fetchRes.error());
+  }
   BELL_LOG(
-      debug, LOG_TAG, "Range request took {} ms, total time = {} ms",
+      debug, LOG_TAG, "Fetched {} in {} ms (total {} ms)", rangeHeaderValue,
       std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(),
       totalRequestTimeMs);
 
-  if (stream->fail() && !stream->eof()) {
-    return bell::make_unexpected_errc<>(std::errc::io_error);
-  }
-
-  if (!activeResponse->headers.contains("Content-Range")) {
-    return bell::make_unexpected_errc<>(std::errc::bad_message);
-  }
-
-  auto rangeHeader = activeResponse->headers.at("Content-Range");
-  // Expected format: bytes START-END/TOTAL
-  size_t spacePos = rangeHeader.find(' ');
-  size_t dashPos = rangeHeader.find('-');
-  size_t slashPos = rangeHeader.find('/');
-  size_t startVal = 0;
-  size_t totalRaw = 0;
-  try {
-    if (spacePos != std::string::npos && dashPos != std::string::npos &&
-        slashPos != std::string::npos) {
-      startVal = static_cast<size_t>(std::stoull(
-          rangeHeader.substr(spacePos + 1, dashPos - (spacePos + 1))));
-
-      totalRaw =
-          static_cast<size_t>(std::stoull(rangeHeader.substr(slashPos + 1)));
-    } else {
-      BELL_LOG(error, LOG_TAG, "Invalid Content-Range header: {}", rangeHeader);
-      return bell::make_unexpected_errc<>(std::errc::bad_message);
-    }
-  } catch (const std::exception& e) {
-    BELL_LOG(error, LOG_TAG, "Failed parsing Content-Range: {} ({})",
-             rangeHeader, e.what());
-    return bell::make_unexpected_errc<>(std::errc::bad_message);
-  }
-
-  bytesInLastReadChunk = static_cast<size_t>(stream->gcount());
+  size_t startVal = fetchRes->contentRangeStart;
+  size_t totalRaw = fetchRes->contentRangeTotal;
+  lastReadChunk = std::move(fetchRes->data);
 
   // Update total size info
   originalTotalSizeRaw = totalRaw;
@@ -389,6 +486,7 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
   size_t trimmed = originalTotalSizeRaw - tailRemainderBytes;
   totalSize = trimmed;
 
+  size_t alignedOffsetInBuffer;
   if (tailRequest) {
     // Determine desired logical start for this tail read
     size_t desiredTailStart = (trimmed > length) ? (trimmed - length) : 0;
@@ -400,57 +498,46 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
     // We requested 'bytes=-provisionalAlignedTail', actual startVal may be 0 or (totalRaw - provisionalAlignedTail)
     // Need to ensure we have enough prefix for alignment
     if (startVal > plan.requestStart) {
-      // Not enough prefix fetched; fall back to re-issuing with proper aligned explicit range
-      size_t newStart = plan.requestStart;
-      size_t newEnd = plan.requestStart + plan.requestSize - 1;
-      httpRequest.headers["Range"] =
-          fmt::format("bytes={}-{}", newStart, newEnd);
-      BELL_LOG(debug, LOG_TAG, "Re-issuing tail request for alignment: {}",
-               httpRequest.headers["Range"]);
+      // Not enough prefix fetched; re-issue with the now-known-correct
+      // explicit aligned range (requestRange's own non-tail branch builds
+      // the right Range header from plan.desiredStart/desiredLength).
       return requestRange(plan.desiredStart, plan.desiredLength,
                           bell::io::DataStream::SeekOrigin::Begin);
     }
 
-    // Decrypt only the aligned portion we will expose
-    size_t alignedOffsetInBuffer = plan.requestStart - startVal;
-    auto decryptRes = decryptData(lastReadChunk.data() + alignedOffsetInBuffer,
-                                  plan.requestSize, plan.requestStart);
-    if (!decryptRes) {
-      BELL_LOG(error, LOG_TAG, "Failed to decrypt data (tail): {}",
-               decryptRes.error());
-      return decryptRes;
-    }
-
-    chunkStartPosition = alignedOffsetInBuffer + plan.skipPrefix;
-    bytesInLastReadChunk =
-        alignedOffsetInBuffer + plan.requestSize - plan.skipSuffix;
-    currentPosition = plan.desiredStart;
-    // Update reuse metadata (tail request)
-    bufferAlignedStart = plan.requestStart;
-    bufferAlignedEnd = plan.requestStart + plan.requestSize;
-    bufferVisibleStart = plan.desiredStart;
-    bufferVisibleEnd = plan.desiredStart + plan.desiredLength;
+    alignedOffsetInBuffer = plan.requestStart - startVal;
   } else {
-    // Normal forward/aligned read
-    auto decryptRes =
-        decryptData(lastReadChunk.data() + (plan.requestStart - startVal),
-                    plan.requestSize, plan.requestStart);
-    if (!decryptRes) {
-      BELL_LOG(error, LOG_TAG, "Failed to decrypt data: {}",
-               decryptRes.error());
-      return decryptRes;
-    }
-
-    chunkStartPosition = (plan.requestStart - startVal) + plan.skipPrefix;
-    bytesInLastReadChunk =
-        (plan.requestStart - startVal) + plan.requestSize - plan.skipSuffix;
-    currentPosition = plan.desiredStart;
-    // Update reuse metadata (normal request)
-    bufferAlignedStart = plan.requestStart;
-    bufferAlignedEnd = plan.requestStart + plan.requestSize;
-    bufferVisibleStart = plan.desiredStart;
-    bufferVisibleEnd = plan.desiredStart + plan.desiredLength;
+    alignedOffsetInBuffer = plan.requestStart - startVal;
   }
+
+  // The server may have returned fewer bytes than the aligned range we
+  // asked for (short read/early EOF) - indexing past what actually came
+  // back would be an out-of-bounds access on lastReadChunk.
+  if (alignedOffsetInBuffer + plan.requestSize > lastReadChunk.size()) {
+    BELL_LOG(error, LOG_TAG,
+             "Short range response: got {} bytes, needed {} from offset {}",
+             lastReadChunk.size(), plan.requestSize, alignedOffsetInBuffer);
+    return bell::make_unexpected_errc<>(std::errc::io_error);
+  }
+
+  auto decryptRes =
+      aesCipher->decrypt(lastReadChunk.data() + alignedOffsetInBuffer,
+                         plan.requestSize, plan.requestStart);
+  if (!decryptRes) {
+    BELL_LOG(error, LOG_TAG, "Failed to decrypt data: {}",
+             decryptRes.error());
+    return decryptRes;
+  }
+
+  chunkStartPosition = alignedOffsetInBuffer + plan.skipPrefix;
+  bytesInLastReadChunk =
+      alignedOffsetInBuffer + plan.requestSize - plan.skipSuffix;
+  currentPosition = plan.desiredStart;
+  // Update reuse metadata
+  bufferAlignedStart = plan.requestStart;
+  bufferAlignedEnd = plan.requestStart + plan.requestSize;
+  bufferVisibleStart = plan.desiredStart;
+  bufferVisibleEnd = plan.desiredStart + plan.desiredLength;
 
   // Ensure indices are sane
   if (bytesInLastReadChunk < chunkStartPosition) {
@@ -459,70 +546,16 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
     return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
 
-  return {};
-}
-
-bell::Result<> CDNDataStream::decryptData(std::byte* data, size_t size,
-                                          size_t position) {
-  if (size == 0) {
-    return {};
+  // Successful synchronous fetch of a cacheable chunk - now that
+  // totalSize (and, if this was the very first one, phaseAnchor) are
+  // known, let the prefetch worker look further ahead from here, and
+  // publish what we fetched if we own the claim on it (the MustFetch case
+  // above) - lets PrefetchWorker (or a future caller) see it as ready
+  // instead of independently re-fetching what we just got ourselves.
+  if (!tailRequest && desiredLen == chunkSize) {
+    publishAndAdvance(plan, alignedOffsetInBuffer, claimGuard.idx.has_value());
+    claimGuard.disarmed = true;
   }
 
-  const size_t alignedStart = position & ~size_t(15);
-  size_t intraBlockOffset = position - alignedStart;
-  size_t remaining = size;
-  auto* buf = reinterpret_cast<uint8_t*>(data);
-
-  // Reset IV to base then advance by blockIndex
-  int res = mbedtls_mpi_read_binary(&aesIV, aesIVBase.data(), aesIVBase.size());
-  if (res != 0) {
-    BELL_LOG(error, LOG_TAG, "Failed to reset AES IV, mbedtls error: {}", res);
-    return bell::make_unexpected_errc(std::errc::bad_message);
-  }
-
-  size_t blockIndex = alignedStart / 16;
-  if (blockIndex > 0) {
-    res =
-        mbedtls_mpi_add_int(&aesIV, &aesIV, static_cast<long long>(blockIndex));
-    if (res != 0) {
-      BELL_LOG(error, LOG_TAG, "Failed to advance AES IV, mbedtls error: {}",
-               res);
-      return bell::make_unexpected_errc(std::errc::bad_message);
-    }
-  }
-
-  std::array<uint8_t, 16> counterBlock{};
-  res = mbedtls_mpi_write_binary(&aesIV, counterBlock.data(),
-                                 counterBlock.size());
-  if (res != 0) {
-    BELL_LOG(error, LOG_TAG, "Failed to export AES IV, mbedtls error: {}", res);
-    return bell::make_unexpected_errc(std::errc::bad_message);
-  }
-
-  while (remaining > 0) {
-    std::array<uint8_t, 16> keystream{};
-    if (mbedtls_aes_crypt_ecb(&aesCtx, MBEDTLS_AES_ENCRYPT, counterBlock.data(),
-                              keystream.data()) != 0) {
-      BELL_LOG(error, LOG_TAG, "Failed to generate CTR keystream block");
-      return bell::make_unexpected_errc(std::errc::bad_message);
-    }
-
-    size_t take = std::min<size_t>(16 - intraBlockOffset, remaining);
-    for (size_t i = 0; i < take; ++i) {
-      buf[i] = static_cast<uint8_t>(buf[i]) ^ keystream[intraBlockOffset + i];
-    }
-
-    buf += take;
-    remaining -= take;
-    intraBlockOffset = 0;  // only applies to first block
-
-    // Increment counter (big-endian)
-    for (int i = 15; i >= 0; --i) {
-      if (++counterBlock[i])
-        break;
-    }
-  }
-
-  ivPosition = static_cast<int32_t>(alignedStart);
   return {};
 }

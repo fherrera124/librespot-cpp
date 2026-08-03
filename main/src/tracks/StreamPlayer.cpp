@@ -167,8 +167,8 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
       !currentFile) {
     currentFile = providedFile;
 
-    BELL_LOG(info, LOG_TAG, "Track {} is ready to play from file {}",
-             providedFile.itemId.uri, providedFile.cdnUrl);
+    BELL_LOG(info, LOG_TAG, "Track {} is ready to play",
+             providedFile.itemId.uri);
 
     // Still buffering here - the decoder hasn't been opened yet, let alone
     // produced any real audio. See announceState()'s doc comment.
@@ -229,7 +229,7 @@ void StreamPlayer::maybeStartCurrentTrack() {
   // isPlaying=true first) - the real app read that as the device being
   // permanently stuck loading and greyed out its Play button.
   auto& file = *currentFile;
-  BELL_LOG(info, LOG_TAG, "Opening CDN stream for {}: {}", file.itemId.uri,
+  BELL_LOG(debug, LOG_TAG, "Opening CDN stream for {}: {}", file.itemId.uri,
            file.cdnUrl);
   auto res = audioDecoder->openStream(file.cdnUrl, file.decryptionKey,
                                       file.itemId);

@@ -31,6 +31,11 @@ class AudioDecoder {
   virtual bell::Result<> seekToMs(int64_t positionMs) = 0;
 };
 
+// prefetchDepth: how many chunkSize-sized chunks the background
+// PrefetchWorker tries to keep fetched ahead of the read cursor. 0
+// disables read-ahead entirely (every fetch stays fully synchronous, the
+// same as before read-ahead existed) - a real runtime value, not a build
+// flag, so it can be tuned/A-B'd without recompiling.
 std::unique_ptr<AudioDecoder> createAudioDecoder(
-    std::shared_ptr<AudioSink> audioSink);
+    std::shared_ptr<AudioSink> audioSink, size_t prefetchDepth = 2);
 }  // namespace cspot

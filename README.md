@@ -147,10 +147,6 @@ Navigate to `CSPOT Configuration`, you may configure device name, output device 
 
 ![idf-menuconfig](/targets/esp32/doc/img/idf-menuconfig-1.png)
 
-#### Status LED
-
-By default LED indication is disabled, but you can use either standard GPIO or addressable LED to indicate cspot current status. It will use different blinking patterns (and colors in case of addressable LEDs) to indicate Wifi connectivity and presense of connected Spotify client.
-
 #### Building and flashing
 
 Build and upload the firmware
@@ -181,7 +177,7 @@ After building the app, the only thing you need to do is to run it through CLI.
 $ ./cspotcli
 
 ```
-If you run it with no parameter, it will use ZeroConf to advertise itself. This means that until at least one **local** Spotify Connect application has discovered and connected it, it will not be registered to Spotify servers. As a consequence, Spotify's WebAPI will not be able to see it. If you want the player to be registered at start-up, you need to either use username/password all the time or at least once to create a credentials file and then re-use that file. Run it with -u/-p/-c once and then run it with -c only. See command's line help.
+If you run it with no parameter, it will use ZeroConf to advertise itself. This means that until at least one **local** Spotify Connect application has discovered and connected it, it will not be registered to Spotify servers. As a consequence, Spotify's WebAPI will not be able to see it. If you want the player to be registered at start-up, you need to at least once to create a credentials file and then re-use that file. Run it with -u/-p/-c once and then run it with -c only. See command's line help.
 
 Now open a real Spotify app and you should see a cspot device on your local network. Use it to play audio.
 
@@ -213,7 +209,7 @@ Additionaly the following audio sinks are implemented for the esp32 target:
 
 You can also easily add support for your own DAC of choice by implementing your own audio sink. Each new audio sink must implement the `void feedPCMFrames(std::vector<uint8_t> &data)` method which should accept stereo PCM audio data at 44100 Hz and 16 bits per sample. Please note that the sink should somehow buffer the data, because playing it back may result in choppy audio.
 
-An audio sink can optionally implement the `void volumeChanged(uint16_t volume)` method which is called everytime the user changes the volume (for example via Spotify Connect). If an audio sink implements it it should set `softwareVolumeControl` to `false` in its consructor to let cspot know to disable the software volume adjustment. Properly implementing external volume control (for example via dedicated hardware) will result in a better playback quality since all the dynamic range is used to encode the samples.
+An audio sink can optionally implement the `void volumeChanged(uint16_t volume)` method which is called everytime the user changes the volume (for example via Spotify Connect). If an audio sink implements it it should set `softwareVolumeControl` to `false` in its constructor to let cspot know to disable the software volume adjustment. Properly implementing external volume control (for example via dedicated hardware) will result in a better playback quality since all the dynamic range is used to encode the samples.
 
 The embedding program should also handle caching the authentication data, so that the user does not have to authenticate via the local network (Zeroconf) each time cspot is started. For reference on how to do it please refer to the `cspot-cli` target (It stores the data in `authBlob.json`). 
 
