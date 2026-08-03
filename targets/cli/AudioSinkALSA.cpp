@@ -2,7 +2,6 @@
 
 #include <vector>
 
-#include "audio/PCMGain.h"
 #include "bell/Logger.h"
 
 using namespace cspot;
@@ -17,7 +16,7 @@ constexpr size_t kRingBufferBytes = 256 * 1024;
 }  // namespace
 
 AudioSinkALSA::AudioSinkALSA()
-    : bell::Task("cli_alsa_sink", 0), ringBuffer(kRingBufferBytes) {
+    : bell::Task("cli_alsa_sink", 0), RingBufferedAudioSink(kRingBufferBytes) {
   int err = snd_pcm_open(&pcmHandle, kPcmDevice, SND_PCM_STREAM_PLAYBACK, 0);
   if (err < 0) {
     BELL_LOG(error, LOG_TAG, "Can't open \"{}\" PCM device: {}", kPcmDevice,
@@ -73,36 +72,6 @@ AudioSinkALSA::~AudioSinkALSA() {
     }
     snd_pcm_close(pcmHandle);
   }
-}
-
-void AudioSinkALSA::feedPCMFrames(const uint8_t* data, size_t bytes) {
-  const std::byte* src = reinterpret_cast<const std::byte*>(data);
-  float scale = volumeScale.load(std::memory_order_relaxed);
-
-  if (scale < 0.999f) {
-    int32_t fixedScale = gainToQ15(scale);
-    const int16_t* samples = reinterpret_cast<const int16_t*>(data);
-    size_t sampleCount = bytes / sizeof(int16_t);
-    gainScratch.resize(sampleCount);
-    for (size_t i = 0; i < sampleCount; i++) {
-      gainScratch[i] = applyQ15Gain(samples[i], fixedScale);
-    }
-    src = reinterpret_cast<const std::byte*>(gainScratch.data());
-  }
-
-  size_t written = 0;
-  while (written < bytes) {
-    written += ringBuffer.write(src + written, bytes - written);
-  }
-}
-
-void AudioSinkALSA::volumeChanged(uint16_t volume) {
-  volumeScale.store(volumeToGain(volume), std::memory_order_relaxed);
-}
-
-void AudioSinkALSA::flush() {
-  ringBuffer.clear();
-  flushRequested = true;
 }
 
 void AudioSinkALSA::taskLoop() {

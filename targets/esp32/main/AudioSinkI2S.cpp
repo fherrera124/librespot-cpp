@@ -1,8 +1,5 @@
 #include "AudioSinkI2S.h"
 
-#include <algorithm>
-
-#include "audio/PCMGain.h"
 #include "bell/Logger.h"
 #include "freertos/FreeRTOS.h"
 
@@ -17,8 +14,9 @@ constexpr size_t kRingBufferBytes = 256 * 1024;
 AudioSinkI2S::AudioSinkI2S(const Config& config)
     : bell::Task("i2s_feed", 4 * 1024, /*espPriority=*/10,
                 bell::TaskCore::CoreAny, /*espStackOnPsram=*/false),
-      config(config),
-      ringBuffer(kRingBufferBytes) {
+      RingBufferedAudioSink(kRingBufferBytes,
+                            /*downmixToMono=*/config.monoOutput),
+      config(config) {
   i2s_chan_config_t chanConfig =
       I2S_CHANNEL_DEFAULT_CONFIG(config.port, I2S_ROLE_MASTER);
   // 10 descriptors * 1000 frames stays under the DMA
@@ -54,48 +52,6 @@ AudioSinkI2S::AudioSinkI2S(const Config& config)
 
 AudioSinkI2S::~AudioSinkI2S() {
   stopTask();
-}
-
-void AudioSinkI2S::feedPCMFrames(const uint8_t* data, size_t bytes) {
-  const std::byte* src = reinterpret_cast<const std::byte*>(data);
-  float scale = volumeScale.load(std::memory_order_relaxed);
-  int32_t fixedScale = gainToQ15(scale);
-
-  if (config.monoOutput) {
-    const int16_t* samples = reinterpret_cast<const int16_t*>(data);
-    size_t frameCount = (bytes / sizeof(int16_t)) / 2;
-    downmixScratch.resize(frameCount);
-    for (size_t i = 0; i < frameCount; i++) {
-      int32_t mixed = (static_cast<int32_t>(samples[2 * i]) + samples[2 * i + 1]) >> 1;
-
-      downmixScratch[i] = applyQ15Gain(mixed, fixedScale);
-    }
-    src = reinterpret_cast<const std::byte*>(downmixScratch.data());
-    bytes = frameCount * sizeof(int16_t);
-  } else if (scale < 0.999f) {
-    const int16_t* samples = reinterpret_cast<const int16_t*>(data);
-    size_t sampleCount = bytes / sizeof(int16_t);
-    downmixScratch.resize(sampleCount);
-    for (size_t i = 0; i < sampleCount; i++) {
-      downmixScratch[i] = applyQ15Gain(samples[i], fixedScale);
-    }
-    src = reinterpret_cast<const std::byte*>(downmixScratch.data());
-    bytes = sampleCount * sizeof(int16_t);
-  }
-
-  size_t written = 0;
-  while (written < bytes) {
-    written += ringBuffer.write(src + written, bytes - written);
-  }
-}
-
-void AudioSinkI2S::volumeChanged(uint16_t volume) {
-  volumeScale.store(volumeToGain(volume), std::memory_order_relaxed);
-}
-
-void AudioSinkI2S::flush() {
-  ringBuffer.clear();
-  flushRequested = true;
 }
 
 void AudioSinkI2S::taskLoop() {

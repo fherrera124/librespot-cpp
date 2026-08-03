@@ -1,23 +1,18 @@
 #pragma once
 
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
-#include <vector>
-
-#include "AudioSink.h"
-#include "bell/io/CircularByteBuffer.h"
+#include "audio/RingBufferedAudioSink.h"
 #include "bell/utils/Task.h"
 #include "driver/i2s_std.h"
 
 namespace cspot {
 
-// ESP-IDF i2s_std sink. feedPCMFrames() writes PCM into a ring buffer;
-// a dedicated bell::Task drains it into the I2S peripheral, decoupling
-// AudioDecoderImpl's decode loop from I2S write timing. Input is fixed at
-// 44100Hz/2ch/16-bit; downmixed to mono in software when
-// Config::monoOutput is set.
-class AudioSinkI2S : public bell::Task, public AudioSink {
+// ESP-IDF i2s_std sink. Ring buffer/gain/volume/flush state comes from
+// RingBufferedAudioSink; this class owns the bell::Task that drains it
+// into the I2S peripheral, decoupling AudioDecoderImpl's decode loop from
+// I2S write timing. Input is fixed at 44100Hz/2ch/16-bit; downmixed to
+// mono in software when Config::monoOutput is set (see the base class'
+// downmixToMono).
+class AudioSinkI2S : public bell::Task, public RingBufferedAudioSink {
  public:
   struct Config {
     int port = I2S_NUM_0;
@@ -31,30 +26,11 @@ class AudioSinkI2S : public bell::Task, public AudioSink {
   explicit AudioSinkI2S(const Config& config);
   ~AudioSinkI2S() override;
 
-  // Blocks once the ring buffer is full - the deliberate backpressure
-  // that paces AudioDecoderImpl's decode loop against I2S consumption.
-  void feedPCMFrames(const uint8_t* data, size_t bytes) override;
-
-  // Called from whatever thread handles the SetVolumeCommand push -
-  // volumeScale is atomic since feedPCMFrames() (a different thread,
-  // AudioDecoderImpl's decode loop) reads it on every call.
-  void volumeChanged(uint16_t volume) override;
-
-  // Callable from any thread - only clears the ring buffer and raises
-  // flushRequested; the actual channel reset happens on taskLoop()'s own
-  // thread (only it may touch txChannel).
-  void flush() override;
-
  private:
   const char* LOG_TAG = "AudioSinkI2S";
 
   Config config;
   i2s_chan_handle_t txChannel = nullptr;
-  bell::io::CircularByteBuffer ringBuffer;
-  std::vector<int16_t> downmixScratch;
-  // Squared, not the raw 0..1 fraction - see volumeToGain()'s comment.
-  std::atomic<float> volumeScale{1.0f};
-  std::atomic<bool> flushRequested{false};
 
   void taskLoop() override;
 };
