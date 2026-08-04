@@ -59,7 +59,7 @@ void ConnectReceiver::run() {
     }
     haveCredentialsToTry = false;
 
-    BELL_LOG(info, LOG_TAG,
+    BELL_LOG(info, LOG_TAG, "{}",
              session ? "Rebuilding session after a fresh pairing"
                      : "Starting session");
     if (session) {

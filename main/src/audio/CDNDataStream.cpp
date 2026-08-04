@@ -7,6 +7,7 @@
 #include "bell/Logger.h"
 #include "bell/http/Common.h"
 #include "bell/io/DataStream.h"
+#include "nonstd/expected.hpp"
 
 using namespace cspot;
 
@@ -221,7 +222,7 @@ bell::Result<std::vector<std::byte>> CDNDataStream::readRawHeaderBytes(
   // byte 0 every other caller of this class means (see kSpotifyHeaderSize).
   auto res = requestRange(0, maxBytes, SeekOrigin::Begin);
   if (!res) {
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   size_t available = (bytesInLastReadChunk > chunkStartPosition)
@@ -430,7 +431,7 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
   if (!fetchRes) {
     BELL_LOG(error, LOG_TAG, "Fetch of {} failed: {}", rangeHeaderValue,
              fetchRes.error());
-    return tl::make_unexpected(fetchRes.error());
+    return nonstd::make_unexpected(fetchRes.error());
   }
   BELL_LOG(
       debug, LOG_TAG, "Fetched {} in {} ms (total {} ms)", rangeHeaderValue,

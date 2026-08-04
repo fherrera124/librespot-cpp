@@ -2,6 +2,7 @@
 
 #include "bell/Logger.h"
 #include "bell/http/Common.h"
+#include "nonstd/expected.hpp"
 
 using namespace cspot;
 
@@ -42,7 +43,7 @@ bell::Result<ChunkFetchResult> cspot::fetchDecryptAndPublishChunk(
              "Fetch of chunk {} (bytes={}-{}) failed after {} ms: {}",
              chunkIndex, plan.requestStart, rangeEnd, elapsed.count(),
              fetchRes.error());
-    return tl::make_unexpected(fetchRes.error());
+    return nonstd::make_unexpected(fetchRes.error());
   }
   if (fetchRes->data.size() < plan.requestSize) {
     BELL_LOG(debug, LOG_TAG,
@@ -58,7 +59,7 @@ bell::Result<ChunkFetchResult> cspot::fetchDecryptAndPublishChunk(
   if (!decryptRes) {
     BELL_LOG(debug, LOG_TAG, "Decrypt failed for chunk {}: {}", chunkIndex,
              decryptRes.error());
-    return tl::make_unexpected(decryptRes.error());
+    return nonstd::make_unexpected(decryptRes.error());
   }
 
   BELL_LOG(debug, LOG_TAG,

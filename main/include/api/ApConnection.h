@@ -68,6 +68,8 @@ class ApConnection {
   std::shared_ptr<cspot::AuthInfo> authInfo;
   std::shared_ptr<bell::net::TCPSocket> apSock;
   std::shared_ptr<bell::SocketPollListener> socketPoll;
+  bell::SocketPollListener::Registration readableReg_;
+  bell::SocketPollListener::Registration writeableReg_;
 
   // unique_ptr, not a plain member: DH wraps mbedtls_mpi structs freed in
   // its destructor with no user-defined move/copy, so regenerating it on

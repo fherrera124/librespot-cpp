@@ -63,6 +63,8 @@ class DealerClient {
 
   std::shared_ptr<bell::TLSSocket> socket;
   std::shared_ptr<bell::SocketPollListener> socketPoll;
+  bell::SocketPollListener::Registration readableReg_;
+  bell::SocketPollListener::Registration writeableReg_;
 
   // steady_clock, not system_clock: the AP Ping packet handler
   // (ApClient.cpp) calls settimeofday() to sync the system clock, which

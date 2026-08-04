@@ -2,6 +2,7 @@
 
 #include "bell/Logger.h"
 #include "bell/http/Common.h"
+#include "nonstd/expected.hpp"
 
 using namespace cspot;
 
@@ -12,7 +13,7 @@ bell::Result<RangeFetchResult> CDNRangeFetcher::fetch(
     const std::string& cdnUrl, const std::string& rangeHeaderValue) {
   auto req = bell::HTTPRequest::create(bell::http::Method::GET, cdnUrl);
   if (!req) {
-    return tl::make_unexpected(req.error());
+    return nonstd::make_unexpected(req.error());
   }
   req->operationTimeoutMs = 3000;
   req->headers["Range"] = rangeHeaderValue;
@@ -26,7 +27,7 @@ bell::Result<RangeFetchResult> CDNRangeFetcher::fetch(
     // No log here either, same reasoning as above - callers already log
     // the failure with the range and their own context (chunk index,
     // elapsed time) once fetch() returns the propagated error.
-    return tl::make_unexpected(response.error());
+    return nonstd::make_unexpected(response.error());
   }
 
   auto* stream = response->stream();

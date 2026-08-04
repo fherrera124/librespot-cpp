@@ -5,7 +5,7 @@
 #include "events/EventLoop.h"
 #include "proto/ConnectPb.h"
 #include "proto/SpotifyId.h"
-#include "tl/expected.hpp"
+#include "nonstd/expected.hpp"
 #include "tracks/ContextPageParser.h"
 
 using namespace cspot;
@@ -185,7 +185,7 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Could not resolve context root, uri={}, err={}",
                contextUri, res.error());
-      return tl::make_unexpected(res.error());
+      return nonstd::make_unexpected(res.error());
     }
 
     if (targetTrackIndex && !contextIndex) {
@@ -239,7 +239,7 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Could not resolve context page, uri={}, err={}",
                *page.url, res.error());
-      return tl::make_unexpected(res.error());
+      return nonstd::make_unexpected(res.error());
     }
 
     if (targetTrackIndex && !contextIndex) {
@@ -345,7 +345,7 @@ bell::Result<> DefaultTrackQueueHandler::ensureEnoughTracks() {
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Could not resolve context page, uri={}, err={}",
                *contextPages[nextPageIndex].url, res.error());
-      return tl::make_unexpected(res.error());
+      return nonstd::make_unexpected(res.error());
     }
     nextTracksCount += contextPages[nextPageIndex].trackGids.size();
     nextPageIndex++;
@@ -360,7 +360,7 @@ bell::Result<> DefaultTrackQueueHandler::fetchRootPage(
   pageParser.reset();
   auto res = spClient->contextResolve(rootContextUri);
   if (!res) {
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   auto feedRes = feedResponseToParser(*res);
@@ -406,7 +406,7 @@ bell::Result<> DefaultTrackQueueHandler::fetchContextPage(
 
   auto res = spClient->rawRequest(pageUrl);
   if (!res) {
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   return feedResponseToParser(*res);
@@ -464,7 +464,7 @@ bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
                "body[0..{}]={}",
                response.statusCode, *response.contentLength, diagBody.size(),
                diagBody);
-      return tl::make_unexpected(res.error());
+      return nonstd::make_unexpected(res.error());
     }
   }
 

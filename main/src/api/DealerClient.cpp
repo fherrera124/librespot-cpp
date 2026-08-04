@@ -6,7 +6,7 @@
 #include "bell/Result.h"
 #include "bell/net/SocketPollListener.h"
 #include "events/EventLoop.h"
-#include "tl/expected.hpp"
+#include "nonstd/expected.hpp"
 
 using namespace cspot;
 
@@ -82,7 +82,7 @@ bell::Result<> DealerClient::connect(
   if (!connectRes) {
     BELL_LOG(error, LOG_TAG, "Dealer connect error: {}", connectRes.error());
     state_ = State::Failed;
-    return tl::make_unexpected(connectRes.error());
+    return nonstd::make_unexpected(connectRes.error());
   }
 
   // Mark transport as secure
@@ -94,7 +94,7 @@ bell::Result<> DealerClient::connect(
   wsClient.clear_access_channels(websocketpp::log::alevel::all);
 
   // Register readable listener
-  socketPoll->registerSocket(
+  readableReg_ = socketPoll->watch(
       socket, bell::PollEvent::Readable, [this](auto& sock) {
         if (wsConnection) {
           auto res = sock.read(inputBuffer.data(), inputBuffer.size());
@@ -130,9 +130,9 @@ bell::Result<> DealerClient::connect(
       });
 
   // Register writeable / connected listener
-  socketPoll->registerSocket(
+  writeableReg_ = socketPoll->watch(
       socket, bell::PollEvent::Writeable,
-      [this, connectionUrl, socketPoll](auto& /*sock*/) {
+      [this, connectionUrl](auto& /*sock*/) {
         if (!wsConnection) {
           websocketpp::lib::error_code ec;
           wsConnection = wsClient.get_connection("wss://" + connectionUrl, ec);
@@ -152,8 +152,11 @@ bell::Result<> DealerClient::connect(
           }
         }
 
-        // We are connected, unregister the writeable event
-        socketPoll->unregisterSocket(socket, bell::PollEvent::Writeable);
+        // We are connected, unregister the writeable event. Safe to reset
+        // our own Registration from within its own callback: poll() copies
+        // the callback out before invoking it, so this doesn't touch
+        // anything poll() is still iterating over.
+        writeableReg_.reset();
       });
 
   return {};
@@ -197,8 +200,11 @@ void DealerClient::handleDisconnect() {
   // A dead socket also stays "readable" forever (reading it just keeps
   // failing), so without unregistering, the poller would re-invoke the
   // read callback as fast as it can - a real hardware hang reproduced as a
-  // task watchdog reset (the hot loop starves the idle task).
-  socketPoll->unregisterSocket(socket, bell::PollEvent::All);
+  // task watchdog reset (the hot loop starves the idle task). Resetting an
+  // already-dropped Registration (eg. writeableReg_ after a normal
+  // connect) is a safe no-op.
+  readableReg_.reset();
+  writeableReg_.reset();
 }
 
 std::error_code DealerClient::wsWriteHandler(websocketpp::connection_hdl hdl,
@@ -272,7 +278,7 @@ bell::Result<> DealerClient::replyToRequest(bool success,
 
   if (err) {
     BELL_LOG(error, LOG_TAG, "Error sending response: {}", err.message());
-    return tl::make_unexpected(err);
+    return nonstd::make_unexpected(err);
   }
 
   return {};

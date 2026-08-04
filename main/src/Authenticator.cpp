@@ -22,7 +22,7 @@
 #include "bell/Result.h"
 #include "bell/net/URIParser.h"
 #include "proto/AuthenticationPb.h"
-#include "tl/expected.hpp"
+#include "nonstd/expected.hpp"
 
 using namespace cspot;
 
@@ -95,20 +95,20 @@ Authenticator::authenticateZeroconfQuery(
   auto blobRes = base64Decode(queryParams.at("blob"));
   if (!blobRes) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode blob");
-    return tl::make_unexpected(blobRes.error());
+    return nonstd::make_unexpected(blobRes.error());
   }
 
   auto clientKeyRes = base64Decode(queryParams.at("clientKey"));
   if (!clientKeyRes) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode client key");
-    return tl::make_unexpected(clientKeyRes.error());
+    return nonstd::make_unexpected(clientKeyRes.error());
   }
 
   std::string username = queryParams.at("userName");
   auto encryptedAuthBlobRes = decodeZeroconfBlob(*blobRes, *clientKeyRes);
   if (!encryptedAuthBlobRes) {
     BELL_LOG(error, LOG_TAG, "Failed to decode zeroconf blob");
-    return tl::make_unexpected(encryptedAuthBlobRes.error());
+    return nonstd::make_unexpected(encryptedAuthBlobRes.error());
   }
 
   // Decode the auth blob
@@ -247,7 +247,7 @@ Authenticator::decodeEncryptedAuthBlob(
                        encryptedAuthBlob.size()));
   if (!decodeRes) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode auth blob");
-    return tl::make_unexpected(decodeRes.error());
+    return nonstd::make_unexpected(decodeRes.error());
   }
   std::vector<std::byte> base64DecodedAuthData = std::move(*decodeRes);
 

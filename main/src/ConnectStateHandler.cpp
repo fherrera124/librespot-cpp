@@ -19,7 +19,7 @@
 #include "pb.h"
 #include "proto/SpotifyId.h"
 #include "tao/json/to_string.hpp"
-#include "tl/expected.hpp"
+#include "nonstd/expected.hpp"
 #include "tracks/TrackQueueHandler.h"
 
 using namespace cspot;
@@ -468,7 +468,7 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
   auto decodedData = base64Decode(payloadDataStr);
   if (!decodedData) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode cluster update");
-    return tl::make_unexpected(decodedData.error());
+    return nonstd::make_unexpected(decodedData.error());
   }
   cspot_proto::ClusterUpdate clusterUpdate;
 
@@ -529,7 +529,7 @@ bell::Result<> ConnectStateHandler::handleSetVolume(
   auto decodedData = base64Decode(payloadDataStr);
   if (!decodedData) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode set volume command");
-    return tl::make_unexpected(decodedData.error());
+    return nonstd::make_unexpected(decodedData.error());
   }
   cspot_proto::SetVolumeCommand setVolumeCommand;
 
@@ -564,7 +564,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   auto decodedDataRes = base64Decode(payloadDataStr);
   if (!decodedDataRes) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode transfer state");
-    return tl::make_unexpected(decodedDataRes.error());
+    return nonstd::make_unexpected(decodedDataRes.error());
   }
   auto& decodedData = *decodedDataRes;
   cspot_proto::TransferState transferState;
@@ -684,7 +684,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
         transferState.current_session.currentUid);
     if (!loadRes) {
       BELL_LOG(error, LOG_TAG, "Failed to load context: {}", loadRes.error());
-      return tl::make_unexpected(loadRes.error());
+      return nonstd::make_unexpected(loadRes.error());
     }
 
     trackQueueHandler->setQueue(transferState.queue.tracks);
@@ -807,7 +807,7 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   auto loadRes = trackQueueHandler->loadContext(*contextUri, skipToUri,
                                                 skipToUid, skipToTrackIndex);
   if (!loadRes) {
-    return tl::make_unexpected(loadRes.error());
+    return nonstd::make_unexpected(loadRes.error());
   }
 
   trackQueueHandler->updateTrackWindows();
@@ -913,7 +913,7 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(bool forceNext) {
     auto res = trackQueueHandler->skipToNextTrack();
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Failed to skip next track");
-      return tl::make_unexpected(res.error());
+      return nonstd::make_unexpected(res.error());
     }
     // Running off the end of the context always wraps the cursor to its
     // start - only treat that as a real next track when repeat-context

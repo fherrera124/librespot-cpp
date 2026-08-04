@@ -15,6 +15,7 @@
 #include "bell/audio/TremorVorbisCodec.h"
 #include "bell/http/Client.h"
 #include "bell/utils/Utils.h"
+#include "nonstd/expected.hpp"
 
 using namespace cspot;
 
@@ -79,7 +80,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
     if (!openRes) {
       BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}",
                openRes.error());
-      return tl::make_unexpected(openRes.error());
+      return nonstd::make_unexpected(openRes.error());
     }
 
     // Best-effort: a missing/unparseable seek table just means seekToMs()
@@ -99,7 +100,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
       BELL_LOG(error, LOG_TAG, "Failed to open Ogg container: {}",
                containerRes.error());
       resetStream();
-      return tl::make_unexpected(containerRes.error());
+      return nonstd::make_unexpected(containerRes.error());
     }
 
     codec = std::make_unique<bell::TremorVorbisCodec>();
@@ -115,14 +116,14 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
         BELL_LOG(error, LOG_TAG, "Failed to read Vorbis header packet {}: {}",
                  i, packetRes.error());
         resetStream();
-        return tl::make_unexpected(packetRes.error());
+        return nonstd::make_unexpected(packetRes.error());
       }
       auto headerRes = codec->setupDecodeFromHeaders(packetRes->data);
       if (!headerRes) {
         BELL_LOG(error, LOG_TAG, "Failed to parse Vorbis header packet {}: {}",
                  i, headerRes.error());
         resetStream();
-        return tl::make_unexpected(headerRes.error());
+        return nonstd::make_unexpected(headerRes.error());
       }
     }
 
@@ -217,7 +218,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
     if (!seekRes) {
       BELL_LOG(error, LOG_TAG, "Failed to seek to {}ms: {}", positionMs,
                seekRes.error());
-      return tl::make_unexpected(seekRes.error());
+      return nonstd::make_unexpected(seekRes.error());
     }
 
     // A seek can land before EOF even if we'd already hit it (or clear a

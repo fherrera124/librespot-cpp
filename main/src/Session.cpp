@@ -10,6 +10,7 @@
 #include "bell/Logger.h"
 #include "connect.pb.h"
 #include "events/EventLoop.h"
+#include "nonstd/expected.hpp"
 #include "Utils.h"
 
 using namespace cspot;
@@ -167,14 +168,14 @@ bell::Result<> cspot::Session::connectDealer() {
   if (!dealerAddressRes) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve dealer address: {}",
              dealerAddressRes.error());
-    return tl::make_unexpected(dealerAddressRes.error());
+    return nonstd::make_unexpected(dealerAddressRes.error());
   }
 
   auto accessKeyRes = credentialsResolver->getAccessKey();
   if (!accessKeyRes) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve access key: {}",
              accessKeyRes.error());
-    return tl::make_unexpected(accessKeyRes.error());
+    return nonstd::make_unexpected(accessKeyRes.error());
   }
 
   auto dealerConnectRes =
@@ -194,7 +195,7 @@ bell::Result<> cspot::Session::connectAp() {
   if (!apAddressRes) {
     BELL_LOG(error, LOG_TAG, "Failed to resolve ap address: {}",
              apAddressRes.error());
-    return tl::make_unexpected(apAddressRes.error());
+    return nonstd::make_unexpected(apAddressRes.error());
   }
 
   auto res = apClient->connectAndAuthenticate(*apAddressRes, socketPoll);
@@ -264,7 +265,7 @@ void cspot::Session::runPoller(std::atomic<bool>& restartRequested) {
       return;
     }
 
-    socketPoll->poll(1000);
+    socketPoll->poll(std::chrono::milliseconds(1000));
     dealerClient->doHousekeeping();
     apClient->doHousekeeping();
 

@@ -9,6 +9,7 @@
 #include "bell/http/Client.h"
 #include "bell/utils/Utils.h"
 #include "tao/json.hpp"
+#include "nonstd/expected.hpp"
 
 #include "api/CredentialsResolver.h"
 #include "proto/ExtendedMetadataPb.h"
@@ -129,7 +130,7 @@ bell::Result<> DefaultSpClient::putConnectStateRaw(
   if (!httpResponse) {
     BELL_LOG(error, LOG_TAG, "Error while sending request: {}",
              httpResponse.error());
-    return tl::make_unexpected(httpResponse.error());
+    return nonstd::make_unexpected(httpResponse.error());
   }
 
   // Drain the response body (on success, the full updated cluster state -
@@ -142,7 +143,7 @@ bell::Result<> DefaultSpClient::putConnectStateRaw(
   if (!bodyRes) {
     BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",
              bodyRes.error());
-    return tl::make_unexpected(bodyRes.error());
+    return nonstd::make_unexpected(bodyRes.error());
   }
 
   if (httpResponse->statusCode != 200) {
@@ -190,7 +191,7 @@ bell::Result<> DefaultSpClient::putInactive(const std::string& deviceId,
   if (!httpResponse) {
     BELL_LOG(error, LOG_TAG, "Error while sending inactive request: {}",
              httpResponse.error());
-    return tl::make_unexpected(httpResponse.error());
+    return nonstd::make_unexpected(httpResponse.error());
   }
 
   // Drain unconditionally, before checking status - same pooled-connection
@@ -200,7 +201,7 @@ bell::Result<> DefaultSpClient::putInactive(const std::string& deviceId,
   if (!bodyRes) {
     BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",
              bodyRes.error());
-    return tl::make_unexpected(bodyRes.error());
+    return nonstd::make_unexpected(bodyRes.error());
   }
 
   if (httpResponse->statusCode != 204) {
@@ -216,21 +217,21 @@ bell::Result<> DefaultSpClient::updateCredentials() {
   auto spClientAddressRes = credentialsResolver->getApAddress(
       CredentialsResolver::AddressType::SpClient);
   if (!spClientAddressRes) {
-    return tl::make_unexpected(spClientAddressRes.error());
+    return nonstd::make_unexpected(spClientAddressRes.error());
   }
 
   spClientAddress = *spClientAddressRes;
 
   auto accessTokenRes = credentialsResolver->getAccessKey();
   if (!accessTokenRes) {
-    return tl::make_unexpected(accessTokenRes.error());
+    return nonstd::make_unexpected(accessTokenRes.error());
   }
 
   accessToken = *accessTokenRes;
 
   auto clientTokenRes = credentialsResolver->getClientToken();
   if (!clientTokenRes) {
-    return tl::make_unexpected(clientTokenRes.error());
+    return nonstd::make_unexpected(clientTokenRes.error());
   }
 
   clientToken = *clientTokenRes;
@@ -248,7 +249,7 @@ bell::Result<bell::HTTPResponse> DefaultSpClient::contextAutoplayResolve(
   auto credentialsRes = updateCredentials();
   if (!credentialsRes) {
     // Could not fetch credentials
-    return tl::make_unexpected(credentialsRes.error());
+    return nonstd::make_unexpected(credentialsRes.error());
   }
 
   std::vector<std::byte> encodedBytes{};
@@ -274,7 +275,7 @@ bell::Result<bell::HTTPResponse> DefaultSpClient::rawRequest(
   auto credentialsRes = updateCredentials();
   if (!credentialsRes) {
     // Could not fetch credentials
-    return tl::make_unexpected(credentialsRes.error());
+    return nonstd::make_unexpected(credentialsRes.error());
   }
   return httpClient->get(
       fmt::format("https://{}/{}", spClientAddress, requestUri),
@@ -288,7 +289,7 @@ bell::Result<std::vector<std::byte>> DefaultSpClient::extendedMetadataRaw(
     const std::string& entityUri, ExtensionKind kind) {
   auto credentialsRes = updateCredentials();
   if (!credentialsRes) {
-    return tl::make_unexpected(credentialsRes.error());
+    return nonstd::make_unexpected(credentialsRes.error());
   }
 
   cspot_proto::EntityRequest entityRequest;
@@ -316,7 +317,7 @@ bell::Result<std::vector<std::byte>> DefaultSpClient::extendedMetadataRaw(
       tcb::span(requestBytes.data(), requestBytes.size()));
 
   if (!response) {
-    return tl::make_unexpected(response.error());
+    return nonstd::make_unexpected(response.error());
   }
 
   // Drain unconditionally, before checking status - a pooled connection is
@@ -383,7 +384,7 @@ bell::Result<cspot_proto::Track> DefaultSpClient::trackMetadata(
 
   auto rawBytes = extendedMetadataRaw(trackId.uri, ExtensionKind_TRACK_V4);
   if (!rawBytes) {
-    return tl::make_unexpected(rawBytes.error());
+    return nonstd::make_unexpected(rawBytes.error());
   }
 
   cspot_proto::Track trackProto;
@@ -406,7 +407,7 @@ bell::Result<std::vector<cspot_proto::AudioFile>>
 DefaultSpClient::resolveAudioFiles(const std::string& entityUri) {
   auto rawBytes = extendedMetadataRaw(entityUri, ExtensionKind_AUDIO_FILES);
   if (!rawBytes) {
-    return tl::make_unexpected(rawBytes.error());
+    return nonstd::make_unexpected(rawBytes.error());
   }
 
   cspot_proto::AudioFilesExtensionResponse audioFilesResponse;
@@ -440,7 +441,7 @@ bell::Result<cspot_proto::Episode> DefaultSpClient::episodeMetadata(
 
   auto credentialsRes = updateCredentials();
   if (!credentialsRes) {
-    return tl::make_unexpected(credentialsRes.error());
+    return nonstd::make_unexpected(credentialsRes.error());
   }
 
   auto response = httpClient->get(
@@ -452,7 +453,7 @@ bell::Result<cspot_proto::Episode> DefaultSpClient::episodeMetadata(
       });
 
   if (!response) {
-    return tl::make_unexpected(response.error());
+    return nonstd::make_unexpected(response.error());
   }
 
   // Drain unconditionally, before checking status - same pooled-connection
@@ -488,7 +489,7 @@ bell::Result<std::string> DefaultSpClient::resolveStorageInteractive(
   auto credentialsRes = updateCredentials();
   if (!credentialsRes) {
     // Could not fetch credentials
-    return tl::make_unexpected(credentialsRes.error());
+    return nonstd::make_unexpected(credentialsRes.error());
   }
 
   std::stringstream ss;
@@ -519,14 +520,14 @@ bell::Result<std::string> DefaultSpClient::resolveStorageInteractive(
   if (!response) {
     BELL_LOG(error, LOG_TAG, "Error while sending request: {}",
              response.error());
-    return tl::make_unexpected(response.error());
+    return nonstd::make_unexpected(response.error());
   }
 
   auto textRes = response->text();
   if (!textRes) {
     BELL_LOG(error, LOG_TAG, "Error while reading response body: {}",
              textRes.error());
-    return tl::make_unexpected(textRes.error());
+    return nonstd::make_unexpected(textRes.error());
   }
   auto responseBody = *textRes;
 

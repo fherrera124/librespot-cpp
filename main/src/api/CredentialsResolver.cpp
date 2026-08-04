@@ -7,6 +7,7 @@
 #include <tao/json/contrib/traits.hpp>
 #include "bell/Logger.h"
 #include "bell/http/Client.h"
+#include "nonstd/expected.hpp"
 
 // Protobufs
 #include "bell/Result.h"
@@ -69,7 +70,7 @@ class DefaultCredentialsResolver : public CredentialsResolver {
     if (now > addressesExpiresAt) {
       auto res = fetchApAdresses();
       if (!res) {
-        return tl::make_unexpected(res.error());
+        return nonstd::make_unexpected(res.error());
       }
 
       // Copy returned addresses
@@ -106,7 +107,7 @@ class DefaultCredentialsResolver : public CredentialsResolver {
     if (now > clientTokenExpiresAt) {
       auto res = fetchClientToken();
       if (!res) {
-        return tl::make_unexpected(res.error());
+        return nonstd::make_unexpected(res.error());
       }
 
       clientToken = res->first;
@@ -124,7 +125,7 @@ class DefaultCredentialsResolver : public CredentialsResolver {
     if (now > accessKeyExpiresAt) {
       auto res = fetchAccessKey();
       if (!res) {
-        return tl::make_unexpected(res.error());
+        return nonstd::make_unexpected(res.error());
       }
 
       accessKey = res->first;
@@ -161,7 +162,7 @@ class DefaultCredentialsResolver : public CredentialsResolver {
     // Fetch new addresses
     auto response = httpClient->get(apResolveUrl);
     if (!response) {
-      return tl::make_unexpected(response.error());
+      return nonstd::make_unexpected(response.error());
     }
 
     if (response->statusCode == 200) {
@@ -200,7 +201,7 @@ class DefaultCredentialsResolver : public CredentialsResolver {
                          encodedBuffer);
 
     if (!clientTokenResponse) {
-      return tl::make_unexpected(clientTokenResponse.error());
+      return nonstd::make_unexpected(clientTokenResponse.error());
     }
 
     if (clientTokenResponse->statusCode == 200 &&
@@ -241,7 +242,7 @@ class DefaultCredentialsResolver : public CredentialsResolver {
     auto tokenRes = getClientToken();
 
     if (!tokenRes) {
-      return tl::make_unexpected(tokenRes.error());
+      return nonstd::make_unexpected(tokenRes.error());
     }
 
     // Prepare a protobuf login request
@@ -270,7 +271,7 @@ class DefaultCredentialsResolver : public CredentialsResolver {
                           {"Client-Token", *tokenRes}},
                          encodedBuffer);
     if (!httpLoginResponse) {
-      return tl::make_unexpected(httpLoginResponse.error());
+      return nonstd::make_unexpected(httpLoginResponse.error());
     }
 
     if (httpLoginResponse->statusCode == 200) {

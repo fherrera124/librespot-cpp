@@ -9,7 +9,7 @@
 #include "bell/utils/DigestCrypto.h"
 #include "bell/utils/Utils.h"
 #include "mbedtls/md.h"
-#include "tl/expected.hpp"
+#include "nonstd/expected.hpp"
 
 using namespace cspot;
 
@@ -58,16 +58,16 @@ bell::Result<> ApConnection::connect(
     BELL_LOG(error, LOG_TAG, "Could not connect to AP at {}: {}", apAddress,
              res.error());
     state = State::ERROR;
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   // Register readable listener
-  socketPoll->registerSocket(apSock, bell::PollEvent::Readable,
-                             [this](auto& /*sock*/) { this->handleRead(); });
+  readableReg_ = socketPoll->watch(apSock, bell::PollEvent::Readable,
+                                   [this](auto& /*sock*/) { this->handleRead(); });
 
   // Register writeable / connected listener
-  socketPoll->registerSocket(
-      apSock, bell::PollEvent::Writeable, [socketPoll, this](auto& /*sock*/) {
+  writeableReg_ = socketPoll->watch(
+      apSock, bell::PollEvent::Writeable, [this](auto& /*sock*/) {
         // SO_ERROR is get-and-clear (socket(7)): reading it resets the
         // pending error to 0 as a side effect. Calling lastError() twice
         // here (once for the check, once for the log) meant the second
@@ -94,8 +94,10 @@ bell::Result<> ApConnection::connect(
           state = State::SENT_HELLO;
         }
 
-        // We are connected, unregister the writeable event
-        socketPoll->unregisterSocket(apSock, bell::PollEvent::Writeable);
+        // We are connected, unregister the writeable event. Safe to reset
+        // our own Registration from within its own callback: poll() copies
+        // the callback out before invoking it.
+        writeableReg_.reset();
       });
 
   return {};
@@ -169,9 +171,10 @@ void ApConnection::handleRead() {
 
 void ApConnection::disconnect() {
   state = State::ERROR;
-  if (socketPoll && apSock) {
-    socketPoll->unregisterSocket(apSock, bell::PollEvent::All);
-  }
+  // Safe no-op if either was already dropped (eg. writeableReg_ after a
+  // normal connect).
+  readableReg_.reset();
+  writeableReg_.reset();
   if (apSock) {
     apSock->close();
   }
@@ -218,7 +221,7 @@ bell::Result<> ApConnection::sendClientHelloPacket() {
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Could not send ClientHello packet, {} len {}",
              res.error(), encodedHelloPacket.size());
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   return {};
@@ -292,7 +295,7 @@ bell::Result<> ApConnection::solveHelloChallenge(
       sendPlainPacket(accumulatedExchangeBuffer.data(),
                       accumulatedExchangeBuffer.size(), std::nullopt);
   if (!sendRes) {
-    return tl::make_unexpected(sendRes.error());
+    return nonstd::make_unexpected(sendRes.error());
   }
 
   // At this point, the handshake is complete, and the connection is no longer plaintext
@@ -320,7 +323,7 @@ bell::Result<> ApConnection::sendPlainPacket(const std::byte* data, size_t len,
     auto res = apSock->write(reinterpret_cast<const std::byte*>(&prefix),
                              sizeof(uint16_t));
     if (!res) {
-      return tl::make_unexpected(res.error());
+      return nonstd::make_unexpected(res.error());
     }
 
     if (state != State::CONNECTED_SHANNON) {
@@ -333,7 +336,7 @@ bell::Result<> ApConnection::sendPlainPacket(const std::byte* data, size_t len,
   auto res = apSock->write(reinterpret_cast<const std::byte*>(&packetSize),
                            sizeof(packetSize));
   if (!res) {
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   if (state != State::CONNECTED_SHANNON) {
@@ -346,7 +349,7 @@ bell::Result<> ApConnection::sendPlainPacket(const std::byte* data, size_t len,
   // Send the packet data
   res = apSock->write(data, len);
   if (!res) {
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   if (state != State::CONNECTED_SHANNON) {
@@ -404,7 +407,7 @@ bell::Result<size_t> ApConnection::receivePlainPacket() {
                        sizeof(packetSize));
 
   if (!res) {
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   if (state != State::CONNECTED_SHANNON) {
@@ -426,7 +429,7 @@ bell::Result<size_t> ApConnection::receivePlainPacket() {
 
   res = readExact(connectionBuffer.data(), packetSize);
   if (!res) {
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   if (state != State::CONNECTED_SHANNON) {
@@ -456,7 +459,7 @@ bell::Result<> ApConnection::readExact(std::byte* buf, size_t len) {
         bell::utils::sleepMs(1);
         continue;
       }
-      return tl::make_unexpected(res.error());
+      return nonstd::make_unexpected(res.error());
     }
 
     if (*res == 0) {
@@ -523,7 +526,7 @@ bell::Result<> ApConnection::sendPacket(uint8_t cmd,
   // Send the packet
   auto res = apSock->write(connectionBuffer.data(), totalSize);
   if (!res) {
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   return {};
@@ -539,7 +542,7 @@ bell::Result<std::byte*> ApConnection::receivePacket(uint8_t& cmd,
   // Receive 3 bytes, cmd + size
   auto res = readExact(connectionBuffer.data(), 3);
   if (!res) {
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   recvCipher.decrypt(connectionBuffer.data(), 3);
@@ -557,7 +560,7 @@ bell::Result<std::byte*> ApConnection::receivePacket(uint8_t& cmd,
 
   res = readExact(connectionBuffer.data(), packetSize + shannonMacSize);
   if (!res) {
-    return tl::make_unexpected(res.error());
+    return nonstd::make_unexpected(res.error());
   }
 
   // Decrypt the packet
