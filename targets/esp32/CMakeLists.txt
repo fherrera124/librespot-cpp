@@ -6,12 +6,14 @@ cmake_minimum_required(VERSION 3.5)
 # see https://github.com/platformio/platform-espressif32/issues/341
 list(APPEND EXTRA_COMPONENT_DIRS $ENV{IDF_PATH}/examples/common_components/protocol_examples_common)
 
-# Neither AAC nor Opus nor MQTT are referenced anywhere in cspot's own
-# main/ (Session/api/tracks) - confirmed via grep. fdk-aac (9.6MB source)
-# and opus (5MB source) are real flash budget, not worth carrying for
-# ESP32 unused.
+# Neither AAC nor Opus nor HQLC nor MQTT are referenced anywhere in
+# cspot's own main/ (Session/api/tracks) - confirmed via grep. fdk-aac
+# (9.6MB source) and opus (5MB source) are real flash budget, not worth
+# carrying for ESP32 unused. HQLC off also skips miniz (bell only pulls
+# it in for HQLC - see bell's ExternalDependencies.cmake).
 set(BELL_CODEC_AAC OFF CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
 set(BELL_CODEC_OPUS OFF CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
+set(BELL_CODEC_HQLC OFF CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
 set(BELL_DISABLE_MQTT ON CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
 
 # sdkconfig.defaults.local (gitignored, not tracked) carries this machine's
