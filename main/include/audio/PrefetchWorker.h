@@ -73,6 +73,7 @@ class PrefetchWorker : public bell::Task {
 
  protected:
   void taskLoop() override;
+  void wakeTask() override;
 
  private:
   const char* LOG_TAG = "PrefetchWorker";
@@ -84,11 +85,8 @@ class PrefetchWorker : public bell::Task {
   std::condition_variable cv_;
   std::optional<Session> pendingSession;
   size_t pendingChunkIndex = 0;
-  // Set (and cv_ notified) by the destructor before stopTask() - needed
-  // because stopTask() flips bell::Task's own taskRunning flag without
-  // waking any wait this class blocks on, which would otherwise hang the
-  // destructor forever whenever taskLoop() is parked with nothing to
-  // prefetch (see this file's own .cpp for the full reasoning).
+  // Set (and cv_ notified) from wakeTask(), which stopTask() calls only
+  // after taskRunning is already false - see wakeTask()'s own comment.
   bool shuttingDown = false;
 };
 

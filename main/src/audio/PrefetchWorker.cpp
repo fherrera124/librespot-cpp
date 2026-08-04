@@ -27,16 +27,20 @@ PrefetchWorker::PrefetchWorker(std::shared_ptr<bell::HTTPClient> httpClient,
 }
 
 PrefetchWorker::~PrefetchWorker() {
-  // stopTask() flips taskRunning but has no way to wake cv_.wait() below -
-  // do that ourselves first, or a taskLoop() parked with nothing to
-  // prefetch would block this destructor forever. See the header's own
-  // comment on shuttingDown.
+  stopTask();
+}
+
+// Called by stopTask() only after it has already set taskRunning = false -
+// relies on that ordering so a woken taskLoop() always observes
+// taskRunning == false on its very next check of runTask()'s loop
+// condition, even though its own cv_.wait() predicate is already
+// satisfied by shuttingDown and so never truly blocks again.
+void PrefetchWorker::wakeTask() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     shuttingDown = true;
   }
   cv_.notify_all();
-  stopTask();
 }
 
 void PrefetchWorker::requestPrefetch(Session session, size_t currentChunkIndex) {
