@@ -34,14 +34,15 @@ namespace cspot {
  * chunkCache - see requestRange()'s own comment on "phase" for how chunk
  * indices are derived from byte offsets without needing a second,
  * independent alignment scheme. A miss (cold start, or a seek that lands
- * outside the current window) always falls back to the exact same
- * synchronous fetch this class already did before read-ahead existed -
- * this class is never worse than that baseline, only sometimes faster.
+ * outside the current window) always falls back to a plain synchronous
+ * fetch - this class is never worse than that baseline, only sometimes
+ * faster.
  */
 class CDNDataStream : public bell::io::DataStream {
  public:
   CDNDataStream(std::shared_ptr<bell::HTTPClient> httpClient,
-               std::shared_ptr<PrefetchWorker> prefetchWorker);
+               std::shared_ptr<PrefetchWorker> prefetchWorker,
+               size_t chunkSize);
 
   // Already non-copyable implicitly (aesCipher is std::optional<AesCtrCipher>,
   // and AesCtrCipher itself deletes its copy ops) - declared explicitly so
@@ -105,6 +106,11 @@ class CDNDataStream : public bell::io::DataStream {
   // requestRange()'s comment for what a phase is. Fresh per open()/reset.
   std::shared_ptr<ChunkCache> chunkCache;
 
+  // Size of a "normal" (non-tail) fetch, in bytes - set once at
+  // construction (forwarded from Session/AudioDecoder), never changes for
+  // this stream's lifetime.
+  const size_t chunkSize;
+
   // The desiredStart (logical) that anchors chunk index 0 of the current
   // phase - unset until the first cacheable (chunkSize-sized, non-tail)
   // fetch of this phase happens. A phase ends (and this resets) whenever
@@ -167,15 +173,13 @@ class CDNDataStream : public bell::io::DataStream {
   void advancePrefetchWindow(size_t chunkIndex);
 
   // Tries to serve a cacheable (non-tail, chunkSize-length) request out of
-  // chunkCache - the whole "phase"/claim/wait/fetch dance requestRange()
-  // used to inline directly. Returns true if fully served (this object's
-  // read state is already updated, including telling PrefetchWorker to
-  // look further ahead - caller should return {} immediately). A false
-  // return never leaves a claim behind to clean up - a genuine miss
-  // (window full, an in-flight wait that timed out, or this call's own
-  // fetch attempt failing) always resolves its own claim, if any, before
-  // returning; the caller's fallback synchronous fetch runs unclaimed,
-  // exactly like the pre-read-ahead baseline.
+  // chunkCache - the "phase"/claim/wait/fetch logic. Returns true if fully
+  // served (read state already updated, including telling PrefetchWorker
+  // to look further ahead - caller should return {} immediately). A false
+  // return never leaves a claim behind: a genuine miss (window full, an
+  // in-flight wait that timed out, or this call's own fetch attempt
+  // failing) always resolves its own claim first; the caller's fallback
+  // synchronous fetch then runs unclaimed.
   bool tryServeFromCache(size_t desiredStart, size_t desiredLen);
 
   // Requests a new range of data from the server, filling the lastReadChunk buffer.

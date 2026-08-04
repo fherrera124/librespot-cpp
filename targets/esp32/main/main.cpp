@@ -54,7 +54,15 @@ class CSpotTask : public bell::Task {
     };
     auto audioSink = std::make_shared<cspot::AudioSinkI2S>(sinkConfig);
 
-    cspot::ConnectReceiver(authInfo, sessionFilePath, audioSink).run();
+    cspot::AudioConfig audioConfig{
+        .qualityPreference = {AudioFormat_OGG_VORBIS_160,
+                              AudioFormat_OGG_VORBIS_96},
+    };
+
+    cspot::ConnectReceiver(
+        authInfo, sessionFilePath,
+        {.audioSink = audioSink, .audioConfig = audioConfig})
+        .run();
   }
 };
 

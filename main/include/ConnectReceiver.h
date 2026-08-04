@@ -11,19 +11,26 @@
 
 namespace cspot {
 
+// Optional ConnectReceiver inputs that vary by target/build. Namespace-scope,
+// not nested in ConnectReceiver, for the same reason as AudioConfig (see
+// Session.h): a nested struct's default member initializers can't build a
+// default *argument* value for the enclosing class's own constructor.
+struct ConnectReceiverConfig {
+  std::shared_ptr<AudioSink> audioSink = std::make_shared<NullAudioSink>();
+  cspot::PlaybackNotificationCallback playbackNotificationCallback =
+      [](const PlaybackNotificationEvent&) {};
+  AudioConfig audioConfig = AudioConfig();
+};
+
 // Runs the full Spotify Connect receiver lifecycle: loads any persisted
 // session, pairs via ZeroconfServer when needed, and builds/rebuilds a
-// Session for each pairing. Shared by every target - the only per-target
-// inputs are audioSink and where to persist the session file.
+// Session for each pairing. Shared by every target - the per-target inputs
+// are sessionFilePath and config.
 class ConnectReceiver {
  public:
   ConnectReceiver(std::shared_ptr<AuthInfo> authInfo,
                   std::string sessionFilePath,
-                  std::shared_ptr<AudioSink> audioSink =
-                      std::make_shared<NullAudioSink>(),
-                  cspot::PlaybackNotificationCallback
-                      playbackNotificationCallback =
-                          [](const PlaybackNotificationEvent&) {});
+                  ConnectReceiverConfig config = ConnectReceiverConfig());
 
   // Blocks forever running the pairing/session lifecycle - callers may
   // invoke it from any thread/task context.
@@ -44,8 +51,7 @@ class ConnectReceiver {
  private:
   std::shared_ptr<AuthInfo> authInfo;
   SessionStore sessionStore;
-  std::shared_ptr<AudioSink> audioSink;
-  cspot::PlaybackNotificationCallback playbackNotificationCallback;
+  ConnectReceiverConfig config;
 
   // Set by run() on every (re)build. weak_ptr, not shared_ptr: this must
   // never be what keeps a Session alive past when run() decides to

@@ -58,6 +58,9 @@ struct ProvidedFile {
   std::string cdnUrl{};
   std::vector<std::byte> fileId{};
   std::vector<std::byte> decryptionKey{};
+  // The Vorbis quality actually resolved (may be lower than requested if
+  // the preferred format wasn't offered)
+  AudioFormat format = AudioFormat_OGG_VORBIS_160;
   bool isError = false;
 };
 };  // namespace cspot

@@ -18,7 +18,7 @@ cspot::Session::Session(
     std::shared_ptr<AuthInfo> authInfo,
     std::shared_ptr<AudioSink> audioSink,
     cspot::PlaybackNotificationCallback playbackNotificationCallback,
-    size_t prefetchDepth)
+    AudioConfig audioConfig)
     : authInfo(std::move(authInfo)) {
   // Prepare the session context
   eventLoop = std::make_shared<cspot::EventLoop>();
@@ -34,8 +34,10 @@ cspot::Session::Session(
       eventLoop, this->authInfo, spClient, audioSink,
       std::move(playbackNotificationCallback));
 
-  auto fileProvider = createDefaultFileProvider(eventLoop, spClient, apClient);
-  auto audioDecoder = createAudioDecoder(audioSink, prefetchDepth);
+  auto fileProvider = createDefaultFileProvider(
+      eventLoop, spClient, apClient, audioConfig.qualityPreference);
+  auto audioDecoder = createAudioDecoder(
+      audioSink, audioConfig.prefetchDepth, audioConfig.targetChunkDuration);
   // Direct callback, not an EventLoop-posted event - see
   // ConnectStateHandler::onPlayerStateUpdate()'s own comment.
   streamPlayer = std::make_shared<StreamPlayer>(
@@ -79,11 +81,7 @@ void cspot::Session::handleDealerMessage(EventLoop::Event&& event) {
     authInfo->sessionId = *sessionId;
     BELL_LOG(info, LOG_TAG, "Session ID: {}", *sessionId);
 
-    // This, not the WS connect itself, is what makes the device
-    // selectable in the app - confirmed against both go-librespot
-    // (daemon/player.go) and this repo's own master branch
-    // (DealerSession.cpp), which both use NEW_DEVICE here, not
-    // NEW_CONNECTION.
+    // NEW_DEVICE (not NEW_CONNECTION) is what makes the device selectable in the app.
     auto res = connectStateHandler->putState(PutStateReason_NEW_DEVICE);
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Failed to announce connect state: {}",

@@ -11,41 +11,33 @@
 using namespace cspot;
 
 namespace {
-const size_t chunkSize = 32 * 1024L;  // 32KB chunks
-
-// Small safety margin over whatever depth ReadAheadPolicy actually asks
-// for - claim()'s eviction means an undersized window would just degrade
-// to less effective prefetching, never a correctness issue, so this
-// doesn't need to track the runtime-configurable depth exactly.
+// Fixed margin above ReadAheadPolicy's depth - claim()'s eviction means an
+// undersized window only degrades prefetching, never correctness, so this
+// doesn't need to track that runtime value exactly.
 const size_t kChunkCacheCapacity = 4;
 
-// How long requestRange() waits for a chunk PrefetchWorker is already
-// fetching before giving up and doing its own independent fetch anyway.
-// Bounded well under AudioSinkI2S's ~1.5s PCM ring buffer cushion so that
-// even the worst case (wait times out, then a fresh fetch is still slow)
-// doesn't reliably blow through it - real CDN range fetches observed on
-// hardware run ~300ms typically, with occasional spikes past 3s.
+// How long requestRange() waits for an in-flight PrefetchWorker fetch
+// before falling back to its own independent one - bounded under
+// AudioSinkI2S's ~1.5s PCM ring buffer cushion.
 const std::chrono::milliseconds kInFlightWaitTimeoutMs{1000};
 
-// Every Spotify CDN audio file (confirmed for plain OGG_VORBIS_160, not
-// just Opus, against librespot-cpp's CDNAudioFile - same IV above, same
-// mechanism) is prefixed with a fixed-size proprietary header (loudness
-// normalization gain/peak floats live at offsets 144/148 in there) before
-// the real Ogg container begins - raw byte 0 of the HTTP response is NOT
-// byte 0 of the Ogg stream. Reproduced on real hardware: every attempt to
-// open a real track failed identically with "Not a Vorbis stream" - the
-// Ogg/AES layer below (requestRange/AesCtrCipher) stays entirely in RAW
-// (wire) coordinates and is otherwise correct; this offset is applied
-// only at the public seek()/size()/position() boundary so OggContainer
-// and everything above it sees byte 0 as the real start of the Ogg data.
+// Every Spotify CDN audio file is prefixed with a fixed-size proprietary
+// header (loudness gain/peak floats at offsets 144/148) before the real
+// Ogg container begins - raw byte 0 of the HTTP response is not byte 0 of
+// the Ogg stream. requestRange()/AesCtrCipher stay entirely in raw (wire)
+// coordinates; this offset is applied only at the public
+// seek()/size()/position() boundary so OggContainer sees byte 0 as the
+// real start of the Ogg data.
 const size_t kSpotifyHeaderSize = 167;
 }  // namespace
 
 CDNDataStream::CDNDataStream(std::shared_ptr<bell::HTTPClient> httpClient,
-                             std::shared_ptr<PrefetchWorker> prefetchWorker)
+                             std::shared_ptr<PrefetchWorker> prefetchWorker,
+                             size_t chunkSize)
     : rangeFetcher(std::move(httpClient)),
       prefetchWorker(std::move(prefetchWorker)),
-      chunkCache(std::make_shared<ChunkCache>(kChunkCacheCapacity)) {}
+      chunkCache(std::make_shared<ChunkCache>(kChunkCacheCapacity)),
+      chunkSize(chunkSize) {}
 
 CDNDataStream::~CDNDataStream() = default;
 
@@ -225,10 +217,8 @@ bell::Result<size_t> CDNDataStream::read(std::byte* outputBuffer,
 
 bell::Result<std::vector<std::byte>> CDNDataStream::readRawHeaderBytes(
     size_t maxBytes) {
-  // requestRange()/AesCtrCipher operate in raw/wire coordinates (see this
-  // class's own comment on kSpotifyHeaderSize) - offset 0 here is genuinely
-  // wire byte 0, not the logical (header-excluded) byte 0 every other
-  // caller of this class means.
+  // Offset 0 here is raw wire byte 0, not the logical header-excluded
+  // byte 0 every other caller of this class means (see kSpotifyHeaderSize).
   auto res = requestRange(0, maxBytes, SeekOrigin::Begin);
   if (!res) {
     return tl::make_unexpected(res.error());
@@ -333,12 +323,9 @@ bool CDNDataStream::tryServeFromCache(size_t desiredStart, size_t desiredLen) {
   }
 
   if (outcome == ChunkCache::ClaimOutcome::AlreadyFetching) {
-    // PrefetchWorker (or, rarely, a concurrent caller) is already fetching
-    // this exact chunk - wait for it instead of duplicating a CDN round-
-    // trip. Observed on real hardware: without this, requestRange() would
-    // routinely re-request a range the worker was already mid-fetch on,
-    // doubling network cost on a link where a single 32KB range can
-    // already take 1-3+ seconds.
+    // PrefetchWorker (or, rarely, a concurrent caller) may already be
+    // fetching this exact chunk - wait for it instead of duplicating a CDN
+    // round-trip.
     auto waitStart = std::chrono::steady_clock::now();
     if (auto data = chunkCache->waitFor(*idx, kInFlightWaitTimeoutMs)) {
       if (adoptCachedChunk(*data, cachePlan)) {
@@ -358,7 +345,7 @@ bool CDNDataStream::tryServeFromCache(size_t desiredStart, size_t desiredLen) {
              "within {} ms - falling back to an independent fetch",
              desiredStart, kInFlightWaitTimeoutMs.count());
     // Timed out, failed, or size mismatch - fall through to an
-    // independent synchronous fetch, same as before this fix existed.
+    // independent synchronous fetch.
     return false;
   }
 
@@ -371,13 +358,9 @@ bool CDNDataStream::tryServeFromCache(size_t desiredStart, size_t desiredLen) {
                                                *chunkCache, *cdnUrl, *idx,
                                                cachePlan);
     if (fetchRes && adoptCachedChunk(*fetchRes->data, cachePlan)) {
-      // Same bookkeeping requestRange()'s general path does on every one
-      // of its own fetches - this class otherwise only learns/reconfirms
-      // the wire total size from a header/tail probe (desiredLen !=
-      // chunkSize), and this call may be the very first fetch this
-      // stream ever makes (nothing prefetched yet at track start), so it
-      // has to do this itself rather than assume some earlier fetch
-      // already did.
+      // Same bookkeeping requestRange()'s general path does - needed here
+      // too since this may be the stream's very first fetch (nothing
+      // prefetched yet), so no earlier fetch is guaranteed to have set it.
       originalTotalSizeRaw = fetchRes->totalWireSize;
       tailRemainderBytes = originalTotalSizeRaw % 16;
       totalSize = originalTotalSizeRaw - tailRemainderBytes;
@@ -391,7 +374,7 @@ bool CDNDataStream::tryServeFromCache(size_t desiredStart, size_t desiredLen) {
     return false;
   }
 
-  // WindowFull: proceed unclaimed, same as before this fix.
+  // WindowFull: proceed unclaimed.
   return false;
 }
 
@@ -415,13 +398,11 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
     desiredLen = std::min(desiredLen, *totalSize - desiredStart);
   }
 
-  // Fast path: this is exactly the "give me the next chunkSize-sized
-  // window" shape PrefetchWorker fills in ahead of the read cursor - see
-  // tryServeFromCache()'s own comment for what a "phase" is and why a
-  // cache hit here is always byte-for-byte what a synchronous fetch would
-  // have produced. Anything else (header probe, tail probe, the
-  // undersized final chunk near EOF) skips this and falls straight to the
-  // synchronous fetch below, exactly as before read-ahead existed.
+  // Fast path: the "next chunkSize-sized window" shape PrefetchWorker fills
+  // ahead of the read cursor (see tryServeFromCache()'s comment on what a
+  // "phase" is). Anything else (header probe, tail probe, the undersized
+  // final chunk near EOF) skips this and goes straight to the synchronous
+  // fetch below.
   if (!tailRequest && desiredLen == chunkSize && tryServeFromCache(desiredStart, desiredLen)) {
     return {};
   }

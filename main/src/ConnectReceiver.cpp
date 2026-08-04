@@ -15,14 +15,12 @@ namespace {
 const char* LOG_TAG = "ConnectReceiver";
 }
 
-ConnectReceiver::ConnectReceiver(
-    std::shared_ptr<AuthInfo> authInfo, std::string sessionFilePath,
-    std::shared_ptr<AudioSink> audioSink,
-    cspot::PlaybackNotificationCallback playbackNotificationCallback)
+ConnectReceiver::ConnectReceiver(std::shared_ptr<AuthInfo> authInfo,
+                                 std::string sessionFilePath,
+                                 ConnectReceiverConfig config)
     : authInfo(std::move(authInfo)),
       sessionStore(std::move(sessionFilePath)),
-      audioSink(std::move(audioSink)),
-      playbackNotificationCallback(std::move(playbackNotificationCallback)) {}
+      config(std::move(config)) {}
 
 void ConnectReceiver::run() {
   sessionStore.load(*authInfo);
@@ -71,9 +69,14 @@ void ConnectReceiver::run() {
                  oldInactiveRes.error());
       }
     }
+    // Explicit reset before reassigning: make_shared below would otherwise
+    // fully construct the new Session (starting its own tasks) before this
+    // pointer's old value is released, leaving two Sessions briefly alive
+    // at once - both driving the same shared config.audioSink.
     session.reset();
-    session = std::make_shared<cspot::Session>(authInfo, audioSink,
-                                               playbackNotificationCallback);
+    session = std::make_shared<cspot::Session>(
+        authInfo, config.audioSink, config.playbackNotificationCallback,
+        config.audioConfig);
     {
       std::scoped_lock lock(activeSessionMutex);
       activeSession = session;

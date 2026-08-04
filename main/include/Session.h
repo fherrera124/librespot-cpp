@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <vector>
 
 #include "AudioSink.h"
 #include "AuthInfo.h"
@@ -13,21 +14,35 @@
 #include "bell/Result.h"
 #include "bell/net/SocketPollListener.h"
 #include "events/EventLoop.h"
+#include "proto/MetadataPb.h"
 #include "tracks/StreamPlayer.h"
 
 namespace cspot {
+
+// Tuning for the CDN fetch/decode pipeline - see AudioDecoder.h and
+// FileProvider.h for what each field controls. Namespace-scope, not nested
+// in Session: a nested struct's default member initializers can't build a
+// default *argument* value for the enclosing class's own constructor (the
+// enclosing class isn't complete yet at that point).
+struct AudioConfig {
+  size_t prefetchDepth = 2;
+  std::chrono::milliseconds targetChunkDuration{6500};
+  // Tried in order against each track's offered qualities - first match wins.
+  std::vector<AudioFormat> qualityPreference = {AudioFormat_OGG_VORBIS_320,
+                                                AudioFormat_OGG_VORBIS_160,
+                                                AudioFormat_OGG_VORBIS_96};
+};
+
 class Session {
  public:
   // audioSink/playbackNotificationCallback default to no-ops so host
   // targets that don't care about a given one don't need to pass anything.
-  // prefetchDepth: forwarded to createAudioDecoder() - see its own
-  // comment (AudioDecoder.h) for what it controls.
   Session(std::shared_ptr<AuthInfo> authInfo,
           std::shared_ptr<AudioSink> audioSink =
               std::make_shared<NullAudioSink>(),
           cspot::PlaybackNotificationCallback playbackNotificationCallback =
               [](const PlaybackNotificationEvent&) {},
-          size_t prefetchDepth = 2);
+          AudioConfig audioConfig = AudioConfig());
 
   bell::Result<> start();
 

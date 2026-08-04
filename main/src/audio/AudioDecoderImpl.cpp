@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <optional>
 
 #include "audio/CDNDataStream.h"
 #include "audio/PrefetchWorker.h"
+#include "audio/RangeAlignment.h"
 #include "audio/ReadAheadPolicy.h"
 #include "audio/SpotifySeekTable.h"
 #include "bell/Logger.h"
@@ -24,12 +26,32 @@ const uint32_t kReadErrorBackoffMs = 100;
 // bytes - comfortable headroom for other formats/bitrates without
 // fetching much more than needed.
 const size_t kHeaderProbeSize = 256;
+
+// Approximate encoded bitrate per Spotify's own Vorbis quality tiers,
+// converted to bytes/sec - used to turn a target chunk *duration* into a
+// concrete byte count per track (FileProvider may resolve a lower quality
+// than requested if a track doesn't offer it, so this has to run per-open,
+// not once at construction). Falls back to OGG_VORBIS_160's rate for any
+// non-Vorbis format (out of scope - see FileProvider's own selection,
+// which only ever picks among the three Vorbis tiers today).
+size_t bytesPerSecond(AudioFormat format) {
+  switch (format) {
+    case AudioFormat_OGG_VORBIS_96:
+      return 12 * 1000;
+    case AudioFormat_OGG_VORBIS_320:
+      return 40 * 1000;
+    case AudioFormat_OGG_VORBIS_160:
+    default:
+      return 20 * 1000;
+  }
+}
 }
 
 class AudioDecoderImpl : public cspot::AudioDecoder {
  public:
   explicit AudioDecoderImpl(std::shared_ptr<AudioSink> audioSink,
-                            size_t prefetchDepth)
+                            size_t prefetchDepth,
+                            std::chrono::milliseconds targetChunkDuration)
       : audioSink(std::move(audioSink)),
         httpClient(std::make_shared<bell::HTTPClient>()),
         // One long-lived worker for this decoder's whole lifetime, reused
@@ -37,14 +59,22 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
         // (mirrors AudioSinkI2S's own bell::Task, not spun up per track).
         prefetchWorker(std::make_shared<PrefetchWorker>(
             httpClient,
-            std::make_shared<FixedDepthReadAheadPolicy>(prefetchDepth))) {}
+            std::make_shared<FixedDepthReadAheadPolicy>(prefetchDepth))),
+        targetChunkDuration(targetChunkDuration) {}
 
   bell::Result<> openStream(const std::string& cdnUrl,
                             const std::vector<std::byte>& decryptKey,
-                            const SpotifyId&) override {
+                            const SpotifyId&, AudioFormat format) override {
     resetStream();
 
-    auto stream = std::make_shared<CDNDataStream>(httpClient, prefetchWorker);
+    // Derived per-track from targetChunkDuration and format's bitrate, 16-byte aligned (AES-CTR block size).
+    size_t chunkSize = alignUp16(static_cast<size_t>(targetChunkDuration.count()) *
+                                 bytesPerSecond(format) / 1000);
+    BELL_LOG(info, LOG_TAG, "chunkSize={} bytes for format={} (target {}ms)",
+             chunkSize, static_cast<int>(format), targetChunkDuration.count());
+
+    auto stream =
+        std::make_shared<CDNDataStream>(httpClient, prefetchWorker, chunkSize);
     auto openRes = stream->open(cdnUrl, decryptKey);
     if (!openRes) {
       BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}",
@@ -96,12 +126,13 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
       }
     }
 
-    auto format = codec->getAudioFormat();
-    if (format.getSampleRateValue() != 44100 || format.getNumChannels() != 2) {
+    auto pcmFormat = codec->getAudioFormat();
+    if (pcmFormat.getSampleRateValue() != 44100 ||
+        pcmFormat.getNumChannels() != 2) {
       BELL_LOG(warn, LOG_TAG,
                "Vorbis stream is {}Hz/{}ch - AudioSinkI2S assumes "
                "44100Hz/2ch, audio will sound wrong",
-               format.getSampleRateValue(), format.getNumChannels());
+               pcmFormat.getSampleRateValue(), pcmFormat.getNumChannels());
     }
 
     isOpenFlag = true;
@@ -201,16 +232,14 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
   std::shared_ptr<AudioSink> audioSink;
   std::shared_ptr<bell::HTTPClient> httpClient;
   std::shared_ptr<PrefetchWorker> prefetchWorker;
+  const std::chrono::milliseconds targetChunkDuration;
   std::shared_ptr<bell::io::DataStream> dataStream;
   std::unique_ptr<bell::audio::OggContainer> container;
   std::unique_ptr<bell::TremorVorbisCodec> codec;
   std::optional<SpotifySeekTable> seekTable;
-  // isOpen()/isEOF() are read from StreamPlayer's player thread without
-  // holding playbackMutex (deliberately, to avoid blocking flush/queue
-  // handling on the EventLoop thread during a blocking processPacket()
-  // call) while being written from whichever thread calls openStream()/
-  // resetStream() under that same mutex - atomic for cross-thread
-  // visibility, not for compound-operation safety.
+  // isOpen()/isEOF() read without playbackMutex from the player thread
+  // (avoids blocking flush/queue handling); written under that mutex from
+  // openStream()/resetStream(). Atomic for visibility, not compound-op safety.
   std::atomic<bool> isOpenFlag{false};
   std::atomic<bool> eof{false};
   // Same cross-thread pattern as isOpenFlag/eof above: written in
@@ -220,7 +249,9 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
 };
 
 std::unique_ptr<AudioDecoder> cspot::createAudioDecoder(
-    std::shared_ptr<AudioSink> audioSink, size_t prefetchDepth) {
+    std::shared_ptr<AudioSink> audioSink, size_t prefetchDepth,
+    std::chrono::milliseconds targetChunkDuration) {
   return std::make_unique<AudioDecoderImpl>(std::move(audioSink),
-                                            prefetchDepth);
+                                            prefetchDepth,
+                                            targetChunkDuration);
 }

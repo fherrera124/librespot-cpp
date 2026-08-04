@@ -147,15 +147,11 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
              providedFile.itemId.uri);
     if (currentTrackId && providedFile.itemId == *currentTrackId &&
         !currentFile) {
-      // A separate event from the natural-EOF one just below (see that
-      // branch's own comment) - TRACK_UNPLAYABLE always advances regardless
-      // of repeat-track, unlike TRACK_ENDED, since there's no audio to
-      // repeat here. Without posting something here, a track whose audio
-      // key request failed (denied by the AP, or orphaned by a reconnect -
-      // see ApClient::connectAndAuthenticate()'s own comment) leaves the
-      // Spotify client waiting forever for a PlayerState update that never
-      // comes - shown client-side as "Spotify can't play this right now"
-      // after its own timeout.
+      // A separate event from the natural-EOF one just below - TRACK_UNPLAYABLE
+      // always advances regardless of repeat-track, unlike TRACK_ENDED (no
+      // audio to repeat). Without this, a track whose audio key request
+      // failed leaves the Spotify client waiting forever for a PlayerState
+      // update - shown client-side as "Spotify can't play this right now".
       currentTrackId.reset();
       eventLoop->post(EventLoop::EventType::TRACK_UNPLAYABLE,
                       std::monostate{});
@@ -204,11 +200,8 @@ void StreamPlayer::handleSeekEvent(int64_t positionMs) {
   std::scoped_lock lock(playbackMutex);
   // Deferred to taskLoop() instead of calling audioDecoder->seekToMs()
   // here: taskLoop() calls processPacket() without holding playbackMutex
-  // (see its own comment on why), so a direct call from this thread (the
-  // EventLoop's dispatch task) would race it on the same decoder/
-  // CDNDataStream, which has no locking of its own - reproduced on real
-  // hardware as a crash inside CDNDataStream::requestRange() triggered by
-  // a manual seek during playback.
+  // (see its own comment), so a direct call from this thread would race
+  // it on the same decoder/CDNDataStream, which has no locking of its own.
   pendingSeekMs = positionMs;
   queueUpdateSemaphore.give();
 }
@@ -220,19 +213,15 @@ void StreamPlayer::maybeStartCurrentTrack() {
   }
 
   // Deliberately NOT gated on isPlaying: a paused transfer still needs the
-  // track opened and ready, exactly like a playing one - only actually
-  // feeding decoded audio (taskLoop()'s own separate isPlaying check
-  // before calling processPacket()) should wait on isPlaying. Confirmed
-  // against a real Spotify session: gating the open itself on isPlaying
-  // left isBuffering stuck at true forever for any transfer that started
-  // paused (the only place that ever corrected it to false required
-  // isPlaying=true first) - the real app read that as the device being
-  // permanently stuck loading and greyed out its Play button.
+  // track opened and ready, same as a playing one - only actually feeding
+  // decoded audio (taskLoop()'s own isPlaying check before processPacket())
+  // should wait. Gating the open itself on isPlaying leaves isBuffering
+  // stuck at true for any transfer that starts paused.
   auto& file = *currentFile;
   BELL_LOG(debug, LOG_TAG, "Opening CDN stream for {}: {}", file.itemId.uri,
            file.cdnUrl);
   auto res = audioDecoder->openStream(file.cdnUrl, file.decryptionKey,
-                                      file.itemId);
+                                      file.itemId, file.format);
   BELL_LOG(info, LOG_TAG, "openStream() returned for {}", file.itemId.uri);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
@@ -330,8 +319,7 @@ void StreamPlayer::taskLoop() {
       // Also drop currentFile/currentTrackId (not just the decoder):
       // maybeStartCurrentTrack() runs again before QUEUE_UPDATED can
       // arrive, and would otherwise see the just-ended track as still
-      // ready and reopen it for ~1s (reproduced on hardware: spurious
-      // re-open/flush on every natural advance).
+      // ready and reopen it for ~1s.
       currentFile.reset();
       currentTrackId.reset();
       suppressNextSinkFlush = true;  // see its own comment (StreamPlayer.h)

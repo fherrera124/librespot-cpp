@@ -145,8 +145,10 @@ int main(int argc, char** argv) {
 
   auto audioSink = std::make_shared<cspot::AudioSinkALSA>();
 
-  cspot::ConnectReceiver receiver(authInfo, sessionFilePath, audioSink,
-                                  handlePlaybackNotification);
+  cspot::ConnectReceiver receiver(
+      authInfo, sessionFilePath,
+      {.audioSink = audioSink,
+       .playbackNotificationCallback = handlePlaybackNotification});
 
   std::thread receiverThread([&receiver]() { receiver.run(); });
 

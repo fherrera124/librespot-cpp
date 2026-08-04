@@ -51,7 +51,8 @@ class DefaultFileProvider : public FileProvider, bell::Task {
  public:
   DefaultFileProvider(std::shared_ptr<EventLoop> eventLoop,
                       std::shared_ptr<SpClient> spClient,
-                      std::shared_ptr<ApClient> apClient);
+                      std::shared_ptr<ApClient> apClient,
+                      std::vector<AudioFormat> qualityPreference);
 
   ~DefaultFileProvider() override;
 
@@ -66,6 +67,9 @@ class DefaultFileProvider : public FileProvider, bell::Task {
   std::shared_ptr<EventLoop> eventLoop;
   std::shared_ptr<SpClient> spClient;
   std::shared_ptr<ApClient> apClient;
+  // Tried in order against each track's offered AudioFile list - first
+  // match wins. See Session::AudioConfig for the default.
+  std::vector<AudioFormat> qualityPreference;
 
   std::mutex providedFilesMutex;
   bell::Semaphore providedFileSemaphore;
@@ -79,13 +83,15 @@ class DefaultFileProvider : public FileProvider, bell::Task {
   void handleAudioKeyResponse(const AudioKeyResponse& response);
 };
 
-DefaultFileProvider::DefaultFileProvider(std::shared_ptr<EventLoop> eventLoop,
-                                         std::shared_ptr<SpClient> spClient,
-                                         std::shared_ptr<ApClient> apClient)
+DefaultFileProvider::DefaultFileProvider(
+    std::shared_ptr<EventLoop> eventLoop, std::shared_ptr<SpClient> spClient,
+    std::shared_ptr<ApClient> apClient,
+    std::vector<AudioFormat> qualityPreference)
     : bell::Task("cspot_file_provider", 32 * 1024, false),
       eventLoop(std::move(eventLoop)),
       spClient(std::move(spClient)),
-      apClient(std::move(apClient)) {
+      apClient(std::move(apClient)),
+      qualityPreference(std::move(qualityPreference)) {
 
   startTask();
 
@@ -186,10 +192,19 @@ void DefaultFileProvider::taskLoop() {
     }
 
     auto& files = *filesRes;
-    auto selectedAudioFile = std::find_if(
-        files.begin(), files.end(), [](const cspot_proto::AudioFile& f) {
-          return f.format == AudioFormat_OGG_VORBIS_160;
-        });
+    // First format in qualityPreference that this track actually offers
+    // wins - not necessarily the first entry in `files` itself.
+    auto selectedAudioFile = files.end();
+    for (AudioFormat preferred : qualityPreference) {
+      selectedAudioFile =
+          std::find_if(files.begin(), files.end(),
+                       [preferred](const cspot_proto::AudioFile& f) {
+                         return f.format == preferred;
+                       });
+      if (selectedAudioFile != files.end()) {
+        break;
+      }
+    }
 
     if (selectedAudioFile == files.end()) {
       file->isError = true;
@@ -219,6 +234,7 @@ void DefaultFileProvider::taskLoop() {
 
     file->cdnUrl = *cdnUrlRes;
     file->fileId = selectedAudioFile->fileId;
+    file->format = selectedAudioFile->format;
     file->trackMetadata = *metadataRes;
 
     BELL_LOG(info, LOG_TAG, "Resolved CDN url for track {}", file->itemId.uri);
@@ -284,7 +300,9 @@ void DefaultFileProvider::handleAudioKeyResponse(
 
 std::unique_ptr<FileProvider> cspot::createDefaultFileProvider(
     std::shared_ptr<EventLoop> eventLoop, std::shared_ptr<SpClient> spClient,
-    std::shared_ptr<ApClient> apClient) {
+    std::shared_ptr<ApClient> apClient,
+    std::vector<AudioFormat> qualityPreference) {
   return std::make_unique<DefaultFileProvider>(
-      std::move(eventLoop), std::move(spClient), std::move(apClient));
+      std::move(eventLoop), std::move(spClient), std::move(apClient),
+      std::move(qualityPreference));
 }
