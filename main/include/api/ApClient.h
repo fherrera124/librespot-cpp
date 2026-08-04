@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include "AuthInfo.h"
@@ -39,6 +40,12 @@ class ApClient {
   // connected forever, since nothing else here reads from the AP unless
   // handleRead() actually fires.
   void doHousekeeping();
+
+  // Earliest time doHousekeeping() next needs to check the ping watchdog -
+  // nullopt if not connected (nothing time-based to check). Lets
+  // Session::runPoller() size its poll() timeout instead of polling on a
+  // fixed short tick.
+  std::optional<std::chrono::steady_clock::time_point> nextDeadline() const;
 
   State state() const;
 

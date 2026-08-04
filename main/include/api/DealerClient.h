@@ -2,6 +2,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 
 // Websocketpp includes
 #include <websocketpp/client.hpp>
@@ -46,6 +47,13 @@ class DealerClient {
   // Used for keep alive messages, and to time out a Connecting attempt
   // whose WS handshake never resolves (see connectTimeout in the .cpp).
   void doHousekeeping();
+
+  // Earliest time doHousekeeping() next needs to run something time-based
+  // (WS handshake timeout while Connecting, or the next ping/pong-watchdog
+  // check while Connected) - nullopt if nothing is pending. Lets
+  // Session::runPoller() size its poll() timeout instead of polling on a
+  // fixed short tick.
+  std::optional<std::chrono::steady_clock::time_point> nextDeadline() const;
 
   State state() const { return state_; }
   bool isConnected() const { return state_ == State::Connected; }

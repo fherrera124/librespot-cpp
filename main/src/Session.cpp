@@ -23,7 +23,8 @@ cspot::Session::Session(
     : authInfo(std::move(authInfo)) {
   // Prepare the session context
   eventLoop = std::make_shared<cspot::EventLoop>();
-  socketPoll = std::make_shared<bell::SocketPollListener>();
+  socketPoll = std::make_shared<bell::SocketPollListener>(
+      /*registerWakeSocket=*/true);
   credentialsResolver = createDefaultCredentialsResolver(
       std::make_shared<bell::HTTPClient>(), this->authInfo);
   spClient = createDefaultSpClient(std::make_shared<bell::HTTPClient>(),
@@ -248,6 +249,10 @@ uint32_t cspot::Session::getPositionMs() {
   return connectStateHandler->getPositionMs();
 }
 
+void cspot::Session::wake() {
+  socketPoll->wake();
+}
+
 void cspot::Session::runPoller(std::atomic<bool>& restartRequested) {
   constexpr int kDealerBackoffBaseMs = 5000;
   constexpr int kDealerBackoffMaxMs = 60000;
@@ -265,7 +270,31 @@ void cspot::Session::runPoller(std::atomic<bool>& restartRequested) {
       return;
     }
 
-    socketPoll->poll(std::chrono::milliseconds(1000));
+    auto now = std::chrono::steady_clock::now();
+    std::optional<std::chrono::steady_clock::time_point> deadline =
+        dealerClient->nextDeadline();
+    auto foldIn =
+        [&](std::optional<std::chrono::steady_clock::time_point> d) {
+          if (d && (!deadline || *d < *deadline)) {
+            deadline = d;
+          }
+        };
+    foldIn(apClient->nextDeadline());
+    if (dealerClient->state() == DealerClient::State::Disconnected ||
+        dealerClient->state() == DealerClient::State::Failed) {
+      foldIn(nextDealerReconnectAttempt);
+    }
+    if (apClient->state() == ApClient::State::Failed) {
+      foldIn(nextApReconnectAttempt);
+    }
+
+    std::optional<std::chrono::milliseconds> pollTimeout;
+    if (deadline) {
+      pollTimeout = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::max(std::chrono::steady_clock::duration::zero(),
+                   *deadline - now));
+    }
+    socketPoll->poll(pollTimeout);
     dealerClient->doHousekeeping();
     apClient->doHousekeeping();
 

@@ -284,6 +284,17 @@ bell::Result<> DealerClient::replyToRequest(bool success,
   return {};
 }
 
+std::optional<std::chrono::steady_clock::time_point>
+DealerClient::nextDeadline() const {
+  if (state_ == State::Connecting) {
+    return connectDeadline;
+  }
+  if (state_ == State::Connected) {
+    return lastPingTime + pingInterval;
+  }
+  return std::nullopt;
+}
+
 void DealerClient::doHousekeeping() {
   if (state_ == State::Connecting) {
     if (std::chrono::steady_clock::now() >= connectDeadline) {

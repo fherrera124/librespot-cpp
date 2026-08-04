@@ -96,6 +96,14 @@ void ApClient::doHousekeeping() {
   }
 }
 
+std::optional<std::chrono::steady_clock::time_point>
+ApClient::nextDeadline() const {
+  if (!apConnection->isConnected()) {
+    return std::nullopt;
+  }
+  return lastPingTime + pingTimeout;
+}
+
 ApClient::State ApClient::state() const {
   if (apConnection->isConnected()) {
     return State::Connected;

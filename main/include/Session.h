@@ -47,11 +47,19 @@ class Session {
   bell::Result<> start();
 
   // Blocks polling the AP/dealer sockets forever, UNLESS restartRequested
-  // is set (checked once per ~1s poll tick) or the AP declines our login -
-  // at which point this returns so the caller can rebuild the Session (a
-  // fresh pairing) or give up on these credentials (see
-  // credentialsRejected()).
+  // is set or the AP declines our login - at which point this returns so
+  // the caller can rebuild the Session (a fresh pairing) or give up on
+  // these credentials (see credentialsRejected()). Each poll() call blocks
+  // up to the next subsystem deadline (ping/pong watchdogs, reconnect
+  // backoff) rather than a fixed tick - a caller setting restartRequested
+  // from another thread must also call wake() (see below) to be noticed
+  // promptly instead of waiting for that deadline.
   void runPoller(std::atomic<bool>& restartRequested);
+
+  // Interrupts a blocking runPoller() immediately - for callers that set
+  // restartRequested from a thread other than the one running runPoller().
+  // Safe to call from any thread.
+  void wake();
 
   // Forwards to ConnectStateHandler::putInactive(). Callers tearing this
   // Session down to rebuild a new one should call this first, best-effort.

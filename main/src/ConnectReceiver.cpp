@@ -37,6 +37,9 @@ void ConnectReceiver::run() {
   ZeroconfServer zeroconfServer(authInfo, httpServer, [&]() {
     needsSessionRestart.store(true);
     authSemaphore.give();
+    if (auto activeSession = lockActiveSession()) {
+      activeSession->wake();
+    }
   });
   auto mdnsService = zeroconfServer.start();
 
