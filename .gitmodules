@@ -4,3 +4,7 @@
 [submodule "external/websocketpp"]
 	path = external/websocketpp
 	url = https://github.com/feelfreelinux/websocketpp.git
+[submodule "external/bell"]
+	path = external/bell
+	url = https://github.com/fherrera124/bell.git
+	branch = dev
