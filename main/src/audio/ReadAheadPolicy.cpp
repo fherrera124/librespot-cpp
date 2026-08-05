@@ -2,11 +2,9 @@
 
 using namespace cspot;
 
-FixedDepthReadAheadPolicy::FixedDepthReadAheadPolicy(size_t depth)
-    : depth(depth) {}
-
-std::vector<size_t> FixedDepthReadAheadPolicy::chunksToPrefetch(
-    size_t currentChunkIndex, std::optional<size_t> totalChunks) const {
+std::vector<size_t> cspot::chunksToPrefetch(size_t currentChunkIndex,
+                                            size_t depth,
+                                            std::optional<size_t> totalChunks) {
   std::vector<size_t> result;
   result.reserve(depth);
 

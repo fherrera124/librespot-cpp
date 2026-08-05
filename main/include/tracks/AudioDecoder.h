@@ -33,18 +33,16 @@ class AudioDecoder {
   virtual bell::Result<> seekToMs(int64_t positionMs) = 0;
 };
 
-// prefetchDepth: how many chunks the background PrefetchWorker tries to
-// keep fetched ahead of the read cursor. 0 disables read-ahead entirely
-// (every fetch stays fully synchronous, the same as before read-ahead
-// existed) - a real runtime value, not a build flag, so it can be
-// tuned/A-B'd without recompiling.
-// targetChunkDuration: how many seconds of audio a single "normal"
-// (non-tail) CDN range fetch should cover - the actual byte size is
-// derived per-track from this and the format openStream() resolves to
-// (see CDNDataStream's own comment for what fetch size costs in
-// round-trip overhead vs. RAM/prefetch-window duration).
+// targetPrefetchDuration: how much audio the background PrefetchWorker
+// tries to keep read ahead of the cursor, in total playback time.
+// CDNDataStream's chunk size is fixed (see kCDNChunkSize), so this is
+// realized as a per-track chunk count - derived from this duration and
+// the format openStream() resolves to (see AudioDecoderImpl's
+// bytesPerSecond()) - keeping the actual buffered duration roughly
+// constant across audio qualities. 0 disables read-ahead entirely (every
+// fetch stays fully synchronous, the same as before read-ahead existed).
 std::unique_ptr<AudioDecoder> createAudioDecoder(
-    std::shared_ptr<AudioSink> audioSink, size_t prefetchDepth = 2,
-    std::chrono::milliseconds targetChunkDuration =
+    std::shared_ptr<AudioSink> audioSink,
+    std::chrono::milliseconds targetPrefetchDuration =
         std::chrono::milliseconds(6500));
 }  // namespace cspot

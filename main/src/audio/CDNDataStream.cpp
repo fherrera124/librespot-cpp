@@ -12,10 +12,11 @@
 using namespace cspot;
 
 namespace {
-// Fixed margin above ReadAheadPolicy's depth - claim()'s eviction means an
+// Sized for the worst case (highest bitrate) of the dynamic prefetchDepth
+// AudioDecoderImpl.cpp computes per-track - claim()'s eviction means an
 // undersized window only degrades prefetching, never correctness, so this
 // doesn't need to track that runtime value exactly.
-const size_t kChunkCacheCapacity = 4;
+const size_t kChunkCacheCapacity = 9;
 
 // How long requestRange() waits for an in-flight PrefetchWorker fetch
 // before falling back to its own independent one - bounded under
@@ -34,11 +35,11 @@ const size_t kSpotifyHeaderSize = 167;
 
 CDNDataStream::CDNDataStream(std::shared_ptr<bell::HTTPClient> httpClient,
                              std::shared_ptr<PrefetchWorker> prefetchWorker,
-                             size_t chunkSize)
+                             size_t prefetchDepth)
     : rangeFetcher(std::move(httpClient)),
       prefetchWorker(std::move(prefetchWorker)),
       chunkCache(std::make_shared<ChunkCache>(kChunkCacheCapacity)),
-      chunkSize(chunkSize) {}
+      prefetchDepth(prefetchDepth) {}
 
 CDNDataStream::~CDNDataStream() = default;
 
@@ -278,7 +279,7 @@ void CDNDataStream::advancePrefetchWindow(size_t chunkIndex) {
   prefetchWorker->requestPrefetch(
       PrefetchWorker::Session{chunkCache, cdnUrl, prefetchAesCipher,
                               chunkSize, phaseAnchor.value(),
-                              originalTotalSizeRaw},
+                              originalTotalSizeRaw, prefetchDepth},
       chunkIndex);
 }
 

@@ -54,10 +54,12 @@ class PrefetchWorker : public bell::Task {
     // Raw/wire total size of the stream, as parsed from Content-Range -
     // bounds how many chunks actually exist.
     size_t totalWireSize = 0;
+    // How many chunks ahead of currentChunkIndex to prefetch - see
+    // CDNDataStream::prefetchDepth's own comment for how this is derived.
+    size_t depth = 0;
   };
 
-  explicit PrefetchWorker(std::shared_ptr<bell::HTTPClient> httpClient,
-                          std::shared_ptr<ReadAheadPolicy> policy);
+  explicit PrefetchWorker(std::shared_ptr<bell::HTTPClient> httpClient);
   ~PrefetchWorker() override;
 
   PrefetchWorker(const PrefetchWorker&) = delete;
@@ -78,7 +80,6 @@ class PrefetchWorker : public bell::Task {
  private:
   const char* LOG_TAG = "PrefetchWorker";
 
-  std::shared_ptr<ReadAheadPolicy> policy;
   CDNRangeFetcher rangeFetcher;
 
   std::mutex mutex_;

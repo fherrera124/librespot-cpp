@@ -219,16 +219,19 @@ Audio is fetched from Spotify's CDN in byte ranges instead of one continuous str
 
 ```cpp
 struct AudioConfig {
-  size_t prefetchDepth = 2;
-  std::chrono::milliseconds targetChunkDuration{6500};
+  std::chrono::milliseconds targetPrefetchDuration{6500};
   std::vector<AudioFormat> qualityPreference = {
       AudioFormat_OGG_VORBIS_320, AudioFormat_OGG_VORBIS_160, AudioFormat_OGG_VORBIS_96};
 };
 ```
 
-### `targetChunkDuration`, not a byte count
+Each CDN fetch is a fixed `kCDNChunkSize` (32KB, [`CDNDataStream.h`](main/include/audio/CDNDataStream.h)) - same request size and RAM cost per chunk no matter what quality gets resolved. What varies per track instead is **how many** chunks the background worker keeps fetched ahead (`prefetchDepth`), derived inside [`AudioDecoderImpl::openStream()`](main/src/audio/AudioDecoderImpl.cpp) from `targetPrefetchDuration` and whichever quality `FileProvider` actually resolved for that track (it tries `qualityPreference` in order - a track missing the top choice falls back, so the resolved quality can end up lower than requested):
 
-You set a *duration*; the actual fetch size (`chunkSize`, bytes) is derived per track inside [`AudioDecoderImpl`](main/src/audio/AudioDecoderImpl.cpp), from that duration and whichever quality `FileProvider` actually resolved for that specific track (it tries `qualityPreference` in order - a track missing the top choice falls back, so the resolved quality can end up lower than requested). This keeps the buffering math correct regardless of quality: a 320kbps track and a 96kbps track both get chunks covering the same ~6.5s of audio, not the same number of bytes - the exact problem a fixed byte count would have caused.
+```
+prefetchDepth = ceil(targetPrefetchDuration_ms × bytesPerSecond(resolved_quality) / 1000 / kCDNChunkSize)
+```
+
+This keeps the real-world buffered duration roughly constant regardless of quality - a 320kbps track needs more (smaller-in-time) chunks to cover the same ~6.5s than a 96kbps one does, instead of both getting the same chunk count covering very different durations.
 
 ### On PSRAM (ESP32/ESP32-S3 only)
 
@@ -236,44 +239,35 @@ PSRAM is external RAM wired next to the SoC (typically 2-8MB on boards that have
 
 Everything sized below (`ChunkCache`, `lastReadChunk`) lives in this same PSRAM - the SoC's much smaller internal SRAM is reserved for things that must be internal (DMA descriptors, etc. - `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` in that same file). "RAM budget" in this section means PSRAM headroom, not total chip RAM.
 
-### The trade-off
+### RAM ceiling is fixed, not quality-dependent
 
-Every chunk fetch pays a fixed round-trip cost (network RTT) regardless of size - a longer `targetChunkDuration` means fewer fetches per track, amortizing that cost over more audio. The cost: more PSRAM held per chunk, and more downloaded-but-unused data if the user skips mid-fetch. `prefetchDepth` doesn't change the RAM ceiling by itself - see below.
-
-### RAM cost formula
-
-Two buffers scale directly with `chunkSize` (the derived byte value) at steady state:
+Because `kCDNChunkSize` is a constant, the RAM ceiling is bounded by `kChunkCacheCapacity` (`CDNDataStream.cpp`, currently `9`) alone - **it no longer scales with `targetPrefetchDuration` or with which quality gets resolved**. The only effect of those two is how much of that fixed ceiling `prefetchDepth` actually uses.
 
 | Buffer | Size |
 |---|---|
-| `ChunkCache` (up to `kChunkCacheCapacity` chunks resident at once - a fixed compile-time constant in [`CDNDataStream.cpp`](main/src/audio/CDNDataStream.cpp), currently `4`, **not** the same as `prefetchDepth` and not runtime-configurable) | `kChunkCacheCapacity × chunkSize` |
-| `CDNDataStream::lastReadChunk` (one per currently-open track) | `1 × chunkSize` |
+| `ChunkCache` (up to `kChunkCacheCapacity` chunks resident at once) | `kChunkCacheCapacity × kCDNChunkSize` |
+| `CDNDataStream::lastReadChunk` (one per currently-open track) | `1 × kCDNChunkSize` |
+| Transient (foreground fetch and prefetch worker both in flight at once - freed as each publishes) | up to `2 × kCDNChunkSize` |
 
-**Steady-state resident total: `(kChunkCacheCapacity + 1) × chunkSize`**, plus a transient peak of up to `2 × chunkSize` more if the synchronous (foreground) fetch and the background prefetch worker both have a fetch in flight at the same instant - freed as soon as each one publishes its result, not held continuously.
+**Steady-state resident: `(kChunkCacheCapacity + 1) × kCDNChunkSize` = `10 × 32KB` ≈ 320KB. Peak (incl. transient): ≈ 384KB.** Fixed numbers, true for every quality.
 
-### Worked examples
+### The real trade-off: does `prefetchDepth` fit inside `kChunkCacheCapacity`?
 
-At the default `targetChunkDuration` (6.5s) and `kChunkCacheCapacity=4`, by resolved quality:
+`kChunkCacheCapacity` doesn't auto-adjust to your config - if you raise `targetPrefetchDuration` or add a higher bitrate to `qualityPreference` without also raising `kChunkCacheCapacity` to match, the extra depth silently gets capped (`ChunkCache::claim()` returns `WindowFull`, degrading how far ahead prefetch reaches - never a correctness issue, just less cushion against Wi-Fi jitter than requested). At the current default (`targetPrefetchDuration=6.5s`, `kChunkCacheCapacity=9`):
 
-| Resolved quality | Bitrate | `chunkSize` | Steady resident | Peak (incl. transient) |
+| Resolved quality | Bitrate | ms/chunk | `prefetchDepth` | Fits in capacity 9? |
 |---|---|---|---|---|
-| `OGG_VORBIS_96` | ~12KB/s | ~76KB | ~381KB | ~533KB |
-| `OGG_VORBIS_160` | ~20KB/s | ~127KB | ~635KB | ~889KB |
-| `OGG_VORBIS_320` | ~40KB/s | ~254KB | ~1.24MB | ~1.74MB |
+| `OGG_VORBIS_96` | 12KB/s | ~2730ms | 3 | yes, 6 slots to spare |
+| `OGG_VORBIS_160` | 20KB/s | ~1640ms | 4 | yes, 5 slots to spare |
+| `OGG_VORBIS_320` | 40KB/s | ~820ms | 8 | yes, 1 slot to spare |
 
-`chunkSize` (and everything derived from it) scales linearly with `targetChunkDuration` for a given quality - halve the duration, halve the RAM.
+### Picking values for your chip
 
-### Picking a value for your chip
+1. Decide `targetPrefetchDuration` and your `qualityPreference`'s **highest** bitrate (the worst case for depth).
+2. Compute the worst-case depth with the formula above, and set `kChunkCacheCapacity` to at least `worst_case_depth + 1` (one slot of margin for the foreground path's own claim).
+3. RAM ceiling follows directly: `(kChunkCacheCapacity + 1) × 32KB`, plus ≈64KB transient - budget against your board's free PSRAM.
 
-Solve backward from how much PSRAM you can dedicate to this pipeline, sized against the **highest** bitrate in your `qualityPreference` (that's the worst case for a given duration):
-
-```
-targetChunkDuration_max ≈ available_psram_bytes / ((kChunkCacheCapacity + 3) × bytesPerSecond(highest_quality))
-```
-
-For a board with, say, 2MB free for this purpose and 320kbps as the top preference (40KB/s): `2,000,000 / (7 × 40,000) ≈ 7.1s` as a ceiling. On a more RAM-constrained board, either shorten `targetChunkDuration` or drop `OGG_VORBIS_320` from `qualityPreference` so the worst case is 160kbps instead.
-
-A longer `targetChunkDuration` is most worth it on high-RTT/high-latency links (WiFi with a distant AP, a congested channel, or a CDN edge that's far away) - if round-trip time to your CDN is already low, the default may already be more margin than you need.
+A longer `targetPrefetchDuration` is most worth it on high-RTT/high-latency links (WiFi with a distant AP, a congested channel, or a CDN edge that's far away) - if round-trip time to your CDN is already low, the default may already be more margin than you need.
 
 ## Internal details
 

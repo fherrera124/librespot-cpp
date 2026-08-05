@@ -7,8 +7,6 @@
 
 #include "audio/CDNDataStream.h"
 #include "audio/PrefetchWorker.h"
-#include "audio/RangeAlignment.h"
-#include "audio/ReadAheadPolicy.h"
 #include "audio/SpotifySeekTable.h"
 #include "bell/Logger.h"
 #include "bell/audio/OggContainer.h"
@@ -51,31 +49,35 @@ size_t bytesPerSecond(AudioFormat format) {
 class AudioDecoderImpl : public cspot::AudioDecoder {
  public:
   explicit AudioDecoderImpl(std::shared_ptr<AudioSink> audioSink,
-                            size_t prefetchDepth,
-                            std::chrono::milliseconds targetChunkDuration)
+                            std::chrono::milliseconds targetPrefetchDuration)
       : audioSink(std::move(audioSink)),
         httpClient(std::make_shared<bell::HTTPClient>()),
         // One long-lived worker for this decoder's whole lifetime, reused
         // across tracks - see PrefetchWorker's own header comment for why
         // (mirrors AudioSinkI2S's own bell::Task, not spun up per track).
-        prefetchWorker(std::make_shared<PrefetchWorker>(
-            httpClient,
-            std::make_shared<FixedDepthReadAheadPolicy>(prefetchDepth))),
-        targetChunkDuration(targetChunkDuration) {}
+        prefetchWorker(std::make_shared<PrefetchWorker>(httpClient)),
+        targetPrefetchDuration(targetPrefetchDuration) {}
 
   bell::Result<> openStream(const std::string& cdnUrl,
                             const std::vector<std::byte>& decryptKey,
                             const SpotifyId&, AudioFormat format) override {
     resetStream();
 
-    // Derived per-track from targetChunkDuration and format's bitrate, 16-byte aligned (AES-CTR block size).
-    size_t chunkSize = alignUp16(static_cast<size_t>(targetChunkDuration.count()) *
-                                 bytesPerSecond(format) / 1000);
-    BELL_LOG(info, LOG_TAG, "chunkSize={} bytes for format={} (target {}ms)",
-             chunkSize, static_cast<int>(format), targetChunkDuration.count());
+    // How many kCDNChunkSize-sized chunks cover targetPrefetchDuration at
+    // this track's resolved bitrate, rounded up - see
+    // AudioDecoder.h's own comment on targetPrefetchDuration.
+    size_t targetBytes = static_cast<size_t>(targetPrefetchDuration.count()) *
+                         bytesPerSecond(format) / 1000;
+    size_t depth = std::max<size_t>(
+        1, (targetBytes + kCDNChunkSize - 1) / kCDNChunkSize);
+    BELL_LOG(info, LOG_TAG,
+             "prefetchDepth={} chunks of {}KB (~{}ms/chunk) for format={}",
+             depth, kCDNChunkSize / 1024,
+             kCDNChunkSize * 1000 / bytesPerSecond(format),
+             static_cast<int>(format));
 
     auto stream =
-        std::make_shared<CDNDataStream>(httpClient, prefetchWorker, chunkSize);
+        std::make_shared<CDNDataStream>(httpClient, prefetchWorker, depth);
     auto openRes = stream->open(cdnUrl, decryptKey);
     if (!openRes) {
       BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}",
@@ -233,7 +235,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
   std::shared_ptr<AudioSink> audioSink;
   std::shared_ptr<bell::HTTPClient> httpClient;
   std::shared_ptr<PrefetchWorker> prefetchWorker;
-  const std::chrono::milliseconds targetChunkDuration;
+  const std::chrono::milliseconds targetPrefetchDuration;
   std::shared_ptr<bell::io::DataStream> dataStream;
   std::unique_ptr<bell::audio::OggContainer> container;
   std::unique_ptr<bell::TremorVorbisCodec> codec;
@@ -250,9 +252,8 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
 };
 
 std::unique_ptr<AudioDecoder> cspot::createAudioDecoder(
-    std::shared_ptr<AudioSink> audioSink, size_t prefetchDepth,
-    std::chrono::milliseconds targetChunkDuration) {
+    std::shared_ptr<AudioSink> audioSink,
+    std::chrono::milliseconds targetPrefetchDuration) {
   return std::make_unique<AudioDecoderImpl>(std::move(audioSink),
-                                            prefetchDepth,
-                                            targetChunkDuration);
+                                            targetPrefetchDuration);
 }

@@ -17,6 +17,13 @@
 
 namespace cspot {
 
+// Size of a "normal" (non-tail) CDN range fetch, in bytes - fixed rather
+// than derived from quality/bitrate, so every fetch has the same request
+// size/RAM cost regardless of what format gets resolved. The read-ahead
+// buffer's duration is kept quality-independent instead via a dynamic
+// prefetchDepth (see AudioDecoderImpl.cpp), not by varying this.
+constexpr size_t kCDNChunkSize = 32 * 1024;
+
 /**
  * @brief DataStream implementation that fetches encrypted audio data from a CDN URL
  *        and decrypts it on-the-fly using AES-128-CTR.
@@ -42,7 +49,7 @@ class CDNDataStream : public bell::io::DataStream {
  public:
   CDNDataStream(std::shared_ptr<bell::HTTPClient> httpClient,
                std::shared_ptr<PrefetchWorker> prefetchWorker,
-               size_t chunkSize);
+               size_t prefetchDepth);
 
   // Already non-copyable implicitly (aesCipher is std::optional<AesCtrCipher>,
   // and AesCtrCipher itself deletes its copy ops) - declared explicitly so
@@ -106,10 +113,15 @@ class CDNDataStream : public bell::io::DataStream {
   // requestRange()'s comment for what a phase is. Fresh per open()/reset.
   std::shared_ptr<ChunkCache> chunkCache;
 
-  // Size of a "normal" (non-tail) fetch, in bytes - set once at
-  // construction (forwarded from Session/AudioDecoder), never changes for
-  // this stream's lifetime.
-  const size_t chunkSize;
+  // Size of a "normal" (non-tail) fetch, in bytes - see kCDNChunkSize.
+  const size_t chunkSize = kCDNChunkSize;
+
+  // How many chunks ahead of the read cursor PrefetchWorker should try to
+  // keep fetched - derived per-track from the resolved format's bitrate
+  // (see AudioDecoderImpl.cpp) so the read-ahead buffer's real-world
+  // duration stays roughly constant across audio qualities despite
+  // chunkSize being fixed.
+  const size_t prefetchDepth;
 
   // The desiredStart (logical) that anchors chunk index 0 of the current
   // phase - unset until the first cacheable (chunkSize-sized, non-tail)

@@ -18,10 +18,8 @@ const int kTaskStackSize = 32 * 1024;
 const int kTaskPriority = 5;
 }  // namespace
 
-PrefetchWorker::PrefetchWorker(std::shared_ptr<bell::HTTPClient> httpClient,
-                               std::shared_ptr<ReadAheadPolicy> policy)
+PrefetchWorker::PrefetchWorker(std::shared_ptr<bell::HTTPClient> httpClient)
     : bell::Task("PrefetchWorker", kTaskStackSize, kTaskPriority),
-      policy(std::move(policy)),
       rangeFetcher(std::move(httpClient)) {
   startTask();
 }
@@ -73,7 +71,7 @@ void PrefetchWorker::taskLoop() {
                  session.chunkSize;
   }
 
-  for (size_t idx : policy->chunksToPrefetch(chunkIndex, totalChunks)) {
+  for (size_t idx : chunksToPrefetch(chunkIndex, session.depth, totalChunks)) {
     if (session.chunkCache->claim(idx) != ChunkCache::ClaimOutcome::MustFetch) {
       continue;  // already ready, already in flight, or window full
     }

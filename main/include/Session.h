@@ -25,8 +25,10 @@ namespace cspot {
 // default *argument* value for the enclosing class's own constructor (the
 // enclosing class isn't complete yet at that point).
 struct AudioConfig {
-  size_t prefetchDepth = 2;
-  std::chrono::milliseconds targetChunkDuration{6500};
+  // Target total read-ahead buffer duration - see AudioDecoder.h's own
+  // comment on targetPrefetchDuration for how this turns into a per-track
+  // chunk count.
+  std::chrono::milliseconds targetPrefetchDuration{6500};
   // Tried in order against each track's offered qualities - first match wins.
   std::vector<AudioFormat> qualityPreference = {AudioFormat_OGG_VORBIS_320,
                                                 AudioFormat_OGG_VORBIS_160,
