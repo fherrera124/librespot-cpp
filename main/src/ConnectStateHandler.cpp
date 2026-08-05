@@ -387,18 +387,11 @@ void ConnectStateHandler::runTask() {
   std::scoped_lock runningLock(taskRunningMutex);
   taskRunning = true;
 
-  // Bounds how long stopTask() can be blocked waiting for this loop to
-  // notice taskRunning went false when nothing else wakes it up - not a
-  // scheduling interval (that's putStateDueTime/putStateCv.notify_one()).
-  // Matches master's PlayerEngine::runTask()'s own wait_for pattern.
-  constexpr auto kIdleWaitInterval = std::chrono::milliseconds(500);
-
   std::unique_lock<std::mutex> lock(putStateMutex);
   while (taskRunning) {
     if (!putStatePending) {
-      putStateCv.wait_for(
-          lock, kIdleWaitInterval,
-          [this] { return putStatePending || !taskRunning; });
+      putStateCv.wait(lock,
+                      [this] { return putStatePending || !taskRunning; });
       continue;
     }
     if (std::chrono::steady_clock::now() < putStateDueTime) {

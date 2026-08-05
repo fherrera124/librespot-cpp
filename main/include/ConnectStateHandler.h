@@ -142,6 +142,12 @@ class ConnectStateHandler : public bell::Task {
 
   void runTask() override;
 
+  // Called by stopTask() after it has already set taskRunning = false -
+  // wakes runTask()'s otherwise-unbounded wait() so shutdown doesn't
+  // depend on a pending PUT's own due time or a next notify_one() from
+  // putStateLocked().
+  void wakeTask() override { putStateCv.notify_all(); }
+
   void initialize();
 
   // Extrapolates the current playback position from
