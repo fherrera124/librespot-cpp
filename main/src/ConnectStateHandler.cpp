@@ -571,8 +571,9 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
 
   // Raw hex dump to catch a field-number mismatch in this file's
   // hand-written ConnectPb.h bindings, which would silently decode to
-  // defaults without nanopb ever erroring.
-  {
+  // defaults without nanopb ever erroring. Gated behind the debug log
+  // level so building it isn't a cost paid on every transfer command.
+  if (bell::BaseLogger::instance().shouldLog(bell::LogLevel::debug)) {
     std::string hex;
     hex.reserve(decodedData.size() * 2);
     static const char* hexDigits = "0123456789abcdef";
@@ -581,7 +582,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
       hex += hexDigits[v >> 4];
       hex += hexDigits[v & 0x0f];
     }
-    BELL_LOG(info, LOG_TAG, "RAW TransferState bytes ({}): {}",
+    BELL_LOG(debug, LOG_TAG, "RAW TransferState bytes ({}): {}",
              decodedData.size(), hex);
   }
 
