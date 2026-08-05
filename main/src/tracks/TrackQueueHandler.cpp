@@ -569,6 +569,17 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
   }
 
   if (isPlayingQueue && !queue.empty()) {
+    if (queue.size() == 1 && !contextIndex) {
+      // Sole queue track with no context to fall back to (an ad-hoc/
+      // single-track transfer) - nothing to advance to. Matches
+      // skipToPreviousTrack()'s own boundary handling: stay put rather
+      // than erasing the only track and leaving currentTrack() with
+      // nothing to report. The caller (advanceToNextTrackLocked())
+      // already treats a non-Advanced result plus no repeat-context as
+      // "pause here".
+      return TrackAdvanceResult::WrappedToStart;
+    }
+
     queue.erase(queue.begin());
 
     if (queue.empty()) {
