@@ -472,10 +472,7 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
   }
 
   // Someone else just became the active device while we thought we were -
-  // back off unconditionally (matches master). No staleness guard on the
-  // incoming ClusterUpdate: playerState is an embedded value here, not a
-  // nilable submessage, so an absent player_state on the wire can't be
-  // told apart from a genuine timestamp=0.
+  // back off unconditionally (matches master).
   bool stopBeingActive = putStateRequestProto.isActive &&
                          clusterUpdate.cluster.activeDeviceId !=
                              authInfo->deviceId;
