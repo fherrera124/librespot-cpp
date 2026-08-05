@@ -15,6 +15,11 @@ ZeroconfServer::ZeroconfServer(std::shared_ptr<AuthInfo> authInfo,
       httpServer(std::move(httpServer)),
       onNewCredentials(std::move(onNewCredentials)) {}
 
+void ZeroconfServer::setCurrentUser(std::string username) {
+  std::scoped_lock lock(currentUserMutex_);
+  currentUser_ = std::move(username);
+}
+
 std::unique_ptr<bell::mdns::Advertiser> ZeroconfServer::start(uint16_t port) {
   httpServer->registerGet(
       "/spotify_handler",
@@ -27,8 +32,13 @@ std::unique_ptr<bell::mdns::Advertiser> ZeroconfServer::start(uint16_t port) {
 
         if (queryParams.find("action") != queryParams.end() &&
             queryParams["action"] == "getInfo") {
+          std::string activeUser;
+          {
+            std::scoped_lock lock(currentUserMutex_);
+            activeUser = currentUser_;
+          }
           auto zeroConfString = authenticator.buildZeroconfJSONResponse(
-              authInfo->deviceName, authInfo->deviceId, "");
+              authInfo->deviceName, authInfo->deviceId, activeUser);
           (void)responseWriter->writeResponseWithBody(
               200, {{"Content-Type", "application/json"}}, zeroConfString);
         } else {

@@ -2,6 +2,8 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <string>
 
 #include "AuthInfo.h"
 #include "Authenticator.h"
@@ -28,11 +30,19 @@ class ZeroconfServer {
   // destructor tears down the mDNS announcement.
   std::unique_ptr<bell::mdns::Advertiser> start(uint16_t port = 2139);
 
+  // Reported as activeUser in the getInfo response - empty means no
+  // confirmed active session. Thread-safe: called from ConnectReceiver::
+  // run()'s thread, read from the GET handler on httpServer's own thread.
+  void setCurrentUser(std::string username);
+
  private:
   std::shared_ptr<AuthInfo> authInfo;
   std::shared_ptr<bell::http::Server> httpServer;
   Authenticator authenticator;
   std::function<void()> onNewCredentials;
+
+  std::mutex currentUserMutex_;
+  std::string currentUser_;
 };
 
 }  // namespace cspot

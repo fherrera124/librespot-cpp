@@ -90,8 +90,10 @@ void ConnectReceiver::run() {
                "Failed to start session: {} - waiting for another pairing "
                "attempt",
                startRes.error());
+      zeroconfServer.setCurrentUser("");
       continue;
     }
+    zeroconfServer.setCurrentUser(authInfo->loginCredentials->username);
     sessionStore.save(*authInfo);
 
     // Returns on a fresh pairing (needsSessionRestart), a rejected login
@@ -106,6 +108,7 @@ void ConnectReceiver::run() {
                "a new pairing");
       authInfo->loginCredentials.reset();
       sessionStore.save(*authInfo);
+      zeroconfServer.setCurrentUser("");
     } else if (session->logoutWasRequested()) {
       // Unlike credentialsRejected(), the credentials themselves are still
       // good - rebuild immediately and retry with them, skipping the wait
