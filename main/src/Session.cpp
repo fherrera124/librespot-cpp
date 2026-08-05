@@ -117,6 +117,14 @@ void cspot::Session::handleDealerMessage(EventLoop::Event&& event) {
       BELL_LOG(error, LOG_TAG, "Failed to handle set volume: {}",
                res.error());
     }
+  } else if (uri->starts_with("hm://connect-state/v1/connect/logout")) {
+    // Session-lifecycle concern (should runPoller() keep going at all),
+    // not player/device state - handled here directly rather than routed
+    // through connectStateHandler. wake() is required: this runs on
+    // eventLoop's own thread, a different one than runPoller()'s.
+    BELL_LOG(info, LOG_TAG, "Logout requested by server");
+    logoutRequested_ = true;
+    wake();
   } else {
     BELL_LOG(info, LOG_TAG, "Received message with URI: {}", *uri);
   }
@@ -302,6 +310,10 @@ void cspot::Session::runPoller(std::atomic<bool>& restartRequested) {
       // Checked here, before the state()==Failed case below would
       // otherwise blindly retry connectAp() with the exact same rejected
       // credentials.
+      return;
+    }
+
+    if (logoutRequested_) {
       return;
     }
 

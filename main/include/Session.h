@@ -71,6 +71,13 @@ class Session {
   // login credentials - see ApClient::loginWasDeclined()'s own comment.
   bool credentialsRejected() const;
 
+  // True if runPoller() returned because the dealer sent
+  // hm://connect-state/v1/connect/logout - see handleDealerMessage()'s own
+  // comment on that branch. Distinct from credentialsRejected(): the
+  // caller should rebuild the Session and retry with the same credentials,
+  // not discard them.
+  bool logoutWasRequested() const { return logoutRequested_; }
+
   // --- Local control ---
   // Thin passthrough to connectStateHandler - see
   // ConnectStateHandler::requestPlayPause() et al. for the actual
@@ -95,6 +102,12 @@ class Session {
   std::shared_ptr<cspot::ApClient> apClient;
   std::shared_ptr<cspot::ConnectStateHandler> connectStateHandler;
   std::shared_ptr<cspot::StreamPlayer> streamPlayer;
+
+  // Set by handleDealerMessage() on hm://connect-state/v1/connect/logout,
+  // read by runPoller()/logoutWasRequested() - see the latter's own
+  // comment. Cleared implicitly: ConnectReceiver rebuilds a fresh Session
+  // for every retry, never reuses this one.
+  std::atomic<bool> logoutRequested_{false};
 
   // Dealer reconnect backoff state, driven from runPoller(). Matches
   // master's DealerSession constants (5s base, doubling, 60s cap) - see

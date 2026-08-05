@@ -94,8 +94,9 @@ void ConnectReceiver::run() {
     }
     sessionStore.save(*authInfo);
 
-    // Returns on a fresh pairing (needsSessionRestart) or a rejected login
-    // (Session::credentialsRejected()). Transient transport failures are
+    // Returns on a fresh pairing (needsSessionRestart), a rejected login
+    // (Session::credentialsRejected()), or a server-requested logout
+    // (Session::logoutWasRequested()). Transient transport failures are
     // retried internally and never surface here.
     session->runPoller(needsSessionRestart);
 
@@ -105,6 +106,14 @@ void ConnectReceiver::run() {
                "a new pairing");
       authInfo->loginCredentials.reset();
       sessionStore.save(*authInfo);
+    } else if (session->logoutWasRequested()) {
+      // Unlike credentialsRejected(), the credentials themselves are still
+      // good - rebuild immediately and retry with them, skipping the wait
+      // for a fresh Zeroconf pairing.
+      BELL_LOG(info, LOG_TAG,
+               "Logout requested by server - rebuilding session with the "
+               "same credentials");
+      haveCredentialsToTry = authInfo->loginCredentials.has_value();
     }
   }
 }
