@@ -654,6 +654,18 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
           .count();
   putStateRequestProto.hasBeenPlayingForMs = 0;
 
+  // Clears any context left over from an earlier transfer in this same
+  // session before deciding what this one actually needs - haveContext's
+  // own loadContext() call below re-populates it from scratch anyway, so
+  // this only changes behavior for the other three branches, which
+  // otherwise left a stale contextPages/contextIndex silently readable
+  // by currentTrack()/currentContextIndex().
+  // TODO: fixes a bug reasoned out from code review (go-librespot
+  // comparison), not yet reproduced on hardware - unconfirmed whether a
+  // real transfer sequence actually hits this. Revisit if it turns out
+  // not to be needed.
+  trackQueueHandler->clearContext();
+
   bool haveContext = !transferState.current_session.context.uri.empty();
 
   if (haveContext) {

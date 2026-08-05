@@ -67,6 +67,8 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
 
   void updateTrackWindows(bool forceNotify) override;
 
+  void clearContext() override;
+
  private:
   const char* LOG_TAG = "TrackQueueHandler";
 
@@ -496,6 +498,10 @@ void DefaultTrackQueueHandler::resetContext() {
   nextTracksWindow.fill(cspot_proto::ProvidedTrack{});
   previousTracksWindow.fill(cspot_proto::ProvidedTrack{});
   currentContextUri.clear();
+}
+
+void DefaultTrackQueueHandler::clearContext() {
+  resetContext();
 }
 
 std::optional<cspot_proto::ProvidedTrack>

@@ -52,6 +52,15 @@ class TrackQueueHandler {
   // QUEUE_UPDATED must go out even though the current track's identity
   // itself didn't change (e.g. repeat-track restarting the same track).
   virtual void updateTrackWindows(bool forceNotify = false) = 0;
+
+  // Clears any previously loaded context (pages, cursor, target-track
+  // search state, both windows) without touching the queue. Callers
+  // entering a queue-only or ad-hoc-track session (no real context to
+  // load) must call this first - otherwise a context left over from an
+  // earlier transfer in the same session stays readable by
+  // currentTrack()/currentContextIndex() even though nothing referencing
+  // it was set up for this session.
+  virtual void clearContext() = 0;
 };
 
 std::unique_ptr<TrackQueueHandler> createDefaultTrackQueueHandler(
