@@ -239,10 +239,21 @@ class ConnectStateHandler : public bell::Task {
   // start; whether that counts as a real next track (vs. pausing there)
   // depends on repeat-context.
   //
+  // streamPlayerCleared: true when the caller is TRACK_ENDED/
+  // TRACK_UNPLAYABLE, both of which have StreamPlayer clear its own
+  // currentTrackId before signaling this (see StreamPlayer.cpp's EOF/
+  // error handling) - forces a QUEUE_UPDATED past updateTrackWindows()'s
+  // own dedup even when the resulting track's uri is unchanged (repeat-
+  // track, or wrapping back to the same/only track), since that dedup
+  // would otherwise leave StreamPlayer with nothing telling it to
+  // reload. False for skip_next, which never touches StreamPlayer's own
+  // state.
+  //
   // Assumes putStateMutex is ALREADY held by the caller - each of its
   // callers takes it independently (they're separate dispatch entry
   // points, not nested calls of one another).
-  bell::Result<> advanceToNextTrackLocked(bool forceNext);
+  bell::Result<> advanceToNextTrackLocked(bool forceNext,
+                                          bool streamPlayerCleared);
 
   // Shared by the TRACK_ENDED and TRACK_UNPLAYABLE event handlers, neither
   // of which arrives with putStateMutex already held (unlike

@@ -899,23 +899,19 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
 }
 
 bell::Result<> ConnectStateHandler::handleSkipNextCommandLocked() {
-  return advanceToNextTrackLocked(/*forceNext=*/true);
+  return advanceToNextTrackLocked(/*forceNext=*/true,
+                                  /*streamPlayerCleared=*/false);
 }
 
-bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(bool forceNext) {
+bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
+    bool forceNext, bool streamPlayerCleared) {
   auto& playerState = putStateRequestProto.device.playerState;
 
   bool hasNextTrack = true;
-  bool forceQueueUpdate = false;
 
   if (!forceNext && playerState.options.repeatingTrack) {
     // Natural end of track with repeat-track on: don't advance, replay
-    // the same track. StreamPlayer already cleared its own
-    // currentTrackId before posting TRACK_ENDED (see taskLoop()'s own
-    // comment), so it needs a fresh QUEUE_UPDATED to know to reload -
-    // force one past updateTrackWindows()'s own dedup, which would
-    // otherwise see an unchanged current-track URI and stay silent.
-    forceQueueUpdate = true;
+    // the same track.
   } else {
     auto res = trackQueueHandler->skipToNextTrack();
     if (!res) {
@@ -929,7 +925,12 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(bool forceNext) {
                    playerState.options.repeatingContext;
   }
 
-  trackQueueHandler->updateTrackWindows(forceQueueUpdate);
+  // See this method's own header comment on streamPlayerCleared - forces
+  // past updateTrackWindows()'s dedup whenever StreamPlayer already
+  // cleared its currentTrackId (repeat-track replay, or any case -
+  // repeat-track or a wrapped-to-start/ad-hoc single track - where the
+  // resulting current-track uri is unchanged from before).
+  trackQueueHandler->updateTrackWindows(streamPlayerCleared);
 
   auto track = trackQueueHandler->currentTrack();
   // hasValue set explicitly - omitted (not sent empty) when there's no
@@ -1011,7 +1012,12 @@ void ConnectStateHandler::handleTrackAdvanceSignal(bool forceNext) {
     consecutiveUnplayableSkips = 0;
   }
 
-  auto res = advanceToNextTrackLocked(forceNext);
+  // Both TRACK_ENDED and TRACK_UNPLAYABLE reach here only after
+  // StreamPlayer has already cleared its own currentTrackId (see
+  // advanceToNextTrackLocked()'s own comment) - unlike skip_next, which
+  // routes straight to advanceToNextTrackLocked() without going through
+  // this method at all.
+  auto res = advanceToNextTrackLocked(forceNext, /*streamPlayerCleared=*/true);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to advance after track {}: {}",
              forceNext ? "became unplayable" : "ended", res.error());
