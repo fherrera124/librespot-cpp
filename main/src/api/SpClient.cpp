@@ -152,21 +152,6 @@ bell::Result<> DefaultSpClient::putConnectStateRaw(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  cspot_proto::Cluster cluster;
-  if (nanopb_helper::decodeFromVector(cluster, *bodyRes)) {
-    // TODO: Consider wheter we should verufy that the echoed activeDeviceId/sessionId matches ours
-    BELL_LOG(debug, LOG_TAG,
-             "PUT response Cluster: activeDeviceId={} (ours={}) echoed "
-             "sessionId={} isPlaying={} isPaused={} timestamp={}",
-             cluster.activeDeviceId, deviceId, cluster.playerState.sessionId,
-             cluster.playerState.isPlaying, cluster.playerState.isPaused,
-             cluster.playerState.timestamp);
-  } else {
-    BELL_LOG(warn, LOG_TAG,
-             "PUT response body ({} bytes) didn't decode as Cluster",
-             bodyRes->size());
-  }
-
   return {};
 }
 
