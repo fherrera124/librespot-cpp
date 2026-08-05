@@ -472,24 +472,13 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
   }
 
   // Someone else just became the active device while we thought we were -
-  // back off. lastTransferTimestamp (matches go-librespot's own
-  // daemon/player.go) guards against a stale/reordered ClusterUpdate
-  // deactivating us right after a legitimate transfer to this device.
-  bool contradictsOurActiveState =
-      putStateRequestProto.isActive &&
-      clusterUpdate.cluster.activeDeviceId != authInfo->deviceId;
-  bool stopBeingActive =
-      contradictsOurActiveState &&
-      clusterUpdate.cluster.playerState.timestamp > lastTransferTimestamp;
-
-  if (contradictsOurActiveState && !stopBeingActive) {
-    BELL_LOG(warn, LOG_TAG,
-             "Ignoring cluster update showing activeDeviceId={} while we "
-             "think we're active - older than our last transfer (ts={} <= "
-             "lastTransferTimestamp={})",
-             clusterUpdate.cluster.activeDeviceId,
-             clusterUpdate.cluster.playerState.timestamp, lastTransferTimestamp);
-  }
+  // back off unconditionally (matches master). No staleness guard on the
+  // incoming ClusterUpdate: playerState is an embedded value here, not a
+  // nilable submessage, so an absent player_state on the wire can't be
+  // told apart from a genuine timestamp=0.
+  bool stopBeingActive = putStateRequestProto.isActive &&
+                         clusterUpdate.cluster.activeDeviceId !=
+                             authInfo->deviceId;
 
   if (!stopBeingActive) {
     return {};
@@ -616,10 +605,6 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
       std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count();
-  // Keeps the source's own timestamp (not now()) - handleClusterUpdate()
-  // compares it against incoming cluster updates, a different,
-  // server-side clock domain than "when did we send our PUT".
-  lastTransferTimestamp = transferState.playback.timestamp;
 
   bool shouldPause =
       transferState.playback.isPaused &&

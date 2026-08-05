@@ -110,11 +110,6 @@ class ConnectStateHandler : public bell::Task {
   std::chrono::steady_clock::time_point putStateDueTime{};
   PutStateReason pendingPutStateReason = PutStateReason_PLAYER_STATE_CHANGED;
 
-  // Timestamp of our own most recent transfer's playback state - guards
-  // handleClusterUpdate() against a stale ClusterUpdate deactivating us
-  // right after a legitimate transfer.
-  int64_t lastTransferTimestamp = 0;
-
   // This device's own outgoing PutStateRequest.message_id sequence
   // number, incremented before every PUT (prepareAndEncodeLocked()).
   uint32_t nextMessageId = 0;
