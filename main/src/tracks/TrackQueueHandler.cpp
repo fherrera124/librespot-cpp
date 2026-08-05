@@ -1,4 +1,5 @@
 #include "tracks/TrackQueueHandler.h"
+#include <algorithm>
 #include "bell/Result.h"
 #include "bell/http/Client.h"
 #include "crypto/Base62.h"
@@ -508,7 +509,7 @@ DefaultTrackQueueHandler::currentTrack() {
   if (isPlayingQueue && !queue.empty()) {
     auto& track = queue[0];
     return cspot_proto::ProvidedTrack{
-        .uri = track.uri,
+        .uri = track.resolvedUri(contextIdType),
         .uid = "q0",
         .provider = "queue",
         .gid = std::nullopt,
@@ -739,7 +740,7 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
   // stuck on "Connecting...".
   std::string newCurrentTrackUri;
   if (isPlayingQueue && !queue.empty()) {
-    newCurrentTrackUri = queue[0].uri;
+    newCurrentTrackUri = queue[0].resolvedUri(contextIdType);
   } else if (contextIndex && contextIndex->page < contextPages.size() &&
              contextIndex->track <
                  contextPages[contextIndex->page].trackGids.size()) {
@@ -762,13 +763,16 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
   for (size_t x = 0; x < nextTracksWindow.size(); x++) {
     if (x < queueOffset) {
       highestValidIndex = x;
-      if (nextTracksWindow[x].uri != queue[x + offsetInQueue].uri) {
+      auto& queueTrack = queue[x + offsetInQueue];
+      std::string resolvedUri = queueTrack.resolvedUri(contextIdType);
+      if (nextTracksWindow[x].uri != resolvedUri) {
         updated = true;
 
         // Construct ProvidedTrack from queue track
-        nextTracksWindow[x].uri = queue[x + offsetInQueue].uri;
+        nextTracksWindow[x].uri = resolvedUri;
         nextTracksWindow[x].uid = "q" + std::to_string(x);
         nextTracksWindow[x].provider = "queue";
+        nextTracksWindow[x].gid.reset();
       }
     } else {
       int32_t trackOffset = x - queueOffset;
@@ -848,13 +852,16 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
       updateEvent.nextTracks.emplace_back(nextTrack.uri);
     }
 
-    std::string& prevTrackUri = previousTracks().back().uri;
-    if (!prevTrackUri.empty()) {
-      updateEvent.previousTrackId = SpotifyId{prevTrackUri};
+    cspot_proto::ProvidedTrack& prevTrack = previousTracks().back();
+    if (!prevTrack.uri.empty()) {
+      updateEvent.previousTrackId = SpotifyId{prevTrack.uri};
     }
 
     if (isPlayingQueue && !queue.empty()) {
-      updateEvent.currentTrackId = SpotifyId{queue[0].uri};
+      std::string resolvedUri = queue[0].resolvedUri(contextIdType);
+      if (!resolvedUri.empty()) {
+        updateEvent.currentTrackId = SpotifyId{resolvedUri};
+      }
     } else if (currentContextIndex()) {
       auto& trackGid =
           contextPages[contextIndex->page].trackGids[contextIndex->track];

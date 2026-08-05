@@ -659,8 +659,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   if (haveContext) {
     SpotifyIdType trackType = SpotifyId::getTypeFromContext(
         transferState.current_session.context.uri);
-    SpotifyId trackId =
-        SpotifyId(trackType, transferState.playback.currentTrack.gid);
+    std::string currentTrackUri =
+        transferState.playback.currentTrack.resolvedUri(trackType);
 
     // context.uri/currentUid are needed to resolve "the current track" -
     // both master (contextResolver.resolve()) and go-librespot
@@ -674,7 +674,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     // worst case is a deferred flush, never a deadlock - and it avoids
     // ever flushing a half-updated transfer.
     auto loadRes = trackQueueHandler->loadContext(
-        transferState.current_session.context.uri, trackId.uri,
+        transferState.current_session.context.uri, currentTrackUri,
         transferState.current_session.currentUid);
     if (!loadRes) {
       BELL_LOG(error, LOG_TAG, "Failed to load context: {}", loadRes.error());
@@ -692,16 +692,17 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
              transferState.queue.tracks.size());
     trackQueueHandler->setQueue(transferState.queue.tracks);
     trackQueueHandler->setPlayingQueue(true);
-  } else if (!transferState.playback.currentTrack.uri.empty()) {
+  } else if (!transferState.playback.currentTrack
+                  .resolvedUri(SpotifyIdType::Track)
+                  .empty()) {
     // Single-track transfer: no context/queue, but a real current_track -
     // matches master's own single-track fallback. Modeled as a one-entry
     // queue (this file has no separate "just this track" concept).
-    // gid-only tracks (uri empty, gid present) aren't handled.
     BELL_LOG(info, LOG_TAG,
              "Transfer has no context/queue, playing single track {}",
-             transferState.playback.currentTrack.uri);
-    trackQueueHandler->setQueue({cspot_proto::ContextTrack{
-        .uri = transferState.playback.currentTrack.uri}});
+             transferState.playback.currentTrack.resolvedUri(
+                 SpotifyIdType::Track));
+    trackQueueHandler->setQueue({transferState.playback.currentTrack});
     trackQueueHandler->setPlayingQueue(true);
   } else {
     // Genuinely empty transfer (device selected while nothing plays

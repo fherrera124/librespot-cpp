@@ -109,6 +109,19 @@ struct ContextTrack {
     }
     return false;
   }
+
+  // Resolves this track's canonical uri: prefers `uri` if non-empty,
+  // otherwise derives it from `gid`. Empty if neither yields a valid
+  // identity.
+  std::string resolvedUri(cspot::SpotifyIdType type) const {
+    if (!uri.empty()) {
+      return uri;
+    }
+    if (gid.empty()) {
+      return "";
+    }
+    return cspot::SpotifyId(type, gid).uri;
+  }
 };
 }  // namespace cspot_proto
 
