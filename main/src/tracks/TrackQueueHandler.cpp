@@ -170,18 +170,13 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
                       currentTrackUid.value_or("")};
     targetTrackIndex = currentTrackIndex;
 
-    contextIdType = SpotifyIdType::Track;
+    contextIdType = SpotifyId::getTypeFromContext(contextUri);
 
     if (!currentTrackUri && !currentTrackUid && !currentTrackIndex) {
       contextIndex = {
           0,
           0,
       };  // Start from the beginning if no current track is provided
-    }
-
-    if (contextUri.starts_with("spotify:show")) {
-      // TODO: Better handling of the id types here
-      contextIdType = SpotifyIdType::Episode;
     }
 
     auto res = fetchRootPage(contextUri);

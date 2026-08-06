@@ -132,7 +132,8 @@ std::string cspot::SpotifyId::hexGid() const {
 SpotifyIdType cspot::SpotifyId::getTypeFromContext(
     const std::string& contextUri) {
   if (contextUri.starts_with("spotify:episode:") ||
-      contextUri.starts_with("spotify:show:")) {
+      contextUri.starts_with("spotify:show:") ||
+      contextUri.ends_with(":collection:your-episodes")) {
     return SpotifyIdType::Episode;
   }
 
