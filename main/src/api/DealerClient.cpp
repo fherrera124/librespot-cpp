@@ -210,10 +210,20 @@ void DealerClient::handleDisconnect() {
 std::error_code DealerClient::wsWriteHandler(websocketpp::connection_hdl hdl,
                                              char const* data, size_t size) {
   if (socket->isValid()) {
-    auto result = socket->write(reinterpret_cast<const std::byte*>(data), size);
+    // write() may send fewer bytes than requested under momentary send-side
+    // backpressure (WiFi uplink stall, a full TCP send window) - not an
+    // error, just needs the remainder retried. writeAll() (connect() above
+    // uses timeoutMs=3000, so this socket is blocking - a precondition
+    // writeAll() itself documents) does that, instead of tearing down the
+    // whole dealer connection - and forcing a full reconnect, including a
+    // fresh access token fetch - over a frame that would have gone out fine
+    // with a retry.
+    auto result =
+        socket->writeAll(reinterpret_cast<const std::byte*>(data), size);
 
-    if (!result || *result != size) {
-      BELL_LOG(error, LOG_TAG, "Could not write to socket");
+    if (!result) {
+      BELL_LOG(error, LOG_TAG, "Could not write to socket: {}",
+               result.error().message());
       return websocketpp::error::make_error_code(
           websocketpp::error::bad_connection);
     }

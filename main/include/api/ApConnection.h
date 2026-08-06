@@ -118,6 +118,12 @@ class ApConnection {
   // forever.
   bell::Result<> readExact(std::byte* buf, size_t len);
 
+  // Writes exactly `len` bytes, same shape as readExact() above and for the
+  // same reason: apSock is non-blocking, so bell::Socket::writeAll() (which
+  // assumes a blocking socket) isn't safe to use here - a would-block write
+  // is a normal, retry-worthy condition, not a real error, on this socket.
+  bell::Result<> writeExact(const std::byte* buf, size_t len);
+
   static void updateShannonNonce(uint32_t& nonce, Shannon& cipher);
 };
 }  // namespace cspot

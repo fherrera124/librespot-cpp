@@ -320,10 +320,10 @@ bell::Result<> ApConnection::sendPlainPacket(const std::byte* data, size_t len,
   uint32_t packetSize = htonl(len + 4 + (cmd.has_value() ? 2 : 0));
   if (cmd.has_value()) {
     uint32_t prefix = htons(cmd.value());
-    auto res = apSock->write(reinterpret_cast<const std::byte*>(&prefix),
-                             sizeof(uint16_t));
+    auto res = writeExact(reinterpret_cast<const std::byte*>(&prefix),
+                          sizeof(uint16_t));
     if (!res) {
-      return nonstd::make_unexpected(res.error());
+      return res;
     }
 
     if (state != State::CONNECTED_SHANNON) {
@@ -333,10 +333,10 @@ bell::Result<> ApConnection::sendPlainPacket(const std::byte* data, size_t len,
           reinterpret_cast<const std::byte*>(&prefix) + sizeof(uint16_t));
     }
   }
-  auto res = apSock->write(reinterpret_cast<const std::byte*>(&packetSize),
-                           sizeof(packetSize));
+  auto res = writeExact(reinterpret_cast<const std::byte*>(&packetSize),
+                        sizeof(packetSize));
   if (!res) {
-    return nonstd::make_unexpected(res.error());
+    return res;
   }
 
   if (state != State::CONNECTED_SHANNON) {
@@ -347,9 +347,9 @@ bell::Result<> ApConnection::sendPlainPacket(const std::byte* data, size_t len,
   }
 
   // Send the packet data
-  res = apSock->write(data, len);
+  res = writeExact(data, len);
   if (!res) {
-    return nonstd::make_unexpected(res.error());
+    return res;
   }
 
   if (state != State::CONNECTED_SHANNON) {
@@ -475,6 +475,37 @@ bell::Result<> ApConnection::readExact(std::byte* buf, size_t len) {
   return {};
 }
 
+bell::Result<> ApConnection::writeExact(const std::byte* buf, size_t len) {
+  size_t writtenBytes = 0;
+  auto deadline = std::chrono::steady_clock::now() +
+                  std::chrono::milliseconds(operationTimeout);
+
+  while (writtenBytes < len) {
+    auto res = apSock->write(buf + writtenBytes, len - writtenBytes);
+    if (!res) {
+      if (res.error() == std::errc::operation_would_block ||
+          res.error() == std::errc::interrupted) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+          return bell::make_unexpected_errc(std::errc::timed_out);
+        }
+        bell::utils::sleepMs(1);
+        continue;
+      }
+      return nonstd::make_unexpected(res.error());
+    }
+
+    if (*res == 0) {
+      // A successful write reporting 0 bytes sent for a non-empty buffer
+      // isn't expected to make forward progress on retry either.
+      return bell::make_unexpected_errc(std::errc::io_error);
+    }
+
+    writtenBytes += *res;
+  }
+
+  return {};
+}
+
 void ApConnection::updateShannonNonce(uint32_t& nonce, Shannon& cipher) {
   std::array<std::byte, 4> nonceData{};
   uint32_t packedNonce = htonl(nonce);
@@ -524,9 +555,9 @@ bell::Result<> ApConnection::sendPacket(uint8_t cmd,
   updateShannonNonce(shanSendNonce, sendCipher);
 
   // Send the packet
-  auto res = apSock->write(connectionBuffer.data(), totalSize);
+  auto res = writeExact(connectionBuffer.data(), totalSize);
   if (!res) {
-    return nonstd::make_unexpected(res.error());
+    return res;
   }
 
   return {};
