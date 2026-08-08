@@ -23,6 +23,16 @@
 
 namespace cspot {
 
+// What's driving a track advance - see advanceToNextTrackLocked()'s own
+// comment for how each value maps to its forceNext/streamPlayerCleared
+// behavior.
+enum class AdvanceTrigger {
+  RemoteSkipNext,   // Connect skip_next command, possibly naming a track.
+  LocalControl,     // Local next-button press (requestNext()).
+  TrackEnded,       // StreamPlayer ran out of audio (natural end of track).
+  TrackUnplayable,  // StreamPlayer couldn't load the track (CDN/key failure).
+};
+
 // Owns a background task (runTask()) that sends every connect-state PUT.
 // putState()/putStateLocked() only ever mutate putStateRequestProto and
 // schedule a flush - never send inline - so the HTTPS round-trip never
@@ -245,13 +255,14 @@ class ConnectStateHandler : public bell::Task {
   // requestNext() (local control) and handleTrackAdvanceSignal()
   // (TRACK_ENDED/TRACK_UNPLAYABLE) - all decide "what's next" the same
   // way: ask trackQueueHandler, refresh the windows, and tell Spotify.
-  //
-  // forceNext=true (skip_next, or a track that could never load) always
-  // advances, ignoring repeat-track. forceNext=false (natural end of
-  // track) replays the current track instead when repeat-track is on.
-  // Either way, running off the end of the context wraps the cursor to its
-  // start; whether that counts as a real next track (vs. pausing there)
-  // depends on repeat-context.
+  // trigger derives forceNext (advance ignoring repeat-track, except on
+  // TrackEnded) and streamPlayerCleared (StreamPlayer already cleared its
+  // own currentTrackId, so updateTrackWindows() must force a
+  // QUEUE_UPDATED past its own dedup - true on TrackEnded/TrackUnplayable,
+  // false otherwise) - see AdvanceTrigger's own comment for the full
+  // per-value mapping. Running off the end of the context always wraps
+  // the cursor to its start regardless of trigger; whether that counts as
+  // a real next track (vs. pausing there) depends on repeat-context.
   //
   // targetTrackUri/targetTrackUid: forwarded to
   // trackQueueHandler->skipToNextTrack() as-is - empty (the default) for
@@ -260,33 +271,21 @@ class ConnectStateHandler : public bell::Task {
   // TrackQueueHandler::skipToNextTrack()'s own comment for what happens
   // when a target is given.
   //
-  // streamPlayerCleared: true when the caller is TRACK_ENDED/
-  // TRACK_UNPLAYABLE, both of which have StreamPlayer clear its own
-  // currentTrackId before signaling this (see StreamPlayer.cpp's EOF/
-  // error handling) - forces a QUEUE_UPDATED past updateTrackWindows()'s
-  // own dedup even when the resulting track's uri is unchanged (repeat-
-  // track, or wrapping back to the same/only track), since that dedup
-  // would otherwise leave StreamPlayer with nothing telling it to
-  // reload. False for skip_next, which never touches StreamPlayer's own
-  // state.
-  //
   // Assumes putStateMutex is ALREADY held by the caller - each of its
   // callers takes it independently (they're separate dispatch entry
   // points, not nested calls of one another).
   bell::Result<> advanceToNextTrackLocked(
-      bool forceNext, bool streamPlayerCleared,
-      const std::string& targetTrackUri = "",
+      AdvanceTrigger trigger, const std::string& targetTrackUri = "",
       const std::string& targetTrackUid = "");
 
   // Shared by the TRACK_ENDED and TRACK_UNPLAYABLE event handlers, neither
   // of which arrives with putStateMutex already held (unlike
   // handleSkipNextCommandLocked()'s handlePlayerCommand() dispatch path) -
   // takes the lock itself, then delegates to advanceToNextTrackLocked().
-  // Also owns the consecutiveUnplayableSkips bookkeeping: within this
-  // method forceNext==true always means "track was unplayable" (skip_next
-  // never routes through here), so it's the one place that can tell the
-  // two apart.
-  void handleTrackAdvanceSignal(bool forceNext);
+  // Also owns the consecutiveUnplayableSkips bookkeeping, so it's the one
+  // place that can tell the two triggers apart. trigger must be
+  // AdvanceTrigger::TrackEnded or ::TrackUnplayable - no other caller.
+  void handleTrackAdvanceSignal(AdvanceTrigger trigger);
 
   bool encodeProtoTracks(pb_ostream_t* stream, const pb_field_t* field,
                          bool previous);

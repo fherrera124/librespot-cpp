@@ -83,20 +83,20 @@ ConnectStateHandler::ConnectStateHandler(
   trackQueueHandler =
       createDefaultTrackQueueHandler(this->spClient, this->eventLoop);
 
-  // StreamPlayer ran out of audio (natural end of track) - forceNext=false
-  // (unlike an explicit remote skip_next) so repeat-track is honored here.
+  // StreamPlayer ran out of audio (natural end of track) - repeat-track is
+  // honored here, unlike an explicit remote skip_next.
   this->eventLoop->registerHandler(
       EventLoop::EventType::TRACK_ENDED, [this](cspot::EventLoop::Event&&) {
-        handleTrackAdvanceSignal(/*forceNext=*/false);
+        handleTrackAdvanceSignal(AdvanceTrigger::TrackEnded);
       });
 
   // StreamPlayer could never load the track (CDN/audio key failure) -
-  // forceNext=true so it's skipped like an explicit skip_next, regardless
-  // of repeat-track (there's no audio to repeat).
+  // skipped like an explicit skip_next, regardless of repeat-track
+  // (there's no audio to repeat).
   this->eventLoop->registerHandler(
       EventLoop::EventType::TRACK_UNPLAYABLE,
       [this](cspot::EventLoop::Event&&) {
-        handleTrackAdvanceSignal(/*forceNext=*/true);
+        handleTrackAdvanceSignal(AdvanceTrigger::TrackUnplayable);
       });
 
   // Outward "now playing" notifications (PlaybackNotifications.h) - posted
@@ -303,8 +303,7 @@ bool ConnectStateHandler::requestNext() {
   // No JSON to parse for a local button press - go straight to the
   // non-JSON half, same as requestSeek() bypasses handleSeekCommandLocked()
   // in favor of applySeekLocked().
-  return bool(advanceToNextTrackLocked(/*forceNext=*/true,
-                                       /*streamPlayerCleared=*/false));
+  return bool(advanceToNextTrackLocked(AdvanceTrigger::LocalControl));
 }
 
 bool ConnectStateHandler::requestPrevious() {
@@ -981,8 +980,7 @@ bell::Result<> ConnectStateHandler::handleSkipNextCommandLocked(
     targetTrackUid = track.uid;
   }
 
-  return advanceToNextTrackLocked(/*forceNext=*/true,
-                                  /*streamPlayerCleared=*/false,
+  return advanceToNextTrackLocked(AdvanceTrigger::RemoteSkipNext,
                                   targetTrackUri, targetTrackUid);
 }
 
@@ -1042,9 +1040,14 @@ bell::Result<> ConnectStateHandler::handleSetQueueCommandLocked(
 }
 
 bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
-    bool forceNext, bool streamPlayerCleared,
-    const std::string& targetTrackUri, const std::string& targetTrackUid) {
+    AdvanceTrigger trigger, const std::string& targetTrackUri,
+    const std::string& targetTrackUid) {
   auto& playerState = putStateRequestProto.device.playerState;
+
+  // See AdvanceTrigger's own comment for what each value means.
+  bool forceNext = trigger != AdvanceTrigger::TrackEnded;
+  bool streamPlayerCleared = trigger == AdvanceTrigger::TrackEnded ||
+                              trigger == AdvanceTrigger::TrackUnplayable;
 
   bool hasNextTrack = true;
 
@@ -1120,17 +1123,14 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
   return {};
 }
 
-void ConnectStateHandler::handleTrackAdvanceSignal(bool forceNext) {
+void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
   // Matches go-librespot's own maxConsecutiveUnplayableSkips (controls.go) -
   // guards against a context where every track is unplayable.
   constexpr int kMaxConsecutiveUnplayableSkips = 50;
 
   std::scoped_lock lock(putStateMutex);
 
-  if (forceNext) {
-    // Only TRACK_UNPLAYABLE routes through this method with forceNext=true
-    // (skip_next goes straight through handleSkipNextCommandLocked()), so
-    // this is unambiguously "one more unplayable track in a row" here.
+  if (trigger == AdvanceTrigger::TrackUnplayable) {
     if (++consecutiveUnplayableSkips > kMaxConsecutiveUnplayableSkips) {
       BELL_LOG(error, LOG_TAG,
                "Giving up after {} consecutive unplayable tracks",
@@ -1150,15 +1150,12 @@ void ConnectStateHandler::handleTrackAdvanceSignal(bool forceNext) {
     consecutiveUnplayableSkips = 0;
   }
 
-  // Both TRACK_ENDED and TRACK_UNPLAYABLE reach here only after
-  // StreamPlayer has already cleared its own currentTrackId (see
-  // advanceToNextTrackLocked()'s own comment) - unlike skip_next, which
-  // routes straight to advanceToNextTrackLocked() without going through
-  // this method at all.
-  auto res = advanceToNextTrackLocked(forceNext, /*streamPlayerCleared=*/true);
+  auto res = advanceToNextTrackLocked(trigger);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to advance after track {}: {}",
-             forceNext ? "became unplayable" : "ended", res.error());
+             trigger == AdvanceTrigger::TrackUnplayable ? "became unplayable"
+                                                         : "ended",
+             res.error());
   }
 }
 
