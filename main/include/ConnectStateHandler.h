@@ -121,6 +121,11 @@ class ConnectStateHandler : public bell::Task {
   // between
   int consecutiveUnplayableSkips = 0;
 
+  // Synthetic uid counter for add_to_queue tracks that arrive without one.
+  // Reset in handleTransferCommandLocked() from the transferred queue's
+  // existing "q<N>" uids, so a later add_to_queue can't collide.
+  uint64_t nextManualQueueId = 0;
+
   // Assumes putStateMutex is ALREADY held by the caller - every handler
   // takes the lock for its own mutation and must call this instead of
   // the public, self-locking putState() (std::mutex isn't reentrant).
@@ -165,12 +170,23 @@ class ConnectStateHandler : public bell::Task {
   bell::Result<> handlePlayCommandLocked(const tao::json::value& options);
 
   // Assumes putStateMutex is ALREADY held by the caller
-  // (handlePlayerCommand() or the TRACK_ENDED handler - see
-  // advanceToNextTrackLocked()'s own comment).
-  bell::Result<> handleSkipNextCommandLocked();
+  // (handlePlayerCommand()). The JSON half: pulls an optional "track"
+  // (uri/uid) off command and delegates to advanceToNextTrackLocked() -
+  // present when this is a remote skip_next naming an explicit track (e.g.
+  // clicking an item in the client's Queue panel), absent for a plain
+  // "next" button press. requestNext() (local control, no JSON) calls
+  // advanceToNextTrackLocked() directly instead of this.
+  bell::Result<> handleSkipNextCommandLocked(const tao::json::value& command);
 
   // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
   bell::Result<> handleSkipPrevCommandLocked();
+
+  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
+  bell::Result<> handleSetQueueCommandLocked(const tao::json::value& command);
+
+  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
+  bell::Result<> handleAddToQueueCommandLocked(
+      const tao::json::value& command);
 
   // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
   bell::Result<> handlePauseCommandLocked(bool pause);
@@ -225,10 +241,10 @@ class ConnectStateHandler : public bell::Task {
   // Assumes putStateMutex is ALREADY held by the caller.
   bell::Result<> applyRepeatContextLocked(std::optional<bool> repeatingContext);
 
-  // Shared by handleSkipNextCommandLocked() (remote skip_next) and
-  // handleTrackAdvanceSignal() (TRACK_ENDED/TRACK_UNPLAYABLE) - all decide
-  // "what's next" the same way: ask trackQueueHandler, refresh the
-  // windows, and tell Spotify.
+  // Shared by handleSkipNextCommandLocked() (remote skip_next),
+  // requestNext() (local control) and handleTrackAdvanceSignal()
+  // (TRACK_ENDED/TRACK_UNPLAYABLE) - all decide "what's next" the same
+  // way: ask trackQueueHandler, refresh the windows, and tell Spotify.
   //
   // forceNext=true (skip_next, or a track that could never load) always
   // advances, ignoring repeat-track. forceNext=false (natural end of
@@ -236,6 +252,13 @@ class ConnectStateHandler : public bell::Task {
   // Either way, running off the end of the context wraps the cursor to its
   // start; whether that counts as a real next track (vs. pausing there)
   // depends on repeat-context.
+  //
+  // targetTrackUri/targetTrackUid: forwarded to
+  // trackQueueHandler->skipToNextTrack() as-is - empty (the default) for
+  // every caller except handleSkipNextCommandLocked() with a remote
+  // skip_next that named an explicit track. See
+  // TrackQueueHandler::skipToNextTrack()'s own comment for what happens
+  // when a target is given.
   //
   // streamPlayerCleared: true when the caller is TRACK_ENDED/
   // TRACK_UNPLAYABLE, both of which have StreamPlayer clear its own
@@ -250,8 +273,10 @@ class ConnectStateHandler : public bell::Task {
   // Assumes putStateMutex is ALREADY held by the caller - each of its
   // callers takes it independently (they're separate dispatch entry
   // points, not nested calls of one another).
-  bell::Result<> advanceToNextTrackLocked(bool forceNext,
-                                          bool streamPlayerCleared);
+  bell::Result<> advanceToNextTrackLocked(
+      bool forceNext, bool streamPlayerCleared,
+      const std::string& targetTrackUri = "",
+      const std::string& targetTrackUid = "");
 
   // Shared by the TRACK_ENDED and TRACK_UNPLAYABLE event handlers, neither
   // of which arrives with putStateMutex already held (unlike

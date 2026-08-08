@@ -1,6 +1,7 @@
 #include "ConnectStateHandler.h"
 
 #include <algorithm>
+#include <charconv>
 #include <iostream>
 #include <random>
 
@@ -36,6 +37,15 @@ std::string sessionIdChars =
 // playback_speed: 0 while paused or buffering, 1 otherwise.
 double computePlaybackSpeed(bool isPaused, bool isBuffering) {
   return (!isPaused && !isBuffering) ? 1.0 : 0.0;
+}
+
+// Parses the {uri, uid} pair off a JSON object shaped like a Spotify
+// ContextTrack.
+cspot_proto::ContextTrack parseTrackRef(const tao::json::value& trackJson) {
+  cspot_proto::ContextTrack track;
+  track.uri = trackJson.optional<std::string>("uri").value_or("");
+  track.uid = trackJson.optional<std::string>("uid").value_or("");
+  return track;
 }
 
 // Generates a random session ID of 16 characters
@@ -231,7 +241,7 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
     return handleTransferCommandLocked(payloadDataStr, command["options"]);
   } else if (endpoint == "skip_next") {
     BELL_LOG(info, LOG_TAG, "Received skip_next command");
-    return handleSkipNextCommandLocked();
+    return handleSkipNextCommandLocked(command);
   } else if (endpoint == "skip_prev") {
     BELL_LOG(info, LOG_TAG, "Received skip_prev command");
     return handleSkipPrevCommandLocked();
@@ -269,6 +279,12 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
                              command.optional<bool>("repeating_track"),
                              command.optional<bool>("shuffling_context"));
     return putStateLocked();
+  } else if (endpoint == "set_queue") {
+    BELL_LOG(info, LOG_TAG, "Received set_queue command");
+    return handleSetQueueCommandLocked(command);
+  } else if (endpoint == "add_to_queue") {
+    BELL_LOG(info, LOG_TAG, "Received add_to_queue command");
+    return handleAddToQueueCommandLocked(command);
   } else {
     BELL_LOG(info, LOG_TAG, "Received unknown command: {}", endpoint);
     return bell::make_unexpected_errc(std::errc::operation_not_supported);
@@ -284,7 +300,11 @@ bool ConnectStateHandler::requestPlayPause(bool play) {
 
 bool ConnectStateHandler::requestNext() {
   std::scoped_lock lock(putStateMutex);
-  return bool(handleSkipNextCommandLocked());
+  // No JSON to parse for a local button press - go straight to the
+  // non-JSON half, same as requestSeek() bypasses handleSeekCommandLocked()
+  // in favor of applySeekLocked().
+  return bool(advanceToNextTrackLocked(/*forceNext=*/true,
+                                       /*streamPlayerCleared=*/false));
 }
 
 bool ConnectStateHandler::requestPrevious() {
@@ -701,6 +721,19 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   // not to be needed.
   trackQueueHandler->clearContext();
 
+  nextManualQueueId = 0;
+  for (auto& track : transferState.queue.tracks) {
+    const std::string& uid = track.uid;
+    if (uid.size() > 1 && uid[0] == 'q') {
+      uint64_t n = 0;
+      auto [ptr, ec] = std::from_chars(uid.data() + 1,
+                                       uid.data() + uid.size(), n);
+      if (ec == std::errc() && ptr == uid.data() + uid.size()) {
+        nextManualQueueId = std::max(nextManualQueueId, n);
+      }
+    }
+  }
+
   bool haveContext = !transferState.current_session.context.uri.empty();
 
   if (haveContext) {
@@ -935,13 +968,82 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   return {};
 }
 
-bell::Result<> ConnectStateHandler::handleSkipNextCommandLocked() {
+bell::Result<> ConnectStateHandler::handleSkipNextCommandLocked(
+    const tao::json::value& command) {
+  // "track" is only present when the remote client named an explicit
+  // track to jump to (e.g. clicking an item in the Queue panel) - a plain
+  // "next" button press sends skip_next with no track at all.
+  std::string targetTrackUri;
+  std::string targetTrackUid;
+  if (const tao::json::value* trackPtr = command.find("track")) {
+    auto track = parseTrackRef(*trackPtr);
+    targetTrackUri = track.uri;
+    targetTrackUid = track.uid;
+  }
+
   return advanceToNextTrackLocked(/*forceNext=*/true,
-                                  /*streamPlayerCleared=*/false);
+                                  /*streamPlayerCleared=*/false,
+                                  targetTrackUri, targetTrackUid);
+}
+
+bell::Result<> ConnectStateHandler::handleAddToQueueCommandLocked(
+    const tao::json::value& command) {
+  const tao::json::value* trackPtr = command.find("track");
+  if (!trackPtr) {
+    BELL_LOG(error, LOG_TAG, "add_to_queue command missing track");
+    return bell::make_unexpected_errc(std::errc::bad_message);
+  }
+
+  cspot_proto::ContextTrack track = parseTrackRef(*trackPtr);
+  // A track without a uri or uid would leave a hole in nextTracksWindow
+  // that skipToTargetTrack() reads as end-of-window.
+  if (track.uri.empty() && track.uid.empty()) {
+    BELL_LOG(error, LOG_TAG, "add_to_queue command's track has no uri/uid");
+    return bell::make_unexpected_errc(std::errc::bad_message);
+  }
+  if (track.uid.empty()) {
+    track.uid = "q" + std::to_string(++nextManualQueueId);
+  }
+
+  trackQueueHandler->addToQueue(track);
+  trackQueueHandler->updateTrackWindows();
+  return putStateLocked();
+}
+
+bell::Result<> ConnectStateHandler::handleSetQueueCommandLocked(
+    const tao::json::value& command) {
+  // prev_tracks is accepted on the wire but unused - only next_tracks
+  // carries anything reorderQueue() needs.
+  std::vector<cspot_proto::ContextTrack> queuedPrefix;
+  const tao::json::value* nextTracksPtr = command.find("next_tracks");
+  if (nextTracksPtr && nextTracksPtr->is_array()) {
+    for (const auto& trackJson : nextTracksPtr->get_array()) {
+      const tao::json::value* metadataPtr = trackJson.find("metadata");
+      bool isQueued = metadataPtr &&
+          metadataPtr->optional<std::string>("is_queued").value_or("") ==
+              "true";
+      if (!isQueued) {
+        break;
+      }
+
+      auto track = parseTrackRef(trackJson);
+      // A track without a uri or uid would leave a hole in
+      // nextTracksWindow that skipToTargetTrack() reads as end-of-window.
+      if (track.uri.empty() && track.uid.empty()) {
+        break;
+      }
+      queuedPrefix.push_back(std::move(track));
+    }
+  }
+
+  trackQueueHandler->reorderQueue(queuedPrefix);
+  trackQueueHandler->updateTrackWindows();
+  return putStateLocked();
 }
 
 bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
-    bool forceNext, bool streamPlayerCleared) {
+    bool forceNext, bool streamPlayerCleared,
+    const std::string& targetTrackUri, const std::string& targetTrackUid) {
   auto& playerState = putStateRequestProto.device.playerState;
 
   bool hasNextTrack = true;
@@ -950,7 +1052,7 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
     // Natural end of track with repeat-track on: don't advance, replay
     // the same track.
   } else {
-    auto res = trackQueueHandler->skipToNextTrack();
+    auto res = trackQueueHandler->skipToNextTrack(targetTrackUri, targetTrackUid);
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Failed to skip next track");
       return nonstd::make_unexpected(res.error());

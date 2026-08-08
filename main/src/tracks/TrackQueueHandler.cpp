@@ -52,12 +52,18 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
 
   void setPlayingQueue(bool isPlayingQueue) override;
 
+  void addToQueue(const cspot_proto::ContextTrack& track) override;
+
+  void reorderQueue(const std::vector<cspot_proto::ContextTrack>&
+                        queuedTracksInOrder) override;
+
   std::optional<cspot_proto::ProvidedTrack> currentTrack() override;
 
   std::optional<cspot_proto::ContextIndex> currentContextIndex() override;
 
   bell::Result<TrackAdvanceResult> skipToNextTrack(
-      const std::string& trackUri) override;
+      const std::string& targetTrackUri,
+      const std::string& targetTrackUid) override;
   bell::Result<> skipToPreviousTrack(const std::string& trackUri) override;
 
   bell::Result<> enableShuffle(bool enable) override;
@@ -123,6 +129,17 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
                             const PageMetadata& pageMetadata);
 
   std::optional<cspot_proto::ContextIndex> getOffsetIndex(int32_t offset) const;
+
+  // skipToNextTrack()'s explicit-target path: searches nextTracksWindow
+  // (queue entries first, then context - the exact set of tracks the
+  // client was last shown via next_tracks) for targetTrackUid/
+  // targetTrackUri and jumps straight there, dropping any queue entries
+  // skipped over along the way. Falls back to WrappedToStart (reset to
+  // context start, queue untouched - mirrors go-librespot's own
+  // TrySeek-failure fallback) when the target isn't found in the window,
+  // e.g. a stale client message.
+  bell::Result<TrackAdvanceResult> skipToTargetTrack(
+      const std::string& targetTrackUri, const std::string& targetTrackUid);
 
   // Converts a flat 0-based track index (position across the whole
   // context, not per-page - matches go-librespot's own SkipTo.TrackIndex
@@ -560,6 +577,22 @@ void DefaultTrackQueueHandler::setPlayingQueue(bool isPlayingQueue) {
   this->isPlayingQueue = isPlayingQueue;
 }
 
+void DefaultTrackQueueHandler::addToQueue(
+    const cspot_proto::ContextTrack& track) {
+  queue.push_back(track);
+}
+
+void DefaultTrackQueueHandler::reorderQueue(
+    const std::vector<cspot_proto::ContextTrack>& queuedTracksInOrder) {
+  if (isPlayingQueue && !queue.empty()) {
+    queue.resize(1);
+  } else {
+    queue.clear();
+  }
+  queue.insert(queue.end(), queuedTracksInOrder.begin(),
+               queuedTracksInOrder.end());
+}
+
 std::optional<cspot_proto::ContextIndex>
 DefaultTrackQueueHandler::currentContextIndex() {
   if (isPlayingQueue) {
@@ -570,8 +603,10 @@ DefaultTrackQueueHandler::currentContextIndex() {
 }
 
 bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
-    const std::string& trackUri) {
-  (void)trackUri;  //TODO: Implement skipping to specific track in context
+    const std::string& targetTrackUri, const std::string& targetTrackUid) {
+  if (!targetTrackUri.empty() || !targetTrackUid.empty()) {
+    return skipToTargetTrack(targetTrackUri, targetTrackUid);
+  }
 
   if (!isPlayingQueue && !queue.empty()) {
     setPlayingQueue(true);
@@ -621,6 +656,70 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
   }
 
   return TrackAdvanceResult::Advanced;
+}
+
+bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToTargetTrack(
+    const std::string& targetTrackUri, const std::string& targetTrackUid) {
+  // nextTracksWindow is exactly the next_tracks list last PUT to Spotify -
+  // the only tracks the client could have shown (and so the only tracks a
+  // remote skip_next's "track" field could legitimately name). Searching
+  // it directly, instead of re-deriving uid/uri from queue/contextPages,
+  // guarantees this can't drift from what the client actually saw.
+  for (size_t x = 0; x < nextTracksWindow.size(); x++) {
+    auto& candidate = nextTracksWindow[x];
+    if (candidate.uri.empty()) {
+      break;  // unpopulated tail of the window
+    }
+
+    bool matches = (!targetTrackUid.empty() && candidate.uid == targetTrackUid) ||
+                   (!targetTrackUri.empty() && candidate.uri == targetTrackUri);
+    if (!matches) {
+      continue;
+    }
+
+    size_t offsetInQueue = isPlayingQueue ? 1 : 0;
+    if (candidate.provider == "queue") {
+      // Inverts updateTrackWindows()'s own construction of this same
+      // window slot (nextTracksWindow[x] <- queue[x + offsetInQueue]):
+      // drop the current track (if playing from queue) plus every queue
+      // entry skipped over to reach the target, which becomes the new
+      // queue[0].
+      queue.erase(queue.begin(), queue.begin() + (x + offsetInQueue));
+      setPlayingQueue(true);
+    } else {
+      // Context portion of the window starts right after the queue
+      // portion (queueOffset entries) - same split updateTrackWindows()
+      // uses, inverted here to recover the context offset this window
+      // slot was built from.
+      size_t queueOffset =
+          queue.size() > offsetInQueue ? queue.size() - offsetInQueue : 0;
+      auto newIndex =
+          getOffsetIndex(static_cast<int32_t>(x - queueOffset) + 1);
+      if (!newIndex) {
+        // Shouldn't happen - the window was built from this same
+        // getOffsetIndex() call - but degrade to "not found" rather than
+        // leaving contextIndex unset.
+        break;
+      }
+      contextIndex = *newIndex;
+      // Skipping straight into context discards whatever's left of the
+      // manual queue, same as skipping past it one track at a time would.
+      queue.clear();
+      setPlayingQueue(false);
+    }
+    return TrackAdvanceResult::Advanced;
+  }
+
+  // Target not found in the exposed window (stale client state) - mirrors
+  // go-librespot's own TrySeek-failure fallback (tracks/tracks.go
+  // moveStart): reset the context cursor to the start, leave the manual
+  // queue untouched.
+  BELL_LOG(debug, LOG_TAG,
+           "Could not find target track in next-tracks window, wrapping to "
+           "start (uri={}, uid={})",
+           targetTrackUri, targetTrackUid);
+  contextIndex = cspot_proto::ContextIndex{0, 0};
+  return TrackAdvanceResult::WrappedToStart;
 }
 
 bell::Result<> DefaultTrackQueueHandler::skipToPreviousTrack(

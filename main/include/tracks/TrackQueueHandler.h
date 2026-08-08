@@ -32,12 +32,32 @@ class TrackQueueHandler {
 
   virtual void setPlayingQueue(bool isPlayingQueue) = 0;
 
+  // Appends a single track to the end of the manual queue. Callers must
+  // assign a uid first if the track doesn't already have one.
+  virtual void addToQueue(const cspot_proto::ContextTrack& track) = 0;
+
+  // Replaces the manual queue with queuedTracksInOrder: keeps the
+  // currently-playing entry (queue[0] when isPlayingQueue) and appends
+  // the rest after it.
+  virtual void reorderQueue(
+      const std::vector<cspot_proto::ContextTrack>& queuedTracksInOrder) = 0;
+
   virtual std::optional<cspot_proto::ProvidedTrack> currentTrack() = 0;
 
   virtual std::optional<cspot_proto::ContextIndex> currentContextIndex() = 0;
 
+  // targetTrackUri/targetTrackUid: when both are empty, advances one
+  // position (queue pop, or context index + 1) same as before this pair of
+  // parameters existed. When either is set, searches the exposed
+  // next-tracks window (queue entries first, then context) for a match and
+  // jumps straight there instead - this is how a remote "skip_next" that
+  // names an explicit track (e.g. clicking an item in the client's Queue
+  // panel) is expected to behave. A target that isn't found in that window
+  // (stale client state) falls back to WrappedToStart, same as running off
+  // the end of the context.
   virtual bell::Result<TrackAdvanceResult> skipToNextTrack(
-      const std::string& trackUri = "") = 0;
+      const std::string& targetTrackUri = "",
+      const std::string& targetTrackUid = "") = 0;
 
   virtual bell::Result<> skipToPreviousTrack(
       const std::string& trackUri = "") = 0;
