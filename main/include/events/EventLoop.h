@@ -61,7 +61,7 @@ class EventLoop : public bell::Task {
   using EventPayload =
       std::variant<std::monostate, bool, int64_t, AudioKeyResponse,
                    TrackQueueUpdate, ProvidedFile, tao::json::value,
-                   TrackMetadata>;
+                   TrackMetadata, FlushResumeState>;
 
   struct Event {
     EventType type;

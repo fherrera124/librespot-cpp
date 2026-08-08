@@ -16,9 +16,11 @@ class AudioDecoder {
  public:
   virtual ~AudioDecoder() = default;
 
+  // startPositionMs: seeks there before returning, if non-zero.
   virtual bell::Result<> openStream(
       const std::string& cdnUrl, const std::vector<std::byte>& decryptKey,
-      const SpotifyId& trackId, AudioFormat format) = 0;
+      const SpotifyId& trackId, AudioFormat format,
+      int64_t startPositionMs = 0) = 0;
 
   virtual void processPacket() = 0;
 

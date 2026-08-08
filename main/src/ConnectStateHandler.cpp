@@ -57,6 +57,7 @@ std::string generateSessionId() {
 ConnectStateHandler::ConnectStateHandler(
     std::shared_ptr<cspot::EventLoop> eventLoop,
     std::shared_ptr<AuthInfo> authInfo, std::shared_ptr<SpClient> spClient,
+    std::shared_ptr<TimeProvider> timeProvider,
     std::shared_ptr<AudioSink> audioSink,
     PlaybackNotificationCallback playbackNotificationCallback)
     // Stack sized for this task's own network work (the connect-state PUT
@@ -66,6 +67,7 @@ ConnectStateHandler::ConnectStateHandler(
       eventLoop(std::move(eventLoop)),
       authInfo(std::move(authInfo)),
       spClient(std::move(spClient)),
+      timeProvider(std::move(timeProvider)),
       audioSink(std::move(audioSink)),
       playbackNotificationCallback(std::move(playbackNotificationCallback)) {
   trackQueueHandler =
@@ -302,9 +304,7 @@ bool ConnectStateHandler::requestSetRepeatContext(bool enabled) {
 
 uint32_t ConnectStateHandler::getPositionMs() {
   std::scoped_lock lock(putStateMutex);
-  auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                   std::chrono::system_clock::now().time_since_epoch())
-                   .count();
+  auto nowMs = timeProvider->getSyncedTimestamp();
   auto& playerState = putStateRequestProto.device.playerState;
   return static_cast<uint32_t>(std::clamp<int64_t>(
       currentPositionMsLocked(nowMs), 0, playerState.duration));
@@ -343,9 +343,7 @@ bell::Result<> ConnectStateHandler::putStateLocked(PutStateReason reason) {
 bool ConnectStateHandler::prepareAndEncodeLocked(
     PutStateReason reason, std::vector<std::byte>& outBody) {
   putStateRequestProto.clientSideTimestamp =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count();
+      timeProvider->getSyncedTimestamp();
   putStateRequestProto.memberType = MemberType_CONNECT_STATE;
   putStateRequestProto.putStateReason = reason;
   // This device's own outgoing sequence number - distinct from
@@ -360,7 +358,7 @@ bool ConnectStateHandler::prepareAndEncodeLocked(
 
   {
     auto& ps = putStateRequestProto.device.playerState;
-    BELL_LOG(info, LOG_TAG,
+    BELL_LOG(debug, LOG_TAG,
              "PUT DIAG: "
              "hasTrack={} track.uri={} index=[{},{}] "
              "isPlaying={} isPaused={} isBuffering={} "
@@ -380,7 +378,24 @@ bool ConnectStateHandler::prepareAndEncodeLocked(
   // pb_callback reads trackQueueHandler's live windows). Everything
   // after this point in runTask() is a plain byte buffer, safe to send
   // unlocked.
-  return nanopb_helper::encodeToVector(putStateRequestProto, outBody);
+  bool encodeRes = nanopb_helper::encodeToVector(putStateRequestProto, outBody);
+
+  // Mirrors the RAW TransferState dump above, for our own outgoing side.
+  if (encodeRes &&
+      bell::BaseLogger::instance().shouldLog(bell::LogLevel::debug)) {
+    std::string hex;
+    hex.reserve(outBody.size() * 2);
+    static const char* hexDigits = "0123456789abcdef";
+    for (std::byte b : outBody) {
+      auto v = std::to_integer<uint8_t>(b);
+      hex += hexDigits[v >> 4];
+      hex += hexDigits[v & 0x0f];
+    }
+    BELL_LOG(debug, LOG_TAG, "RAW outgoing PutStateRequest bytes ({}): {}",
+             outBody.size(), hex);
+  }
+
+  return encodeRes;
 }
 
 void ConnectStateHandler::runTask() {
@@ -471,6 +486,16 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
+  BELL_LOG(debug, LOG_TAG,
+           "CLUSTER DIAG: weThinkActive={} ourDeviceId={} "
+           "activeDeviceId={} updateReason={} playerState.hasValue={} "
+           "playerState.timestamp={}",
+           putStateRequestProto.isActive, authInfo->deviceId,
+           clusterUpdate.cluster.activeDeviceId,
+           static_cast<int>(clusterUpdate.updateReason),
+           clusterUpdate.cluster.playerState.hasValue,
+           clusterUpdate.cluster.playerState.value.timestamp);
+
   // Someone else just became the active device while we thought we were -
   // back off unconditionally (matches master).
   bool stopBeingActive = putStateRequestProto.isActive &&
@@ -487,6 +512,26 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
   std::scoped_lock lock(putStateMutex);
   putStateRequestProto.isActive = false;
   eventLoop->post(EventLoop::EventType::PLAYER_PLAY, false);
+
+  {
+    auto& ps = putStateRequestProto.device.playerState;
+    BELL_LOG(debug, LOG_TAG,
+             "LAST STATE DIAG (before putInactive): contextUri={} "
+             "contextUrl={} track.hasValue={} track.uri={} playbackId={} "
+             "index.hasValue={} index=[{},{}] shuffling={} repeating={} "
+             "repeatingTrack={} playOrigin.feature={} playbackSpeed={} "
+             "positionAsOfTimestamp={} duration={} isPlaying={} "
+             "isBuffering={} isPaused={} sessionId={} position={} "
+             "timestamp={}",
+             ps.contextUri, ps.contextUrl, ps.track.hasValue,
+             ps.track.value.uri, ps.playbackId, ps.index.hasValue,
+             ps.index.value.page, ps.index.value.track,
+             ps.options.shufflingContext, ps.options.repeatingContext,
+             ps.options.repeatingTrack, ps.playOrigin.featureIdentifier,
+             ps.playbackSpeed, ps.positionAsOfTimestamp, ps.duration,
+             ps.isPlaying, ps.isBuffering, ps.isPaused, ps.sessionId,
+             ps.position, ps.timestamp);
+  }
 
   auto inactiveRes = spClient->putInactive(authInfo->deviceId,
                                            authInfo->sessionId);
@@ -598,21 +643,33 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   // device's own, already-stale timestamp) - matches every other
   // handler in this file and both reference engines, neither of which
   // lets that raw source timestamp reach the network.
-  playerState.timestamp =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count();
+  int64_t nowMs = timeProvider->getSyncedTimestamp();
+  playerState.timestamp = nowMs;
 
   bool shouldPause =
       transferState.playback.isPaused &&
       options.optional<std::string>("restore_paused") == "restore";
 
+  // Extrapolate the source's position forward by however long this
+  // command took to arrive/process - transferState.playback.timestamp can
+  // be well in the past by now. Not needed while paused.
+  int64_t effectivePositionMs = transferState.playback.positionAsOfTimestamp;
+  if (!shouldPause && transferState.playback.timestamp > 0) {
+    constexpr int64_t kMaxReasonableElapsedMs = 10 * 60 * 1000;
+    int64_t elapsedMs = nowMs - transferState.playback.timestamp;
+    if (elapsedMs >= 0 && elapsedMs <= kMaxReasonableElapsedMs) {
+      effectivePositionMs += elapsedMs;
+    }
+  }
+
   BELL_LOG(info, LOG_TAG,
            "Transfer playback state: sourceIsPaused={}, restore_paused={}, "
-           "shouldPause={} (posting PLAYER_PLAY={})",
+           "shouldPause={} (posting PLAYER_PLAY={}), "
+           "positionAsOfTimestamp={}ms, extrapolated to {}ms",
            transferState.playback.isPaused,
            options.optional<std::string>("restore_paused").value_or("<none>"),
-           shouldPause, !shouldPause);
+           shouldPause, !shouldPause,
+           transferState.playback.positionAsOfTimestamp, effectivePositionMs);
 
   playerState.isPaused = shouldPause;
   playerState.playbackSpeed =
@@ -628,12 +685,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   playerState.playOrigin.deviceIdentifier =
       putStateRequestProto.lastCommandSentByDeviceId;
   playerState.position = 0;
-  playerState.positionAsOfTimestamp =
-      transferState.playback.positionAsOfTimestamp;
-  putStateRequestProto.startedPlayingAt =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count();
+  playerState.positionAsOfTimestamp = effectivePositionMs;
+  putStateRequestProto.startedPlayingAt = nowMs;
   putStateRequestProto.hasBeenPlayingForMs = 0;
 
   // Clears any context left over from an earlier transfer in this same
@@ -712,12 +765,12 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
 
   auto track = trackQueueHandler->currentTrack();
   // hasValue set explicitly - omitted (not sent empty) when there's no
-  // current track. .uri only, matching master (its only track setter
-  // takes a bare uri string) - TrackQueueHandler's own ProvidedTrack
-  // carries more, not copied here.
+  // current track. Copies the whole ProvidedTrack (uri, uid, provider) -
+  // a bare uri drops uid, which Spotify needs to locate this track within
+  // its context/queue.
   playerState.track.hasValue = static_cast<bool>(track);
   if (track) {
-    playerState.track.value = cspot_proto::ProvidedTrack{.uri = track->uri};
+    playerState.track.value = *track;
   }
 
   // Index of the current track within its context - go-librespot sets
@@ -735,8 +788,11 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     return {};
   }
 
-  eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, std::monostate{});
-  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !shouldPause);
+  // Posted only after trackQueueHandler's context/queue/windows are
+  // resolved above, so StreamPlayer never reopens a stale currentFile
+  // left over from before this transfer.
+  eventLoop->post(EventLoop::EventType::PLAYER_FLUSH,
+                  FlushResumeState{effectivePositionMs, !shouldPause});
 
   return {};
 }
@@ -822,10 +878,11 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   }
 
   // hasValue set explicitly - omitted (not sent empty) when there's no
-  // current track.
+  // current track. Copies the whole ProvidedTrack (uri, uid, provider) -
+  // see the same assignment in handleTransferCommandLocked() for why.
   playerState.track.hasValue = static_cast<bool>(track);
   if (track) {
-    playerState.track.value = cspot_proto::ProvidedTrack{.uri = track->uri};
+    playerState.track.value = *track;
   }
 
   // Track index within context - see handleTransferCommandLocked()'s comment.
@@ -867,9 +924,7 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
 
   playerState.positionAsOfTimestamp = 0;
   playerState.timestamp =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count();
+      timeProvider->getSyncedTimestamp();
 
   auto putRes = putStateLocked();
   if (!putRes) {
@@ -916,10 +971,11 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
 
   auto track = trackQueueHandler->currentTrack();
   // hasValue set explicitly - omitted (not sent empty) when there's no
-  // current track.
+  // current track. Copies the whole ProvidedTrack (uri, uid, provider) -
+  // see the same assignment in handleTransferCommandLocked() for why.
   playerState.track.hasValue = static_cast<bool>(track);
   if (track) {
-    playerState.track.value = cspot_proto::ProvidedTrack{.uri = track->uri};
+    playerState.track.value = *track;
   }
 
   // Track index within context - see handleTransferCommandLocked()'s comment.
@@ -944,9 +1000,7 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
 
   playerState.positionAsOfTimestamp = 0;
   playerState.timestamp =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count();
+      timeProvider->getSyncedTimestamp();
 
   if (!hasNextTrack) {
     // StreamPlayer's own isPlaying otherwise stays true from before this
@@ -1018,10 +1072,11 @@ bell::Result<> ConnectStateHandler::handleSkipPrevCommandLocked() {
   auto& playerState = putStateRequestProto.device.playerState;
   auto track = trackQueueHandler->currentTrack();
   // hasValue set explicitly - omitted (not sent empty) when there's no
-  // current track.
+  // current track. Copies the whole ProvidedTrack (uri, uid, provider) -
+  // see the same assignment in handleTransferCommandLocked() for why.
   playerState.track.hasValue = static_cast<bool>(track);
   if (track) {
-    playerState.track.value = cspot_proto::ProvidedTrack{.uri = track->uri};
+    playerState.track.value = *track;
   }
 
   // Track index within context - see handleTransferCommandLocked()'s comment.
@@ -1041,9 +1096,7 @@ bell::Result<> ConnectStateHandler::handleSkipPrevCommandLocked() {
 
   playerState.positionAsOfTimestamp = 0;
   playerState.timestamp =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count();
+      timeProvider->getSyncedTimestamp();
 
   (void)putStateLocked();
 
@@ -1066,9 +1119,7 @@ bell::Result<> ConnectStateHandler::handlePauseCommandLocked(bool pause) {
   auto& playerState = putStateRequestProto.device.playerState;
 
   // Uses the OLD playbackSpeed/timestamp (before they're reassigned below).
-  auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                   std::chrono::system_clock::now().time_since_epoch())
-                   .count();
+  auto nowMs = timeProvider->getSyncedTimestamp();
   playerState.positionAsOfTimestamp = currentPositionMsLocked(nowMs);
 
   playerState.isPlaying = true;
@@ -1099,9 +1150,7 @@ bell::Result<> ConnectStateHandler::handleSeekCommandLocked(
 
   // Same extrapolation handlePauseCommandLocked() uses - the OLD
   // playbackSpeed/timestamp, before applySeekLocked() reassigns them.
-  auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                   std::chrono::system_clock::now().time_since_epoch())
-                   .count();
+  auto nowMs = timeProvider->getSyncedTimestamp();
   int64_t currentPosition = currentPositionMsLocked(nowMs);
 
   auto relative = command.optional<std::string>("relative").value_or("");
@@ -1129,9 +1178,7 @@ bell::Result<> ConnectStateHandler::handleSeekCommandLocked(
 bell::Result<> ConnectStateHandler::applySeekLocked(int64_t targetPositionMs) {
   auto& playerState = putStateRequestProto.device.playerState;
 
-  auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                   std::chrono::system_clock::now().time_since_epoch())
-                   .count();
+  auto nowMs = timeProvider->getSyncedTimestamp();
 
   targetPositionMs =
       std::clamp<int64_t>(targetPositionMs, 0, playerState.duration);
@@ -1174,16 +1221,11 @@ bell::Result<> ConnectStateHandler::handleUpdateContextCommandLocked(
     return {};
   }
 
-  // Otherwise just an acknowledgment PUT, matching master's own
-  // currentPlaybackSnapshot()+updatePlayerState() here -
-  // restrictions/context_metadata from this command aren't captured
-  // (see this method's own declaration comment). positionAsOfTimestamp
-  // deliberately left as-is - not this command's concern.
-  playerState.timestamp =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count();
-
+  // Otherwise just an acknowledgment PUT - positionAsOfTimestamp *and*
+  // timestamp deliberately left as-is. Touching timestamp alone breaks
+  // the position-extrapolation pair (positionAsOfTimestamp + (now -
+  // timestamp) * playbackSpeed), reading as a jump back to a frozen
+  // position.
   return putStateLocked();
 }
 

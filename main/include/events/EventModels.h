@@ -27,6 +27,13 @@ struct AudioKeyResponse {
   std::vector<std::byte> audioKey;
 };
 
+// PLAYER_FLUSH's payload for a transfer: flush, seek, and isPlaying,
+// applied atomically.
+struct FlushResumeState {
+  int64_t positionMs = 0;
+  bool isPlaying = true;
+};
+
 struct TrackQueueUpdate {
   std::optional<SpotifyId> previousTrackId;
   std::vector<SpotifyId> nextTracks;

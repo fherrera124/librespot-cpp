@@ -81,6 +81,10 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   struct FetchedContextPage {
     std::optional<std::string> url{};
     std::vector<GidBytes> trackGids{};
+    // Parallel to trackGids, always pushed together in onTrackParsed().
+    std::vector<std::string> trackUids{};
+    std::vector<std::string> trackArtistUris{};
+    std::vector<std::string> trackAlbumUris{};
 
     bool operator==(const FetchedContextPage& other) const {
       return url == other.url && trackGids == other.trackGids;
@@ -291,7 +295,11 @@ void DefaultTrackQueueHandler::onTrackParsed(
     return;
   }
 
-  contextPages[pageIndex].trackGids.push_back(*trackGid);
+  auto& page = contextPages[pageIndex];
+  page.trackGids.push_back(*trackGid);
+  page.trackUids.push_back(track.uid);
+  page.trackArtistUris.push_back(track.artistUri);
+  page.trackAlbumUris.push_back(track.albumUri);
 }
 
 void DefaultTrackQueueHandler::onPageMetadataParsed(
@@ -511,7 +519,7 @@ DefaultTrackQueueHandler::currentTrack() {
     auto& track = queue[0];
     return cspot_proto::ProvidedTrack{
         .uri = track.resolvedUri(contextIdType),
-        .uid = "q0",
+        .uid = track.uid.empty() ? "q0" : track.uid,
         .provider = "queue",
         .gid = std::nullopt,
     };
@@ -525,15 +533,16 @@ DefaultTrackQueueHandler::currentTrack() {
       return std::nullopt;
     }
 
+    auto& page = contextPages[contextIndex->page];
     // Reconstruct spotify ID from the bare gid
-    SpotifyId trackId(
-        contextIdType,
-        contextPages[contextIndex->page].trackGids[contextIndex->track]);
+    SpotifyId trackId(contextIdType, page.trackGids[contextIndex->track]);
 
     return cspot_proto::ProvidedTrack{
         .uri = trackId.uri,
-        .uid = "",
+        .uid = page.trackUids[contextIndex->track],
         .provider = "context",
+        .artistUri = page.trackArtistUris[contextIndex->track],
+        .albumUri = page.trackAlbumUris[contextIndex->track],
         .gid = std::nullopt,
     };
   }
@@ -782,7 +791,8 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
 
         // Construct ProvidedTrack from queue track
         nextTracksWindow[x].uri = resolvedUri;
-        nextTracksWindow[x].uid = "q" + std::to_string(x);
+        nextTracksWindow[x].uid =
+            queueTrack.uid.empty() ? "q" + std::to_string(x) : queueTrack.uid;
         nextTracksWindow[x].provider = "queue";
         nextTracksWindow[x].gid.reset();
       }
@@ -797,8 +807,8 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
       // with a short context whose track count didn't fill the whole
       // nextTracksWindow lookahead.
       if (offsetIndex.has_value()) {
-        auto& gid =
-            contextPages[offsetIndex->page].trackGids[offsetIndex->track];
+        auto& page = contextPages[offsetIndex->page];
+        auto& gid = page.trackGids[offsetIndex->track];
 
         if (!nextTracksWindow[x].gid || (nextTracksWindow[x].gid != gid)) {
           updated = true;
@@ -806,8 +816,12 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
           // Construct ProvidedTrack from next context track
           SpotifyId trackId(contextIdType, gid);
           nextTracksWindow[x].uri = trackId.uri;
-          nextTracksWindow[x].uid = "";
+          nextTracksWindow[x].uid = page.trackUids[offsetIndex->track];
           nextTracksWindow[x].provider = "context";
+          nextTracksWindow[x].artistUri =
+              page.trackArtistUris[offsetIndex->track];
+          nextTracksWindow[x].albumUri =
+              page.trackAlbumUris[offsetIndex->track];
           nextTracksWindow[x].gid = gid;
         }
 
@@ -836,14 +850,18 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
       auto offsetIndex = getOffsetIndex(trackOffset);
 
       if (offsetIndex.has_value()) {
-        auto& gid =
-            contextPages[offsetIndex->page].trackGids[offsetIndex->track];
+        auto& page = contextPages[offsetIndex->page];
+        auto& gid = page.trackGids[offsetIndex->track];
 
         // Construct ProvidedTrack from previous context track
         SpotifyId trackId(contextIdType, gid);
         previousTracksWindow[x].uri = trackId.uri;
-        previousTracksWindow[x].uid = "";
+        previousTracksWindow[x].uid = page.trackUids[offsetIndex->track];
         previousTracksWindow[x].provider = "context";
+        previousTracksWindow[x].artistUri =
+            page.trackArtistUris[offsetIndex->track];
+        previousTracksWindow[x].albumUri =
+            page.trackAlbumUris[offsetIndex->track];
         previousTracksWindow[x].gid = gid;
       } else {
         previousTracksWindow[x] = {};

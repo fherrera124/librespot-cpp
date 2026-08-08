@@ -57,10 +57,12 @@ StreamPlayer::StreamPlayer(
     std::shared_ptr<cspot::EventLoop> eventLoop,
     std::unique_ptr<cspot::FileProvider> fileProvider,
     std::unique_ptr<cspot::AudioDecoder> audioDecoder,
+    std::shared_ptr<cspot::TimeProvider> timeProvider,
     PlayerStateAnnounceCallback playerStateAnnounceCallback,
     std::shared_ptr<cspot::AudioSink> audioSink)
     : bell::Task("cspot_player", 32 * 1024),
       eventLoop(std::move(eventLoop)),
+      timeProvider(std::move(timeProvider)),
       fileProvider(std::move(fileProvider)),
       playerStateAnnounceCallback(std::move(playerStateAnnounceCallback)),
       audioSink(std::move(audioSink)),
@@ -95,8 +97,15 @@ void StreamPlayer::registerHandlers() {
                                handlePlayEvent(std::get<bool>(event.payload));
                              });
 
-  eventLoop->registerHandler(EventLoop::EventType::PLAYER_FLUSH,
-                             [&](auto&& /*ev*/) { handleFlushEvent(); });
+  eventLoop->registerHandler(
+      EventLoop::EventType::PLAYER_FLUSH, [&](EventLoop::Event&& ev) {
+        auto event = std::move(ev);
+        if (auto* resumeState = std::get_if<FlushResumeState>(&event.payload)) {
+          handleFlushEvent(*resumeState);
+        } else {
+          handleFlushEvent();
+        }
+      });
 
   eventLoop->registerHandler(
       EventLoop::EventType::PLAYER_SEEK, [&](EventLoop::Event&& ev) {
@@ -190,14 +199,24 @@ void StreamPlayer::handlePlayEvent(bool shouldPlay) {
   queueUpdateSemaphore.give();
 }
 
-void StreamPlayer::handleFlushEvent() {
+void StreamPlayer::handleFlushEvent(std::optional<FlushResumeState> resumeState) {
   std::scoped_lock lock(playbackMutex);
+  // flushRequested, pendingStartPositionMs and isPlaying are set together,
+  // under this one lock acquisition - taskLoop() must never observe the
+  // flush without the position/play-state that belongs with it.
   flushRequested = true;
+  if (resumeState) {
+    pendingStartPositionMs = resumeState->positionMs;
+    isPlaying = resumeState->isPlaying;
+  }
   queueUpdateSemaphore.give();
 }
 
 void StreamPlayer::handleSeekEvent(int64_t positionMs) {
   std::scoped_lock lock(playbackMutex);
+  BELL_LOG(debug, LOG_TAG,
+           "handleSeekEvent({}) - currentFile.has_value={} isOpen={}",
+           positionMs, currentFile.has_value(), audioDecoder->isOpen());
   // Deferred to taskLoop() instead of calling audioDecoder->seekToMs()
   // here: taskLoop() calls processPacket() without holding playbackMutex
   // (see its own comment), so a direct call from this thread would race
@@ -218,17 +237,24 @@ void StreamPlayer::maybeStartCurrentTrack() {
   // should wait. Gating the open itself on isPlaying leaves isBuffering
   // stuck at true for any transfer that starts paused.
   auto& file = *currentFile;
-  BELL_LOG(debug, LOG_TAG, "Opening CDN stream for {}: {}", file.itemId.uri,
-           file.cdnUrl);
+
+  int64_t startPositionMs = pendingStartPositionMs.value_or(0);
+  pendingStartPositionMs.reset();
+
+  BELL_LOG(debug, LOG_TAG, "Opening CDN stream for {} at {}ms: {}",
+           file.itemId.uri, startPositionMs, file.cdnUrl);
   auto res = audioDecoder->openStream(file.cdnUrl, file.decryptionKey,
-                                      file.itemId, file.format);
+                                      file.itemId, file.format,
+                                      startPositionMs);
   BELL_LOG(info, LOG_TAG, "openStream() returned for {}", file.itemId.uri);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
     return;
   }
 
-  announceState(/*isBuffering=*/false, generatePlaybackId(), /*positionMs=*/0);
+  // The *requested* position, not a verified one - openStream()'s seek is
+  // best-effort and doesn't report back whether it landed.
+  announceState(/*isBuffering=*/false, generatePlaybackId(), startPositionMs);
 }
 
 void StreamPlayer::announceState(bool isBuffering,
@@ -242,9 +268,7 @@ void StreamPlayer::announceState(bool isBuffering,
       .isPlaying = true,
       .isPaused = !isPlaying,
       .isBuffering = isBuffering,
-      .timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::system_clock::now().time_since_epoch())
-                       .count(),
+      .timestamp = timeProvider->getSyncedTimestamp(),
       .positionAsOfTimestamp = positionMs,
       .playbackDurationMs = 0,
       .playbackId = playbackId,
@@ -280,30 +304,24 @@ void StreamPlayer::taskLoop() {
       }
     }
 
+    maybeStartCurrentTrack();
+
     // Applied here (not in handleSeekEvent()) so seekToMs() only runs on
-    // this task's own thread, matching processPacket() below - see
-    // handleSeekEvent()'s comment.
-    if (pendingSeekMs) {
+    // this task's own thread, matching processPacket() below.
+    if (pendingSeekMs && audioDecoder->isOpen()) {
       int64_t positionMs = *pendingSeekMs;
       pendingSeekMs.reset();
 
-      if (!audioDecoder->isOpen()) {
-        BELL_LOG(warn, LOG_TAG, "Ignoring seek to {}ms - no track open",
-                 positionMs);
+      auto res = audioDecoder->seekToMs(positionMs);
+      if (!res) {
+        BELL_LOG(error, LOG_TAG, "Seek to {}ms failed: {}", positionMs,
+                 res.error());
       } else {
-        auto res = audioDecoder->seekToMs(positionMs);
-        if (!res) {
-          BELL_LOG(error, LOG_TAG, "Seek to {}ms failed: {}", positionMs,
-                   res.error());
-        } else {
-          // Sink may still hold audio decoded from the old position -
-          // without this, a seek briefly plays stale audio first.
-          audioSink->flush();
-        }
+        // Sink may still hold audio decoded from the old position -
+        // without this, a seek briefly plays stale audio first.
+        audioSink->flush();
       }
     }
-
-    maybeStartCurrentTrack();
   }
 
   if (isPlaying && audioDecoder->isOpen()) {

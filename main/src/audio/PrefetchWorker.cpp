@@ -72,6 +72,15 @@ void PrefetchWorker::taskLoop() {
   }
 
   for (size_t idx : chunksToPrefetch(chunkIndex, session.depth, totalChunks)) {
+    {
+      // A newer session means this one's phase is stale (a seek landed) -
+      // stop rather than keep fetching chunks nobody will read.
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (pendingSession.has_value()) {
+        break;
+      }
+    }
+
     if (session.chunkCache->claim(idx) != ChunkCache::ClaimOutcome::MustFetch) {
       continue;  // already ready, already in flight, or window full
     }

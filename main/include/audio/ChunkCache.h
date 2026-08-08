@@ -60,8 +60,8 @@ class ChunkCache {
       std::chrono::milliseconds timeout = std::chrono::milliseconds::zero());
 
   // Fetching -> Ready. No-op if chunkIndex isn't currently owned as
-  // Fetching (e.g. it was evicted by advanceWindow()/reset() while the
-  // fetch was in flight) - the fetched bytes are simply discarded.
+  // Fetching (e.g. it was evicted by advanceWindow() while the fetch was
+  // in flight) - the fetched bytes are simply discarded.
   void publish(size_t chunkIndex, std::vector<std::byte> data);
 
   // Fetching -> absent (the fetch failed). No-op if not currently
@@ -73,10 +73,6 @@ class ChunkCache {
   // even if some of those are still Fetching (see publish()/cancel()'s
   // own no-op-if-evicted behavior above).
   void advanceWindow(size_t minChunkIndex);
-
-  // Drops everything unconditionally (seek outside the window, track
-  // change, shutdown).
-  void reset();
 
  private:
   enum class SlotState { Fetching, Ready };

@@ -1,6 +1,7 @@
 #pragma once
 
 // Protobufs
+#include "TimeProvider.h"
 #include "api/ApClient.h"
 #include "bell/Result.h"
 #include "bell/utils/Task.h"
@@ -31,6 +32,7 @@ class ConnectStateHandler : public bell::Task {
   ConnectStateHandler(
       std::shared_ptr<EventLoop> eventLoop, std::shared_ptr<AuthInfo> authInfo,
       std::shared_ptr<SpClient> spClient,
+      std::shared_ptr<TimeProvider> timeProvider,
       std::shared_ptr<AudioSink> audioSink = std::make_shared<NullAudioSink>(),
       PlaybackNotificationCallback playbackNotificationCallback =
           [](const PlaybackNotificationEvent&) {});
@@ -88,6 +90,7 @@ class ConnectStateHandler : public bell::Task {
   std::shared_ptr<EventLoop> eventLoop;
   std::shared_ptr<AuthInfo> authInfo;
   std::shared_ptr<SpClient> spClient;
+  std::shared_ptr<TimeProvider> timeProvider;
   std::shared_ptr<TrackQueueHandler> trackQueueHandler;
   std::shared_ptr<AudioSink> audioSink;
   PlaybackNotificationCallback playbackNotificationCallback;

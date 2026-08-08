@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <utility>
 #include "AuthInfo.h"
+#include "TimeProvider.h"
 #include "api/ApConnection.h"
 #include "events/EventLoop.h"
 #include "proto/SpotifyId.h"
@@ -24,7 +25,8 @@ class ApClient {
   enum class State { Connecting, Connected, Failed };
 
   ApClient(std::shared_ptr<cspot::EventLoop> eventLoop,
-           std::shared_ptr<cspot::AuthInfo> authInfo);
+           std::shared_ptr<cspot::AuthInfo> authInfo,
+           std::shared_ptr<cspot::TimeProvider> timeProvider);
 
   bell::Result<> connectAndAuthenticate(
       const std::string& apAddress,
@@ -69,6 +71,7 @@ class ApClient {
 
   std::shared_ptr<cspot::EventLoop> eventLoop;
   std::shared_ptr<cspot::AuthInfo> authInfo;
+  std::shared_ptr<cspot::TimeProvider> timeProvider;
   std::unique_ptr<ApConnection> apConnection;
 
   std::string countryCode;

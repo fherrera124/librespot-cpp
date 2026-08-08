@@ -49,7 +49,8 @@ class ContextPageParser {
     InPagesArray,
     InPageObject,
     InTracksArray,
-    InTrackObject
+    InTrackObject,
+    InTrackMetadataObject
   } level = Level::ExpectKey;
 
   OnTrackCallback trackCallback;

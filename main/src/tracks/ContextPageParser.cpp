@@ -113,6 +113,9 @@ int ContextPageParser::onStartMap(void* ctx) {
   } else if (parser->level == Level::InTracksArray) {
     parser->level = Level::InTrackObject;
     parser->parsedTrack = cspot_proto::ContextTrack{};
+  } else if (parser->level == Level::InTrackObject &&
+             parser->lastKey == "metadata") {
+    parser->level = Level::InTrackMetadataObject;
   } else if (parser->level == Level::ExpectKey && parser->lastKey == "pages") {
     parser->level = Level::InPagesArray;
   }
@@ -121,7 +124,9 @@ int ContextPageParser::onStartMap(void* ctx) {
 
 int ContextPageParser::onEndMap(void* ctx) {
   auto* parser = static_cast<ContextPageParser*>(ctx);
-  if (parser->level == Level::InTrackObject && parser->depth == 3) {
+  if (parser->level == Level::InTrackMetadataObject && parser->depth == 4) {
+    parser->level = Level::InTrackObject;
+  } else if (parser->level == Level::InTrackObject && parser->depth == 3) {
     // We are at the end of a track object
     if (parser->trackCallback) {
       parser->parsedTrack.index.track = parser->trackIndexInPage;
@@ -169,6 +174,12 @@ int ContextPageParser::onString(void* ctx, const uint8_t* str, size_t len) {
     } else if (parser->lastKey == "uri") {
       parser->parsedTrack.uri = sval;
     };
+  } else if (parser->level == Level::InTrackMetadataObject) {
+    if (parser->lastKey == "artist_uri") {
+      parser->parsedTrack.artistUri = sval;
+    } else if (parser->lastKey == "album_uri") {
+      parser->parsedTrack.albumUri = sval;
+    }
   }
   return 1;
 }

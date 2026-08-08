@@ -91,6 +91,12 @@ struct ContextTrack {
   // Not a part of protobuf, added for indexing purposes
   cspot_proto::ContextIndex index{};
 
+  // Not part of protobuf either - populated only by ContextPageParser from
+  // a context page's JSON metadata object. Empty on a ContextTrack decoded
+  // from TransferState.queue.tracks.
+  std::string artistUri{};
+  std::string albumUri{};
+
   static auto bindFields(ContextTrack* self, bool isDecode) {
     _ContextTrack rawProto = ContextTrack_init_zero;
     nanopb_helper::bindField(rawProto.uri, self->uri, isDecode);
@@ -214,6 +220,8 @@ struct ProvidedTrack {
   std::string uri;
   std::string uid = "";
   std::string provider = "";
+  std::string artistUri = "";
+  std::string albumUri = "";
 
   std::optional<std::array<std::byte, 16>> gid =
       std::nullopt;  // Not part of protobuf, added for convenience
@@ -223,6 +231,8 @@ struct ProvidedTrack {
     nanopb_helper::bindField(rawProto.uri, self->uri, isDecode);
     nanopb_helper::bindField(rawProto.uid, self->uid, isDecode);
     nanopb_helper::bindField(rawProto.provider, self->provider, isDecode);
+    nanopb_helper::bindField(rawProto.artist_uri, self->artistUri, isDecode);
+    nanopb_helper::bindField(rawProto.album_uri, self->albumUri, isDecode);
     return rawProto;
   }
 };
@@ -231,14 +241,6 @@ struct ProvidedTrack {
 NANOPB_STRUCT(cspot_proto::ProvidedTrack, ProvidedTrack_fields)
 
 namespace cspot_proto {
-// go-librespot always sends a non-nil (even if empty) Suppressions on
-// every PlayerState it PUTs (daemon/player_state.go's initState():
-// "Suppressions: &connectpb.Suppressions{}", and re-set from the
-// TransferState/command on every transfer/suppress command - see
-// daemon/player.go, daemon/controls.go). Previously entirely absent from
-// this wrapper layer - decoding a TransferState silently dropped its
-// suppressions, and every outgoing PlayerState omitted the field rather
-// than sending it present-but-empty like go always does.
 struct Suppressions {
   std::vector<std::string> providers;
 
@@ -465,7 +467,7 @@ NANOPB_STRUCT(cspot_proto::TransferState, TransferState_fields)
 namespace cspot_proto {
 struct Cluster {
   std::string activeDeviceId;
-  cspot_proto::PlayerState playerState;
+  nanopb_helper::Optional<cspot_proto::PlayerState> playerState;
 
   static auto bindFields(Cluster* self, bool isDecode) {
     _Cluster rawProto = Cluster_init_zero;
@@ -483,10 +485,14 @@ NANOPB_STRUCT(cspot_proto::Cluster, Cluster_fields)
 namespace cspot_proto {
 struct ClusterUpdate {
   cspot_proto::Cluster cluster;
+  ClusterUpdateReason updateReason =
+      ClusterUpdateReason_UNKNOWN_CLUSTER_UPDATE_REASON;
 
   static auto bindFields(ClusterUpdate* self, bool isDecode) {
     _ClusterUpdate rawProto = ClusterUpdate_init_zero;
     nanopb_helper::bindField(rawProto.cluster, self->cluster, isDecode);
+    nanopb_helper::bindField(rawProto.update_reason, self->updateReason,
+                             isDecode);
     return rawProto;
   }
 };

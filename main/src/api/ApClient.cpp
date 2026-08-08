@@ -1,7 +1,5 @@
 #include "api/ApClient.h"
-#include <sys/time.h>
 #include <cstdint>
-#include <cstring>
 #include "Utils.h"
 #include "bell/Logger.h"
 #include "bell/Result.h"
@@ -35,8 +33,11 @@ const auto pingTimeout = std::chrono::seconds(125);
 }  // namespace
 
 ApClient::ApClient(std::shared_ptr<cspot::EventLoop> eventLoop,
-                   std::shared_ptr<cspot::AuthInfo> authInfo)
-    : eventLoop(std::move(eventLoop)), authInfo(std::move(authInfo)) {
+                   std::shared_ptr<cspot::AuthInfo> authInfo,
+                   std::shared_ptr<cspot::TimeProvider> timeProvider)
+    : eventLoop(std::move(eventLoop)),
+      authInfo(std::move(authInfo)),
+      timeProvider(std::move(timeProvider)) {
   apConnection = std::make_unique<ApConnection>(this->authInfo);
   apConnection->setPacketHandler(
       [this](uint8_t packetType, const std::byte* data, size_t len) {
@@ -153,20 +154,8 @@ void ApClient::apPacketHandler(uint8_t packetType, const std::byte* data,
       BELL_LOG(info, LOG_TAG, "Received ping request from AP");
       lastPingTime = std::chrono::steady_clock::now();
 
-      // Spotify's own AP ping carries a real Unix timestamp (seconds,
-      // big-endian) in its first 4 bytes, avoiding any NTP dependency.
-      // Sets the system clock directly so every system_clock::now()
-      // call already in this codebase is correct without touching any of
-      // them. Recalibrated on every ping (~2min) to correct for clock
-      // drift.
-      if (len >= sizeof(uint32_t)) {
-        uint32_t remoteSeconds;
-        std::memcpy(&remoteSeconds, data, sizeof(remoteSeconds));
-        remoteSeconds = ntohl(remoteSeconds);
-        struct timeval tv = {.tv_sec = static_cast<time_t>(remoteSeconds),
-                             .tv_usec = 0};
-        settimeofday(&tv, nullptr);
-      }
+      // Refines TimeProvider's offset periodically (~2min).
+      timeProvider->syncWithPingPacket(data, len);
 
       auto res = apConnection->sendPacket(
           static_cast<uint8_t>(ApCommandType::Pong), data, len);

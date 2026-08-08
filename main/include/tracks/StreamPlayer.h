@@ -6,6 +6,7 @@
 
 #include "AudioSink.h"
 #include "FileProvider.h"
+#include "TimeProvider.h"
 #include "api/ApClient.h"
 #include "api/SpClient.h"
 #include "bell/utils/Semaphore.h"
@@ -25,6 +26,7 @@ class StreamPlayer : public bell::Task {
       std::shared_ptr<cspot::EventLoop> eventLoop,
       std::unique_ptr<cspot::FileProvider> fileProvider,
       std::unique_ptr<cspot::AudioDecoder> audioDecoder,
+      std::shared_ptr<cspot::TimeProvider> timeProvider,
       PlayerStateAnnounceCallback playerStateAnnounceCallback =
           [](const PlayerStateUpdate&) {},
       std::shared_ptr<cspot::AudioSink> audioSink =
@@ -38,6 +40,7 @@ class StreamPlayer : public bell::Task {
   std::shared_ptr<cspot::EventLoop> eventLoop;
   std::shared_ptr<cspot::SpClient> spClient;
   std::shared_ptr<cspot::ApClient> apClient;
+  std::shared_ptr<cspot::TimeProvider> timeProvider;
   std::unique_ptr<cspot::FileProvider> fileProvider;
   PlayerStateAnnounceCallback playerStateAnnounceCallback;
   std::shared_ptr<cspot::AudioSink> audioSink;
@@ -58,9 +61,14 @@ class StreamPlayer : public bell::Task {
   // stale audio from pause/seek/skip/prev.
   bool suppressNextSinkFlush = false;
 
-  // Set by handleSeekEvent() (EventLoop thread), applied by taskLoop()
-  // (this class's own thread) - see handleSeekEvent()'s comment.
+  // Live seek on an already-open decoder. Set by handleSeekEvent(),
+  // applied by taskLoop().
   std::optional<int64_t> pendingSeekMs;
+
+  // Start position for the next track to open, consumed by
+  // maybeStartCurrentTrack(). Meaningless once a track is already open,
+  // unlike pendingSeekMs above.
+  std::optional<int64_t> pendingStartPositionMs;
 
   std::unique_ptr<AudioDecoder> audioDecoder;
 
@@ -71,7 +79,8 @@ class StreamPlayer : public bell::Task {
   void handleFileProvided(const ProvidedFile& providedFile);
   bool isCurrentTrackReady();
   void handlePlayEvent(bool play);
-  void handleFlushEvent();
+  // resumeState, when set, is applied atomically with the flush.
+  void handleFlushEvent(std::optional<FlushResumeState> resumeState = std::nullopt);
   void handleSeekEvent(int64_t positionMs);
 
   // Idempotent: opens the decoder once the file's ready, regardless of

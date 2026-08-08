@@ -237,7 +237,10 @@ bell::Result<std::vector<std::byte>> CDNDataStream::readRawHeaderBytes(
 
 void CDNDataStream::resetPrefetchPhase() {
   phaseAnchor.reset();
-  chunkCache->reset();
+  // A *new* ChunkCache, not chunkCache->reset() on the existing one - a
+  // still-in-flight PrefetchWorker fetch from the old phase can't corrupt
+  // an object nothing else references anymore.
+  chunkCache = std::make_shared<ChunkCache>(kChunkCacheCapacity);
 }
 
 std::optional<size_t> CDNDataStream::chunkIndexInPhase(
@@ -302,7 +305,7 @@ bool CDNDataStream::tryServeFromCache(size_t desiredStart, size_t desiredLen) {
     // steps - not expected from this class's own call sites, but if it
     // ever happens, start a fresh phase rather than risk mixing grids.
     phaseAnchor = desiredStart;
-    chunkCache->reset();
+    chunkCache = std::make_shared<ChunkCache>(kChunkCacheCapacity);
     return false;
   }
 

@@ -25,15 +25,17 @@ cspot::Session::Session(
   eventLoop = std::make_shared<cspot::EventLoop>();
   socketPoll = std::make_shared<bell::SocketPollListener>(
       /*registerWakeSocket=*/true);
+  // Early, so its NTP sync has time to land before anything else needs it.
+  timeProvider = std::make_shared<cspot::TimeProvider>();
   credentialsResolver = createDefaultCredentialsResolver(
       std::make_shared<bell::HTTPClient>(), this->authInfo);
   spClient = createDefaultSpClient(std::make_shared<bell::HTTPClient>(),
                                    credentialsResolver);
   dealerClient = std::make_shared<DealerClient>(eventLoop);
-  apClient = std::make_unique<ApClient>(eventLoop, this->authInfo);
+  apClient = std::make_unique<ApClient>(eventLoop, this->authInfo, timeProvider);
 
   connectStateHandler = std::make_shared<ConnectStateHandler>(
-      eventLoop, this->authInfo, spClient, audioSink,
+      eventLoop, this->authInfo, spClient, timeProvider, audioSink,
       std::move(playbackNotificationCallback));
 
   auto fileProvider = createDefaultFileProvider(
@@ -44,6 +46,7 @@ cspot::Session::Session(
   // ConnectStateHandler::onPlayerStateUpdate()'s own comment.
   streamPlayer = std::make_shared<StreamPlayer>(
       eventLoop, std::move(fileProvider), std::move(audioDecoder),
+      timeProvider,
       [connectStateHandler = this->connectStateHandler](
           const PlayerStateUpdate& update) {
         connectStateHandler->onPlayerStateUpdate(update);

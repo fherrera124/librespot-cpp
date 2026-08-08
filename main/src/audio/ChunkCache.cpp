@@ -124,11 +124,3 @@ void ChunkCache::advanceWindow(size_t minChunkIndex) {
   }
   cv_.notify_all();  // wake any waitFor() on an index that just got evicted
 }
-
-void ChunkCache::reset() {
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    slots_.clear();
-  }
-  cv_.notify_all();
-}

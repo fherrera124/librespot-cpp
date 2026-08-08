@@ -58,9 +58,13 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
         prefetchWorker(std::make_shared<PrefetchWorker>(httpClient)),
         targetPrefetchDuration(targetPrefetchDuration) {}
 
+  // No default for startPositionMs here - default args aren't virtual,
+  // so repeating one on the override wouldn't apply through the
+  // base-class pointer callers actually use.
   bell::Result<> openStream(const std::string& cdnUrl,
                             const std::vector<std::byte>& decryptKey,
-                            const SpotifyId&, AudioFormat format) override {
+                            const SpotifyId&, AudioFormat format,
+                            int64_t startPositionMs) override {
     resetStream();
 
     // How many kCDNChunkSize-sized chunks cover targetPrefetchDuration at
@@ -139,6 +143,20 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
     }
 
     isOpenFlag = true;
+
+    // Best-effort: a failed seek doesn't fail the open, the stream is
+    // still usable from wherever it landed.
+    if (startPositionMs > 0) {
+      auto seekRes = seekToMs(startPositionMs);
+      if (!seekRes) {
+        BELL_LOG(error, LOG_TAG, "Start-position seek to {}ms failed: {}",
+                 startPositionMs, seekRes.error());
+      } else {
+        BELL_LOG(info, LOG_TAG, "Start-position seek to {}ms applied",
+                 startPositionMs);
+      }
+    }
+
     return {};
   }
 

@@ -96,6 +96,7 @@ class Session {
   std::shared_ptr<cspot::AuthInfo> authInfo;
   std::shared_ptr<cspot::EventLoop> eventLoop;
   std::shared_ptr<bell::SocketPollListener> socketPoll;
+  std::shared_ptr<cspot::TimeProvider> timeProvider;
   std::shared_ptr<cspot::CredentialsResolver> credentialsResolver;
   std::shared_ptr<cspot::DealerClient> dealerClient;
   std::shared_ptr<cspot::SpClient> spClient;
