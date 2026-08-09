@@ -505,6 +505,8 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
+  std::unique_lock<std::mutex> lock(putStateMutex);
+
   BELL_LOG(debug, LOG_TAG,
            "CLUSTER DIAG: weThinkActive={} ourDeviceId={} "
            "activeDeviceId={} updateReason={} playerState.hasValue={} "
@@ -528,7 +530,6 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
   BELL_LOG(info, LOG_TAG, "Playback was transferred to device {}",
            clusterUpdate.cluster.activeDeviceId);
 
-  std::scoped_lock lock(putStateMutex);
   putStateRequestProto.isActive = false;
   eventLoop->post(EventLoop::EventType::PLAYER_PLAY, false);
 
@@ -551,6 +552,12 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
              ps.isPlaying, ps.isBuffering, ps.isPaused, ps.sessionId,
              ps.position, ps.timestamp);
   }
+
+  // Mutations are done - release the lock before the network round-trip
+  // so this doesn't block onPlayerStateUpdate() (audio thread,
+  // synchronous) or any request*() local-control entry point for
+  // whatever putInactive() takes (up to ~11s worst case).
+  lock.unlock();
 
   auto inactiveRes = spClient->putInactive(authInfo->deviceId,
                                            authInfo->sessionId);
@@ -582,17 +589,23 @@ bell::Result<> ConnectStateHandler::handleSetVolume(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  std::scoped_lock lock(putStateMutex);
-
   uint16_t volume = static_cast<uint16_t>(
       std::clamp<int32_t>(setVolumeCommand.volume, 0, 65535));
-
   BELL_LOG(info, LOG_TAG, "Set volume to {}", volume);
-  putStateRequestProto.device.deviceInfo.volume = volume;
 
+  bell::Result<> putRes;
+  {
+    std::scoped_lock lock(putStateMutex);
+    putStateRequestProto.device.deviceInfo.volume = volume;
+    putRes = putStateLocked(PutStateReason_VOLUME_CHANGED);
+  }
+
+  // Runs unlocked - AudioSink's contract doesn't guarantee a non-blocking
+  // implementation, and putStateLocked() above already scheduled the
+  // flush (it never sends inline), so nothing past this point needs
+  // putStateMutex.
   audioSink->volumeChanged(volume);
 
-  auto putRes = putStateLocked(PutStateReason_VOLUME_CHANGED);
   if (!putRes) {
     BELL_LOG(error, LOG_TAG, "Failed to put state after volume change: {}",
              putRes.error());
@@ -746,12 +759,13 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     // (loadContext(), before loadCurrentTrack()) resolve first too.
     //
     // This network fetch runs with putStateMutex still held (by the
-    // caller - see this function's own declaration comment) rather than
-    // released around it: the only other lock-taker is this class's own
-    // runTask(), which only holds the lock briefly to check/encode
-    // (released during both its wait and its own network send), so the
-    // worst case is a deferred flush, never a deadlock - and it avoids
-    // ever flushing a half-updated transfer.
+    // caller) rather than released around it, so a half-updated transfer
+    // never gets flushed - but it blocks every other lock-taker for its
+    // duration: onPlayerStateUpdate() (audio thread, synchronous),
+    // runTask() (only delays its own flush, not a deadlock), and all six
+    // request*() local-control entry points, two of which (requestNext(),
+    // requestPrevious()) can independently reach the network the same way
+    // via TrackQueueHandler::ensureEnoughTracks().
     auto loadRes = trackQueueHandler->loadContext(
         transferState.current_session.context.uri, currentTrackUri,
         transferState.current_session.currentUid);

@@ -82,10 +82,13 @@ class ConnectStateHandler : public bell::Task {
   // dealer's. Each one takes putStateMutex itself and calls the very same
   // ...Locked() method the matching remote endpoint does, so there's never
   // a second implementation of what "pause" or "skip" means. Safe to call
-  // from any thread: none of these invoke any caller-supplied callback
-  // while putStateMutex is held, so there's no reentrancy hazard to guard
-  // against here (unlike the outward notification callback - see
-  // PlaybackNotifications.h).
+  // from any thread re: reentrancy: none of these invoke any
+  // caller-supplied callback while putStateMutex is held (unlike the
+  // outward notification callback - see PlaybackNotifications.h). Not
+  // necessarily fast, though - requestNext()/requestPrevious() can block
+  // on a real network fetch (TrackQueueHandler::ensureEnoughTracks())
+  // while holding putStateMutex, same as every other lock-taker in this
+  // file.
   bool requestPlayPause(bool play);
   bool requestNext();
   bool requestPrevious();

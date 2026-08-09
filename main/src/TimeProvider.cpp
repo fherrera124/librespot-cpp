@@ -4,6 +4,8 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <ctime>
+#include <string>
 
 #include "bell/Logger.h"
 #include "bell/net/IpAddress.h"
@@ -18,6 +20,15 @@ const uint16_t kNtpPort = 123;
 const int kNtpTimeoutMs = 3000;
 // NTP epoch (1900-01-01) to Unix epoch (1970-01-01), in seconds.
 const int64_t kNtpToUnixEpochSeconds = 2208988800LL;
+
+std::string formatEpochMs(int64_t epochMs) {
+  std::time_t seconds = static_cast<std::time_t>(epochMs / 1000);
+  std::tm tmBuf{};
+  gmtime_r(&seconds, &tmBuf);
+  std::array<char, 24> buf{};
+  std::strftime(buf.data(), buf.size(), "%Y-%m-%d %H:%M:%S", &tmBuf);
+  return std::string(buf.data()) + " UTC";
+}
 }  // namespace
 
 TimeProvider::TimeProvider() : Task("cspot_time_provider", 4096) {
@@ -50,8 +61,10 @@ void TimeProvider::syncWithPingPacket(const std::byte* data, size_t len) {
   uint32_t remoteSeconds;
   std::memcpy(&remoteSeconds, data, sizeof(remoteSeconds));
   remoteSeconds = ntohl(remoteSeconds);
-  applyOffset(static_cast<int64_t>(remoteSeconds) * 1000);
-  BELL_LOG(debug, LOG_TAG, "Time offset refined from AP ping");
+  int64_t epochMs = static_cast<int64_t>(remoteSeconds) * 1000;
+  applyOffset(epochMs);
+  BELL_LOG(debug, LOG_TAG, "Time offset refined from AP ping: {}",
+           formatEpochMs(epochMs));
 }
 
 bool TimeProvider::queryNtp(int64_t& outEpochMs) {
@@ -106,7 +119,7 @@ void TimeProvider::runTask() {
   int64_t epochMs;
   if (queryNtp(epochMs)) {
     applyOffset(epochMs);
-    BELL_LOG(info, LOG_TAG, "Synced time via NTP");
+    BELL_LOG(info, LOG_TAG, "Synced time via NTP: {}", formatEpochMs(epochMs));
   } else {
     BELL_LOG(warn, LOG_TAG,
              "NTP sync failed, will rely on the Spotify AP ping instead");
