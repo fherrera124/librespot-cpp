@@ -29,7 +29,6 @@ namespace {
 std::string spircVersion = "3.2.6";
 std::string deviceSoftwareVersion = "1.0.0";
 std::string clientId = "65b708073fc0480ea92a077233ca87bd";  // Spotify client ID
-std::string connectCapabilities;
 std::vector<std::string> supportedTypes = {"audio/track", "audio/episode"};
 std::string sessionIdChars =
     "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -593,11 +592,10 @@ bell::Result<> ConnectStateHandler::handleSetVolume(
       std::clamp<int32_t>(setVolumeCommand.volume, 0, 65535));
   BELL_LOG(info, LOG_TAG, "Set volume to {}", volume);
 
-  bell::Result<> putRes;
   {
     std::scoped_lock lock(putStateMutex);
     putStateRequestProto.device.deviceInfo.volume = volume;
-    putRes = putStateLocked(PutStateReason_VOLUME_CHANGED);
+    (void)putStateLocked(PutStateReason_VOLUME_CHANGED);
   }
 
   // Runs unlocked - AudioSink's contract doesn't guarantee a non-blocking
@@ -605,12 +603,6 @@ bell::Result<> ConnectStateHandler::handleSetVolume(
   // flush (it never sends inline), so nothing past this point needs
   // putStateMutex.
   audioSink->volumeChanged(volume);
-
-  if (!putRes) {
-    BELL_LOG(error, LOG_TAG, "Failed to put state after volume change: {}",
-             putRes.error());
-    return putRes;
-  }
 
   return {};
 }
@@ -829,10 +821,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
 
   BELL_LOG(info, LOG_TAG, "Current track after transfer: {}",
            track ? track->uri : "none");
-  if (!putStateLocked()) {
-    BELL_LOG(error, LOG_TAG, "Failed to put state");
-    return {};
-  }
+  (void)putStateLocked();
 
   // Posted only after trackQueueHandler's context/queue/windows are
   // resolved above, so StreamPlayer never reopens a stale currentFile
@@ -972,13 +961,7 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   playerState.timestamp =
       timeProvider->getSyncedTimestamp();
 
-  auto putRes = putStateLocked();
-  if (!putRes) {
-    BELL_LOG(error, LOG_TAG, "Failed to put state after play command");
-    return putRes;
-  }
-
-  return {};
+  return putStateLocked();
 }
 
 bell::Result<> ConnectStateHandler::handleSkipNextCommandLocked(
@@ -1128,13 +1111,7 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
     eventLoop->post(EventLoop::EventType::PLAYER_PLAY, false);
   }
 
-  auto putRes = putStateLocked();
-  if (!putRes) {
-    BELL_LOG(error, LOG_TAG, "Failed to put state after skip next");
-    return putRes;
-  }
-
-  return {};
+  return putStateLocked();
 }
 
 void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
@@ -1243,13 +1220,7 @@ bell::Result<> ConnectStateHandler::handlePauseCommandLocked(bool pause) {
 
   eventLoop->post(EventLoop::EventType::LOCAL_PLAY_PAUSE_CHANGED, pause);
 
-  auto putRes = putStateLocked();
-  if (!putRes) {
-    BELL_LOG(error, LOG_TAG, "Failed to put state after pause/resume");
-    return putRes;
-  }
-
-  return {};
+  return putStateLocked();
 }
 
 bell::Result<> ConnectStateHandler::handleSeekCommandLocked(
@@ -1302,13 +1273,7 @@ bell::Result<> ConnectStateHandler::applySeekLocked(int64_t targetPositionMs) {
   playerState.positionAsOfTimestamp = targetPositionMs;
   playerState.timestamp = nowMs;
 
-  auto putRes = putStateLocked();
-  if (!putRes) {
-    BELL_LOG(error, LOG_TAG, "Failed to put state after seek");
-    return putRes;
-  }
-
-  return {};
+  return putStateLocked();
 }
 
 bell::Result<> ConnectStateHandler::handleUpdateContextCommandLocked(

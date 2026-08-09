@@ -20,10 +20,11 @@ inline void logHeapStatus(const char* tag, const char* label) {
   size_t internalLargest =
       heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
   size_t psramFree = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  size_t psramLargest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
   BELL_LOG(info, tag,
            "Heap [{}]: internal free={} bytes (largest block={} bytes), "
-           "psram free={} bytes",
-           label, internalFree, internalLargest, psramFree);
+           "psram free={} bytes (largest block={} bytes)",
+           label, internalFree, internalLargest, psramFree, psramLargest);
 #else
   (void)tag;
   (void)label;
