@@ -1,5 +1,7 @@
 #include "audio/CDNRangeFetcher.h"
 
+#include <new>
+
 #include "bell/Logger.h"
 #include "bell/http/Common.h"
 #include "nonstd/expected.hpp"
@@ -32,7 +34,15 @@ bell::Result<RangeFetchResult> CDNRangeFetcher::fetch(
 
   auto* stream = response->stream();
   RangeFetchResult result;
-  result.data.resize(*response->contentLength);
+  try {
+    result.data.resize(*response->contentLength);
+  } catch (const std::bad_alloc&) {
+    BELL_LOG(error, LOG_TAG,
+             "Out of memory allocating {} bytes for a CDN range fetch",
+             *response->contentLength);
+    return bell::make_unexpected_errc<RangeFetchResult>(
+        std::errc::not_enough_memory);
+  }
   stream->read(reinterpret_cast<char*>(result.data.data()),
               *response->contentLength);
 

@@ -122,7 +122,8 @@ bell::Result<> ApClient::requestAudioKey(const SpotifyId& trackId,
     return bell::make_unexpected_errc(std::errc::not_connected);
   }
 
-  audioKeyRequests.insert({audioKeySequence, {trackId, fileId}});
+  uint32_t sequenceKey = audioKeySequence;
+  audioKeyRequests.insert({sequenceKey, {trackId, fileId}});
 
   // Wire format: [FILEID] [TRACKID] [4 BYTES SEQUENCE ID] [0x00, 0x00]
   std::vector<std::byte> requestData = fileId;
@@ -142,9 +143,20 @@ bell::Result<> ApClient::requestAudioKey(const SpotifyId& trackId,
   requestData.push_back(std::byte{0x00});
   audioKeySequence++;
 
-  return apConnection->sendPacket(
+  auto sendRes = apConnection->sendPacket(
       static_cast<uint8_t>(ApCommandType::AudioKeyRequest), requestData.data(),
       requestData.size());
+  if (!sendRes) {
+    // The AP never saw this sequence ID, so no response will ever arrive
+    // to erase it via apPacketHandler() - erase now, or it orphans in
+    // audioKeyRequests forever.
+    audioKeyRequests.erase(sequenceKey);
+    BELL_LOG(error, LOG_TAG,
+             "Failed to send audio key request: {} (audioKeyRequests size "
+             "now {})",
+             sendRes.error(), audioKeyRequests.size());
+  }
+  return sendRes;
 }
 
 void ApClient::apPacketHandler(uint8_t packetType, const std::byte* data,

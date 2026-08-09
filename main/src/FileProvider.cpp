@@ -249,9 +249,15 @@ void DefaultFileProvider::taskLoop() {
       auto requestRes =
           apClient->requestAudioKey(effectiveTrackId, file->fileId);
       if (!requestRes) {
+        // No AUDIO_KEY event will ever arrive for this track (the request
+        // never reached the AP) - erase now, or this entry orphans in
+        // pendingAudioKeyFiles forever.
+        pendingAudioKeyFiles.erase(effectiveTrackId);
         file->isError = true;
-        BELL_LOG(info, LOG_TAG, "Could not request audio key, err={}",
-                 requestRes.error());
+        BELL_LOG(info, LOG_TAG,
+                 "Could not request audio key, err={} (pendingAudioKeyFiles "
+                 "size now {})",
+                 requestRes.error(), pendingAudioKeyFiles.size());
         eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
         return;
       }
