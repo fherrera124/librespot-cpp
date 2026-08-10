@@ -1,6 +1,8 @@
 #include "FileProvider.h"
 
+#include <chrono>
 #include <mutex>
+#include <optional>
 
 #include "bell/Logger.h"
 #include "bell/utils/Task.h"
@@ -10,6 +12,10 @@
 using namespace cspot;
 
 namespace {
+// Bounds the audio key wait in taskLoop() - without it, a request the AP
+// silently drops leaves the track buffering forever.
+constexpr int kAudioKeyTimeoutMs = 5000;
+
 bool countryListContains(const std::string& countryList,
                          const std::string& country) {
   for (size_t i = 0; i + 1 < countryList.size(); i += 2) {
@@ -75,8 +81,11 @@ class DefaultFileProvider : public FileProvider, bell::Task {
   bell::Semaphore providedFileSemaphore;
   std::vector<ProvidedFile> currentlyProvidedFiles;
 
-  std::mutex pendingAudioKeyFilesMutex;
-  std::unordered_map<SpotifyId, ProvidedFile> pendingAudioKeyFiles;
+  // Handshake between handleAudioKeyResponse() and taskLoop()'s wait for
+  // it - one slot, since taskLoop() only ever awaits one track at a time.
+  std::mutex audioKeyMutex;
+  bell::Semaphore audioKeySemaphore;
+  std::optional<AudioKeyResponse> pendingAudioKeyResponse;
 
   void taskLoop() override;
 
@@ -221,13 +230,72 @@ void DefaultFileProvider::taskLoop() {
       return;
     }
 
+    // Fired before resolveStorageInteractive() below so both round trips
+    // run concurrently. reset() clears any stale signal from an abandoned
+    // previous wait.
+    audioKeySemaphore.reset();
+    auto requestRes =
+        apClient->requestAudioKey(effectiveTrackId, selectedAudioFile->fileId);
+    if (!requestRes) {
+      file->isError = true;
+      BELL_LOG(info, LOG_TAG, "Could not request audio key, err={}",
+               requestRes.error());
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      return;
+    }
+
     auto cdnUrlRes =
         spClient->resolveStorageInteractive(selectedAudioFile->fileId);
     if (!cdnUrlRes) {
       file->isError = true;
       BELL_LOG(info, LOG_TAG, "Could not resolve cdn url, err={}",
                cdnUrlRes.error());
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      return;
+    }
 
+    BELL_LOG(info, LOG_TAG, "Resolved CDN url for track {}", file->itemId.uri);
+
+    // Loop (not a single take()): a stale response for an abandoned wait
+    // must not be mistaken for this track's.
+    std::optional<AudioKeyResponse> audioKeyResponse;
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::milliseconds(kAudioKeyTimeoutMs);
+    while (true) {
+      auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             deadline - std::chrono::steady_clock::now())
+                             .count();
+      // take(0) means "wait forever" to bell::Semaphore - never pass 0.
+      if (remainingMs <= 0 ||
+          !audioKeySemaphore.take(static_cast<int>(remainingMs))) {
+        break;  // timed out
+      }
+      std::scoped_lock lock(audioKeyMutex);
+      if (pendingAudioKeyResponse &&
+          pendingAudioKeyResponse->trackId == effectiveTrackId) {
+        audioKeyResponse = std::move(pendingAudioKeyResponse);
+        pendingAudioKeyResponse.reset();
+        break;
+      }
+    }
+
+    if (!audioKeyResponse) {
+      file->isError = true;
+      BELL_LOG(info, LOG_TAG, "Timed out waiting for audio key for track {}",
+               file->itemId.uri);
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      return;
+    }
+
+    if (!audioKeyResponse->success) {
+      // An AudioKeyResponseError carries a short error code in place of
+      // the key (2 bytes, not 16) - treating it as a real key regardless
+      // of response.success (as this code used to) fed garbage into
+      // mbedtls_aes_setkey_enc downstream, reproduced on real hardware as
+      // "Failed to set AES key" retried forever for the affected track.
+      file->isError = true;
+      BELL_LOG(info, LOG_TAG, "Audio key request denied for track {}",
+               file->itemId.uri);
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
       return;
     }
@@ -236,72 +304,20 @@ void DefaultFileProvider::taskLoop() {
     file->fileId = selectedAudioFile->fileId;
     file->format = selectedAudioFile->format;
     file->trackMetadata = *metadataRes;
+    file->decryptionKey = audioKeyResponse->audioKey;
 
-    BELL_LOG(info, LOG_TAG, "Resolved CDN url for track {}", file->itemId.uri);
+    BELL_LOG(info, LOG_TAG, "File ready for track {} (keyLen={})",
+             file->itemId.uri, file->decryptionKey.size());
 
-    {
-      std::scoped_lock lock(pendingAudioKeyFilesMutex);
-      // Keyed by effectiveTrackId (not file->itemId) - that's what
-      // requestAudioKey() sends below, and what AudioKeyResponse::trackId
-      // echoes back for correlation (see ApClient::requestAudioKey).
-      pendingAudioKeyFiles.insert({effectiveTrackId, file.value()});
-
-      auto requestRes =
-          apClient->requestAudioKey(effectiveTrackId, file->fileId);
-      if (!requestRes) {
-        // No AUDIO_KEY event will ever arrive for this track (the request
-        // never reached the AP) - erase now, or this entry orphans in
-        // pendingAudioKeyFiles forever.
-        pendingAudioKeyFiles.erase(effectiveTrackId);
-        file->isError = true;
-        BELL_LOG(info, LOG_TAG,
-                 "Could not request audio key, err={} (pendingAudioKeyFiles "
-                 "size now {})",
-                 requestRes.error(), pendingAudioKeyFiles.size());
-        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
-        return;
-      }
-    }
+    eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
   }
 }
 
 void DefaultFileProvider::handleAudioKeyResponse(
     const AudioKeyResponse& response) {
-  std::scoped_lock lock(pendingAudioKeyFilesMutex);
-
-  auto fileRes = pendingAudioKeyFiles.find(response.trackId);
-  if (fileRes != pendingAudioKeyFiles.end()) {
-    ProvidedFile file = pendingAudioKeyFiles[response.trackId];
-
-    pendingAudioKeyFiles.erase(fileRes);
-
-    if (!response.success) {
-      // An AudioKeyResponseError carries a short error code in place of
-      // the key (2 bytes, not 16) - treating it as a real key regardless
-      // of response.success (as this code used to) fed garbage into
-      // mbedtls_aes_setkey_enc downstream, reproduced on real hardware as
-      // "Failed to set AES key" retried forever for the affected track.
-      file.isError = true;
-      BELL_LOG(info, LOG_TAG, "Audio key request denied for track {}",
-               file.itemId.uri);
-      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, file);
-      return;
-    }
-
-    file.decryptionKey = response.audioKey;
-
-    file.isError = false;  // success
-
-    BELL_LOG(info, LOG_TAG, "File ready for track {} (keyLen={})",
-             file.itemId.uri, file.decryptionKey.size());
-
-    eventLoop->post(EventLoop::EventType::FILE_PROVIDED, file);
-  } else {
-    BELL_LOG(warn, LOG_TAG,
-             "Audio key response for {} matched no pending request "
-             "(already cancelled/superseded?)",
-             response.trackId.hexGid());
-  }
+  std::scoped_lock lock(audioKeyMutex);
+  pendingAudioKeyResponse = response;
+  audioKeySemaphore.give();
 }
 
 std::unique_ptr<FileProvider> cspot::createDefaultFileProvider(
