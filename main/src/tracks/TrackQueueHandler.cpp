@@ -1,5 +1,6 @@
 #include "tracks/TrackQueueHandler.h"
 #include <algorithm>
+#include <random>
 #include "bell/Result.h"
 #include "bell/http/Client.h"
 #include "crypto/Base62.h"
@@ -15,6 +16,9 @@ namespace {
 // Fetch new page when less than this many tracks remain
 const uint32_t trackFetchThreshold = 8;
 const uint32_t trackWindowLen = 6;
+
+// Upper bound on tracks fetched by enableShuffle(true)'s full-context fetch.
+const uint32_t maxShuffleTracks = 20000;
 
 // Converts a spotify URI to a 16byte GID, returns empty array on failure
 std::optional<std::array<std::byte, 16>> uriToGid(const std::string& uri) {
@@ -36,6 +40,24 @@ std::optional<std::array<std::byte, 16>> uriToGid(const std::string& uri) {
   }
 
   return trackGid;
+}
+
+// Shuffles `order` in place; tracks `pinIndex` (an index into `order`)
+// through the swaps so the caller can find where it ended up.
+void fisherYatesShuffle(std::vector<cspot_proto::ContextIndex>& order,
+                        size_t& pinIndex, std::default_random_engine& rng) {
+  if (order.size() <= 1) {
+    return;
+  }
+  for (size_t i = order.size() - 1; i > 0; i--) {
+    size_t j = std::uniform_int_distribution<size_t>(0, i)(rng);
+    std::swap(order[i], order[j]);
+    if (i == pinIndex) {
+      pinIndex = j;
+    } else if (j == pinIndex) {
+      pinIndex = i;
+    }
+  }
 }
 
 class DefaultTrackQueueHandler : public TrackQueueHandler {
@@ -108,6 +130,12 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   std::vector<FetchedContextPage> contextPages;
   std::optional<cspot_proto::ContextIndex> contextIndex;
 
+  // Permutation of {page,track} pairs; contextIndex always stays the
+  // physical position, shuffled or not.
+  bool shuffled = false;
+  std::vector<cspot_proto::ContextIndex> shuffleOrder;
+  size_t shufflePos = 0;
+
   std::pair<std::string, std::string> targetTrackIds{};
   std::optional<uint32_t> targetTrackIndex;
 
@@ -129,6 +157,26 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
                             const PageMetadata& pageMetadata);
 
   std::optional<cspot_proto::ContextIndex> getOffsetIndex(int32_t offset) const;
+
+  // Moves the cursor by `offset`, keeping shufflePos in sync when
+  // shuffled. Returns false (no-op) if offset runs past either end.
+  bool advanceContextBy(int32_t offset);
+
+  // Resets the cursor to the start of the sequence: shuffleOrder[0]
+  // when shuffled, physical {0,0} otherwise.
+  void resetContextToStart();
+
+  // True at the start of the sequence: shufflePos==0 when shuffled,
+  // physical page==0&&track==0 otherwise. Assumes contextIndex is set.
+  bool atContextStart() const;
+
+  // Relocates shufflePos to match contextIndex; turns shuffle off if
+  // the track isn't in shuffleOrder.
+  void syncShufflePosToContextIndex();
+
+  // Fetches every remaining context page (ignoring trackFetchThreshold),
+  // bounded by maxShuffleTracks.
+  bell::Result<> fetchAllContextPages();
 
   // skipToNextTrack()'s explicit-target path: searches nextTracksWindow
   // (queue entries first, then context - the exact set of tracks the
@@ -239,6 +287,10 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
     } else {
       contextIndex = resolveFlatIndex(*currentTrackIndex);
     }
+
+    // contextIndex above was set directly, not via advanceContextBy() -
+    // relocate shufflePos to match.
+    syncShufflePosToContextIndex();
   }
 
   for (auto& page : contextPages) {
@@ -519,6 +571,9 @@ void DefaultTrackQueueHandler::resetContext() {
   nextTracksWindow.fill(cspot_proto::ProvidedTrack{});
   previousTracksWindow.fill(cspot_proto::ProvidedTrack{});
   currentContextUri.clear();
+  shuffled = false;
+  shuffleOrder.clear();
+  shufflePos = 0;
 }
 
 void DefaultTrackQueueHandler::clearContext() {
@@ -642,9 +697,7 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
       BELL_LOG(error, LOG_TAG, "Could not ensure tracks, err={}", res.error());
     }
 
-    auto nextIndex = getOffsetIndex(1);
-    if (nextIndex.has_value()) {
-      contextIndex = *nextIndex;
+    if (advanceContextBy(1)) {
       return TrackAdvanceResult::Advanced;
     }
 
@@ -652,7 +705,7 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
     // caller decides whether that counts as a real advance (repeat-
     // context) or should stop there instead.
     BELL_LOG(debug, LOG_TAG, "At end of context, wrapping to start");
-    contextIndex = cspot_proto::ContextIndex{0, 0};
+    resetContextToStart();
     return TrackAdvanceResult::WrappedToStart;
   }
 
@@ -694,15 +747,12 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToTargetTrack(
       // slot was built from.
       size_t queueOffset =
           queue.size() > offsetInQueue ? queue.size() - offsetInQueue : 0;
-      auto newIndex =
-          getOffsetIndex(static_cast<int32_t>(x - queueOffset) + 1);
-      if (!newIndex) {
+      if (!advanceContextBy(static_cast<int32_t>(x - queueOffset) + 1)) {
         // Shouldn't happen - the window was built from this same
         // getOffsetIndex() call - but degrade to "not found" rather than
         // leaving contextIndex unset.
         break;
       }
-      contextIndex = *newIndex;
       // Skipping straight into context discards whatever's left of the
       // manual queue, same as skipping past it one track at a time would.
       queue.clear();
@@ -719,7 +769,7 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToTargetTrack(
            "Could not find target track in next-tracks window, wrapping to "
            "start (uri={}, uid={})",
            targetTrackUri, targetTrackUid);
-  contextIndex = cspot_proto::ContextIndex{0, 0};
+  resetContextToStart();
   return TrackAdvanceResult::WrappedToStart;
 }
 
@@ -735,16 +785,13 @@ bell::Result<> DefaultTrackQueueHandler::skipToPreviousTrack(
     return {};
   }
 
-  if ((contextIndex->page == 0) && (contextIndex->track == 0)) {
+  if (atContextStart()) {
     BELL_LOG(debug, LOG_TAG,
              "At start of context, cannot skip to previous track");
     return {};
   }
 
-  auto prevIndex = getOffsetIndex(-1);
-  if (prevIndex.has_value()) {
-    contextIndex = *prevIndex;
-  } else {
+  if (!advanceContextBy(-1)) {
     BELL_LOG(debug, LOG_TAG,
              "At beggining of context, cannot skip to prev track");
   }
@@ -752,14 +799,156 @@ bell::Result<> DefaultTrackQueueHandler::skipToPreviousTrack(
   return {};
 }
 
+bell::Result<> DefaultTrackQueueHandler::fetchAllContextPages() {
+  size_t totalTracks = 0;
+  for (auto& page : contextPages) {
+    totalTracks += page.trackGids.size();
+  }
+
+  // Index-based, not a range-for: fetchContextPage() can append to
+  // contextPages mid-loop, invalidating cached iterators.
+  size_t pageIndex = 0;
+  while (pageIndex < contextPages.size()) {
+    if (contextPages[pageIndex].trackGids.empty()) {
+      auto res = fetchContextPage(contextPages[pageIndex]);
+      if (!res) {
+        BELL_LOG(error, LOG_TAG,
+                 "Could not fetch context page while shuffling, err={}",
+                 res.error());
+        return nonstd::make_unexpected(res.error());
+      }
+      totalTracks += contextPages[pageIndex].trackGids.size();
+      if (totalTracks > maxShuffleTracks) {
+        BELL_LOG(error, LOG_TAG,
+                 "Context too large to shuffle (>{} tracks), aborting",
+                 maxShuffleTracks);
+        return bell::make_unexpected_errc(std::errc::value_too_large);
+      }
+    }
+    pageIndex++;
+  }
+  return {};
+}
+
 bell::Result<> DefaultTrackQueueHandler::enableShuffle(bool shuffle) {
-  return {};  // TODO: Implement shuffle
+  if (shuffle == shuffled) {
+    return {};
+  }
+
+  if (!shuffle) {
+    shuffled = false;
+    shuffleOrder.clear();
+    shufflePos = 0;
+    return {};  // contextIndex is already the real physical position
+  }
+
+  if (!contextIndex) {
+    return {};  // nothing loaded (queue-only/ad-hoc session) to shuffle
+  }
+
+  auto fetchRes = fetchAllContextPages();
+  if (!fetchRes) {
+    return fetchRes;
+  }
+
+  std::vector<cspot_proto::ContextIndex> order;
+  size_t pinIndex = 0;
+  bool foundPin = false;
+  for (uint32_t page = 0; page < contextPages.size(); page++) {
+    uint32_t trackCount =
+        static_cast<uint32_t>(contextPages[page].trackGids.size());
+    for (uint32_t track = 0; track < trackCount; track++) {
+      if (page == contextIndex->page && track == contextIndex->track) {
+        pinIndex = order.size();
+        foundPin = true;
+      }
+      order.push_back({page, track});
+    }
+  }
+
+  if (!foundPin) {
+    // Shouldn't happen - contextIndex always points at an already-fetched
+    // track. Degrades to a no-op instead of leaving state inconsistent.
+    BELL_LOG(error, LOG_TAG, "Could not locate current track while shuffling");
+    return {};
+  }
+
+  static std::default_random_engine rng{std::random_device{}()};
+  fisherYatesShuffle(order, pinIndex, rng);
+
+  if (pinIndex != 0) {
+    // Keeps the currently playing track at position 0; the rest is
+    // shuffled around it.
+    std::swap(order[0], order[pinIndex]);
+  }
+
+  shuffleOrder = std::move(order);
+  shufflePos = 0;
+  shuffled = true;
+  return {};
+}
+
+bool DefaultTrackQueueHandler::advanceContextBy(int32_t offset) {
+  auto next = getOffsetIndex(offset);
+  if (!next) {
+    return false;
+  }
+  contextIndex = *next;
+  if (shuffled) {
+    shufflePos =
+        static_cast<size_t>(static_cast<int64_t>(shufflePos) + offset);
+  }
+  return true;
+}
+
+void DefaultTrackQueueHandler::resetContextToStart() {
+  if (shuffled && !shuffleOrder.empty()) {
+    shufflePos = 0;
+    contextIndex = shuffleOrder[0];
+  } else {
+    contextIndex = cspot_proto::ContextIndex{0, 0};
+  }
+}
+
+bool DefaultTrackQueueHandler::atContextStart() const {
+  if (shuffled) {
+    return shufflePos == 0;
+  }
+  return contextIndex->page == 0 && contextIndex->track == 0;
+}
+
+void DefaultTrackQueueHandler::syncShufflePosToContextIndex() {
+  if (!shuffled || !contextIndex) {
+    return;
+  }
+  auto it = std::find_if(shuffleOrder.begin(), shuffleOrder.end(),
+                         [this](const cspot_proto::ContextIndex& idx) {
+                           return idx.page == contextIndex->page &&
+                                  idx.track == contextIndex->track;
+                         });
+  if (it != shuffleOrder.end()) {
+    shufflePos = static_cast<size_t>(std::distance(shuffleOrder.begin(), it));
+  } else {
+    // Track set changed since shuffleOrder was built - it's stale, so
+    // shuffle turns off instead of leaving shufflePos pointed at nothing.
+    shuffled = false;
+    shuffleOrder.clear();
+  }
 }
 
 std::optional<cspot_proto::ContextIndex>
 DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
   if (!contextIndex) {
     return std::nullopt;
+  }
+
+  if (shuffled) {
+    // Walks shuffleOrder instead of contextPages.
+    int64_t newPos = static_cast<int64_t>(shufflePos) + offset;
+    if (newPos < 0 || newPos >= static_cast<int64_t>(shuffleOrder.size())) {
+      return std::nullopt;
+    }
+    return shuffleOrder[static_cast<size_t>(newPos)];
   }
 
   // Defensive: contextIndex should always refer to a real page once set,

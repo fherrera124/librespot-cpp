@@ -711,10 +711,6 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   announcePlaybackFlagsLocked(shouldPause, /*isBuffering=*/true);
   playerState.contextUri = transferState.current_session.context.uri;
   playerState.contextUrl = transferState.current_session.context.url;
-  // options (shuffle/repeat) not copied from transferState here -
-  // matches master (no PlayerState.options write found anywhere in its
-  // tree). go-librespot does copy this from TransferState.Options on
-  // every transfer - a known gap, not yet fixed.
   playerState.suppressions = transferState.current_session.suppressions;
   playerState.playOrigin = transferState.current_session.playOrigin;
   playerState.playOrigin.deviceIdentifier =
@@ -803,6 +799,10 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     trackQueueHandler->setQueue({});
     trackQueueHandler->setPlayingQueue(false);
   }
+
+  applyPlayerOptionsLocked(transferState.options.repeatingContext,
+                           transferState.options.repeatingTrack,
+                           transferState.options.shufflingContext);
 
   trackQueueHandler->updateTrackWindows();
   refreshTrackAndIndexLocked();
@@ -1269,8 +1269,18 @@ void ConnectStateHandler::applyPlayerOptionsLocked(
   if (repeatingTrack) {
     options.repeatingTrack = *repeatingTrack;
   }
-  if (shufflingContext) {
-    options.shufflingContext = *shufflingContext;
+  if (shufflingContext && *shufflingContext != options.shufflingContext) {
+    auto res = trackQueueHandler->enableShuffle(*shufflingContext);
+    if (!res) {
+      // options.shufflingContext left at its previous value - the
+      // toggle didn't take.
+      BELL_LOG(error, LOG_TAG, "Could not toggle shuffle to {}: {}",
+               *shufflingContext, res.error());
+    } else {
+      options.shufflingContext = *shufflingContext;
+      trackQueueHandler->updateTrackWindows(/*forceNotify=*/true);
+      refreshTrackAndIndexLocked();
+    }
   }
 }
 
