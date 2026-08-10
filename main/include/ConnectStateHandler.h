@@ -180,6 +180,11 @@ class ConnectStateHandler : public bell::Task {
   // Assumes putStateMutex is ALREADY held by the caller.
   int64_t currentPositionMsLocked(int64_t nowMs) const;
 
+  // Copies trackQueueHandler's current track (whole ProvidedTrack, not
+  // just uri - Spotify needs uid too) and context index into playerState.
+  // Assumes putStateMutex is ALREADY held by the caller.
+  void refreshTrackAndIndexLocked();
+
   // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand(),
   // its sole dispatcher) - matches putStateLocked()'s own naming/contract.
   bell::Result<> handleTransferCommandLocked(std::string_view payloadDataStr,

@@ -61,6 +61,18 @@ std::string generateSessionId() {
   return sessionId;
 }
 
+std::string hexDump(const std::vector<std::byte>& bytes) {
+  std::string hex;
+  hex.reserve(bytes.size() * 2);
+  static const char* hexDigits = "0123456789abcdef";
+  for (std::byte b : bytes) {
+    auto v = std::to_integer<uint8_t>(b);
+    hex += hexDigits[v >> 4];
+    hex += hexDigits[v & 0x0f];
+  }
+  return hex;
+}
+
 };  // namespace
 
 ConnectStateHandler::ConnectStateHandler(
@@ -401,19 +413,10 @@ bool ConnectStateHandler::prepareAndEncodeLocked(
   // unlocked.
   bool encodeRes = nanopb_helper::encodeToVector(putStateRequestProto, outBody);
 
-  // Mirrors the RAW TransferState dump above, for our own outgoing side.
   if (encodeRes &&
       bell::BaseLogger::instance().shouldLog(bell::LogLevel::debug)) {
-    std::string hex;
-    hex.reserve(outBody.size() * 2);
-    static const char* hexDigits = "0123456789abcdef";
-    for (std::byte b : outBody) {
-      auto v = std::to_integer<uint8_t>(b);
-      hex += hexDigits[v >> 4];
-      hex += hexDigits[v & 0x0f];
-    }
     BELL_LOG(debug, LOG_TAG, "RAW outgoing PutStateRequest bytes ({}): {}",
-             outBody.size(), hex);
+             outBody.size(), hexDump(outBody));
   }
 
   return encodeRes;
@@ -625,16 +628,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   // defaults without nanopb ever erroring. Gated behind the debug log
   // level so building it isn't a cost paid on every transfer command.
   if (bell::BaseLogger::instance().shouldLog(bell::LogLevel::debug)) {
-    std::string hex;
-    hex.reserve(decodedData.size() * 2);
-    static const char* hexDigits = "0123456789abcdef";
-    for (std::byte b : decodedData) {
-      auto v = std::to_integer<uint8_t>(b);
-      hex += hexDigits[v >> 4];
-      hex += hexDigits[v & 0x0f];
-    }
     BELL_LOG(debug, LOG_TAG, "RAW TransferState bytes ({}): {}",
-             decodedData.size(), hex);
+             decodedData.size(), hexDump(decodedData));
   }
 
   bool res = nanopb_helper::decodeFromVector(transferState, decodedData);
@@ -803,27 +798,10 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   }
 
   trackQueueHandler->updateTrackWindows();
-
-  auto track = trackQueueHandler->currentTrack();
-  // hasValue set explicitly - omitted (not sent empty) when there's no
-  // current track. Copies the whole ProvidedTrack (uri, uid, provider) -
-  // a bare uri drops uid, which Spotify needs to locate this track within
-  // its context/queue.
-  playerState.track.hasValue = static_cast<bool>(track);
-  if (track) {
-    playerState.track.value = *track;
-  }
-
-  // Index of the current track within its context - go-librespot sets
-  // this on every playback transition; master never sends it.
-  auto contextIndex = trackQueueHandler->currentContextIndex();
-  playerState.index.hasValue = contextIndex.has_value();
-  if (contextIndex) {
-    playerState.index.value = *contextIndex;
-  }
+  refreshTrackAndIndexLocked();
 
   BELL_LOG(info, LOG_TAG, "Current track after transfer: {}",
-           track ? track->uri : "none");
+           playerState.track.hasValue ? playerState.track.value.uri : "none");
   (void)putStateLocked();
 
   // Posted only after trackQueueHandler's context/queue/windows are
@@ -895,8 +873,6 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
 
   trackQueueHandler->updateTrackWindows();
 
-  auto track = trackQueueHandler->currentTrack();
-
   eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, std::monostate{});
   eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !initiallyPaused);
 
@@ -915,20 +891,7 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
                              overrideJson->optional<bool>("shuffling_context"));
   }
 
-  // hasValue set explicitly - omitted (not sent empty) when there's no
-  // current track. Copies the whole ProvidedTrack (uri, uid, provider) -
-  // see the same assignment in handleTransferCommandLocked() for why.
-  playerState.track.hasValue = static_cast<bool>(track);
-  if (track) {
-    playerState.track.value = *track;
-  }
-
-  // Track index within context - see handleTransferCommandLocked()'s comment.
-  auto contextIndex = trackQueueHandler->currentContextIndex();
-  playerState.index.hasValue = contextIndex.has_value();
-  if (contextIndex) {
-    playerState.index.value = *contextIndex;
-  }
+  refreshTrackAndIndexLocked();
 
   // contextUri/contextUrl/playOrigin/suppressions, unlike
   // handleTransferCommandLocked(), were never set here - left holding the
@@ -1075,22 +1038,7 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
   // repeat-track or a wrapped-to-start/ad-hoc single track - where the
   // resulting current-track uri is unchanged from before).
   trackQueueHandler->updateTrackWindows(streamPlayerCleared);
-
-  auto track = trackQueueHandler->currentTrack();
-  // hasValue set explicitly - omitted (not sent empty) when there's no
-  // current track. Copies the whole ProvidedTrack (uri, uid, provider) -
-  // see the same assignment in handleTransferCommandLocked() for why.
-  playerState.track.hasValue = static_cast<bool>(track);
-  if (track) {
-    playerState.track.value = *track;
-  }
-
-  // Track index within context - see handleTransferCommandLocked()'s comment.
-  auto contextIndex = trackQueueHandler->currentContextIndex();
-  playerState.index.hasValue = contextIndex.has_value();
-  if (contextIndex) {
-    playerState.index.value = *contextIndex;
-  }
+  refreshTrackAndIndexLocked();
 
   // Re-announces isPlaying/isBuffering=true so this PUT doesn't pair the
   // new track/index with the PREVIOUS, just-finished track's buffering
@@ -1166,21 +1114,7 @@ bell::Result<> ConnectStateHandler::handleSkipPrevCommandLocked() {
   trackQueueHandler->updateTrackWindows();
 
   auto& playerState = putStateRequestProto.device.playerState;
-  auto track = trackQueueHandler->currentTrack();
-  // hasValue set explicitly - omitted (not sent empty) when there's no
-  // current track. Copies the whole ProvidedTrack (uri, uid, provider) -
-  // see the same assignment in handleTransferCommandLocked() for why.
-  playerState.track.hasValue = static_cast<bool>(track);
-  if (track) {
-    playerState.track.value = *track;
-  }
-
-  // Track index within context - see handleTransferCommandLocked()'s comment.
-  auto contextIndex = trackQueueHandler->currentContextIndex();
-  playerState.index.hasValue = contextIndex.has_value();
-  if (contextIndex) {
-    playerState.index.value = *contextIndex;
-  }
+  refreshTrackAndIndexLocked();
 
   // Re-announces isPlaying/isBuffering=true for the same reason as
   // advanceToNextTrackLocked(). isPaused is preserved (not forced false) -
@@ -1205,6 +1139,22 @@ int64_t ConnectStateHandler::currentPositionMsLocked(int64_t nowMs) const {
   return playerState.positionAsOfTimestamp +
          static_cast<int64_t>((nowMs - playerState.timestamp) *
                               playerState.playbackSpeed);
+}
+
+void ConnectStateHandler::refreshTrackAndIndexLocked() {
+  auto& playerState = putStateRequestProto.device.playerState;
+
+  auto track = trackQueueHandler->currentTrack();
+  playerState.track.hasValue = static_cast<bool>(track);
+  if (track) {
+    playerState.track.value = *track;
+  }
+
+  auto contextIndex = trackQueueHandler->currentContextIndex();
+  playerState.index.hasValue = contextIndex.has_value();
+  if (contextIndex) {
+    playerState.index.value = *contextIndex;
+  }
 }
 
 bell::Result<> ConnectStateHandler::handlePauseCommandLocked(bool pause) {
