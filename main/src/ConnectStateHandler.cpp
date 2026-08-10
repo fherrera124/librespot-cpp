@@ -359,8 +359,12 @@ bell::Result<> ConnectStateHandler::putStateLocked(PutStateReason reason) {
 
 bool ConnectStateHandler::prepareAndEncodeLocked(
     PutStateReason reason, std::vector<std::byte>& outBody) {
-  putStateRequestProto.clientSideTimestamp =
-      timeProvider->getSyncedTimestamp();
+  int64_t nowMs = timeProvider->getSyncedTimestamp();
+  putStateRequestProto.clientSideTimestamp = nowMs;
+  if (currentTrackStartedAtMs != 0) {
+    putStateRequestProto.hasBeenPlayingForMs =
+        static_cast<uint64_t>(nowMs - currentTrackStartedAtMs);
+  }
   putStateRequestProto.memberType = MemberType_CONNECT_STATE;
   putStateRequestProto.putStateReason = reason;
   // This device's own outgoing sequence number - distinct from
@@ -710,7 +714,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   playerState.position = 0;
   playerState.positionAsOfTimestamp = effectivePositionMs;
   putStateRequestProto.startedPlayingAt = nowMs;
-  putStateRequestProto.hasBeenPlayingForMs = 0;
+  currentTrackStartedAtMs = nowMs;
 
   // Clears any context left over from an earlier transfer in this same
   // session before deciding what this one actually needs - haveContext's
@@ -957,8 +961,10 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   }
 
   playerState.positionAsOfTimestamp = 0;
-  playerState.timestamp =
-      timeProvider->getSyncedTimestamp();
+  int64_t nowMs = timeProvider->getSyncedTimestamp();
+  playerState.timestamp = nowMs;
+  putStateRequestProto.startedPlayingAt = nowMs;
+  currentTrackStartedAtMs = nowMs;
 
   return putStateLocked();
 }
@@ -1100,8 +1106,9 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
       computePlaybackSpeed(playerState.isPaused, playerState.isBuffering);
 
   playerState.positionAsOfTimestamp = 0;
-  playerState.timestamp =
-      timeProvider->getSyncedTimestamp();
+  int64_t nowMs = timeProvider->getSyncedTimestamp();
+  playerState.timestamp = nowMs;
+  currentTrackStartedAtMs = nowMs;
 
   if (!hasNextTrack) {
     // StreamPlayer's own isPlaying otherwise stays true from before this
@@ -1184,8 +1191,9 @@ bell::Result<> ConnectStateHandler::handleSkipPrevCommandLocked() {
       computePlaybackSpeed(playerState.isPaused, playerState.isBuffering);
 
   playerState.positionAsOfTimestamp = 0;
-  playerState.timestamp =
-      timeProvider->getSyncedTimestamp();
+  int64_t nowMs = timeProvider->getSyncedTimestamp();
+  playerState.timestamp = nowMs;
+  currentTrackStartedAtMs = nowMs;
 
   (void)putStateLocked();
 

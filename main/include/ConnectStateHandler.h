@@ -140,6 +140,11 @@ class ConnectStateHandler : public bell::Task {
   // existing "q<N>" uids, so a later add_to_queue can't collide.
   uint64_t nextManualQueueId = 0;
 
+  // Anchor for the live-computed hasBeenPlayingForMs (prepareAndEncodeLocked()) -
+  // reset to timeProvider->getSyncedTimestamp() whenever a new track becomes
+  // current. 0 means no track has loaded yet this session.
+  int64_t currentTrackStartedAtMs = 0;
+
   // Assumes putStateMutex is ALREADY held by the caller - every handler
   // takes the lock for its own mutation and must call this instead of
   // the public, self-locking putState() (std::mutex isn't reentrant).
