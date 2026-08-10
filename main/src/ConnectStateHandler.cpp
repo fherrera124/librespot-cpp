@@ -657,10 +657,6 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
            transferState.current_session.originalSessionId.hasValue,
            playerState.sessionId);
 
-  // isPlaying means "session active", not "audio already flowing" -
-  // stays true through buffering.
-  playerState.isPlaying = true;
-  playerState.isBuffering = true;
   // Our own clock, not transferState.playback.timestamp (the source
   // device's own, already-stale timestamp) - matches every other
   // handler in this file and both reference engines, neither of which
@@ -693,9 +689,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
            shouldPause, !shouldPause,
            transferState.playback.positionAsOfTimestamp, effectivePositionMs);
 
-  playerState.isPaused = shouldPause;
-  playerState.playbackSpeed =
-      computePlaybackSpeed(playerState.isPaused, playerState.isBuffering);
+  announcePlaybackFlagsLocked(shouldPause, /*isBuffering=*/true);
   playerState.contextUri = transferState.current_session.context.uri;
   playerState.contextUrl = transferState.current_session.context.url;
   // options (shuffle/repeat) not copied from transferState here -
@@ -877,13 +871,7 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !initiallyPaused);
 
   auto& playerState = putStateRequestProto.device.playerState;
-  // isPlaying=true even mid-buffering - same reasoning as
-  // handleTransferCommandLocked().
-  playerState.isPlaying = true;
-  playerState.isBuffering = true;
-  playerState.isPaused = initiallyPaused;
-  playerState.playbackSpeed =
-      computePlaybackSpeed(playerState.isPaused, playerState.isBuffering);
+  announcePlaybackFlagsLocked(initiallyPaused, /*isBuffering=*/true);
 
   if (overrideJson) {
     applyPlayerOptionsLocked(overrideJson->optional<bool>("repeating_context"),
@@ -1040,18 +1028,10 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
   trackQueueHandler->updateTrackWindows(streamPlayerCleared);
   refreshTrackAndIndexLocked();
 
-  // Re-announces isPlaying/isBuffering=true so this PUT doesn't pair the
-  // new track/index with the PREVIOUS, just-finished track's buffering
-  // state - traced on this repo's own master branch to a real playlist-
-  // switch UI flicker. isPaused mirrors !hasNextTrack: a normal advance
-  // (or a repeat wrap) always resumes, matching go-librespot's
-  // advanceNext(); running out of context without repeat-context pauses
+  // isPaused mirrors !hasNextTrack: a normal advance (or a repeat wrap)
+  // always resumes; running out of context without repeat-context pauses
   // on the wrapped-to-start track instead of looping or freezing.
-  playerState.isPlaying = true;
-  playerState.isBuffering = true;
-  playerState.isPaused = !hasNextTrack;
-  playerState.playbackSpeed =
-      computePlaybackSpeed(playerState.isPaused, playerState.isBuffering);
+  announcePlaybackFlagsLocked(!hasNextTrack, /*isBuffering=*/true);
 
   playerState.positionAsOfTimestamp = 0;
   int64_t nowMs = timeProvider->getSyncedTimestamp();
@@ -1116,13 +1096,9 @@ bell::Result<> ConnectStateHandler::handleSkipPrevCommandLocked() {
   auto& playerState = putStateRequestProto.device.playerState;
   refreshTrackAndIndexLocked();
 
-  // Re-announces isPlaying/isBuffering=true for the same reason as
-  // advanceToNextTrackLocked(). isPaused is preserved (not forced false) -
-  // matches go-librespot's skipPrev(), unlike its plain advanceNext().
-  playerState.isPlaying = true;
-  playerState.isBuffering = true;
-  playerState.playbackSpeed =
-      computePlaybackSpeed(playerState.isPaused, playerState.isBuffering);
+  // isPaused preserved (not forced false) - matches go-librespot's
+  // skipPrev(), unlike its plain advanceNext().
+  announcePlaybackFlagsLocked(playerState.isPaused, /*isBuffering=*/true);
 
   playerState.positionAsOfTimestamp = 0;
   int64_t nowMs = timeProvider->getSyncedTimestamp();
@@ -1157,6 +1133,15 @@ void ConnectStateHandler::refreshTrackAndIndexLocked() {
   }
 }
 
+void ConnectStateHandler::announcePlaybackFlagsLocked(bool isPaused,
+                                                       bool isBuffering) {
+  auto& playerState = putStateRequestProto.device.playerState;
+  playerState.isPlaying = true;
+  playerState.isPaused = isPaused;
+  playerState.isBuffering = isBuffering;
+  playerState.playbackSpeed = computePlaybackSpeed(isPaused, isBuffering);
+}
+
 bell::Result<> ConnectStateHandler::handlePauseCommandLocked(bool pause) {
   // Not routed through StreamPlayer's own announceState() flow - that's
   // a no-op once the decoder is already open (the common pause/resume
@@ -1169,10 +1154,7 @@ bell::Result<> ConnectStateHandler::handlePauseCommandLocked(bool pause) {
   auto nowMs = timeProvider->getSyncedTimestamp();
   playerState.positionAsOfTimestamp = currentPositionMsLocked(nowMs);
 
-  playerState.isPlaying = true;
-  playerState.isPaused = pause;
-  playerState.playbackSpeed =
-      computePlaybackSpeed(playerState.isPaused, playerState.isBuffering);
+  announcePlaybackFlagsLocked(pause, playerState.isBuffering);
   playerState.timestamp = nowMs;
 
   eventLoop->post(EventLoop::EventType::LOCAL_PLAY_PAUSE_CHANGED, pause);

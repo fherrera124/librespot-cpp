@@ -185,6 +185,11 @@ class ConnectStateHandler : public bell::Task {
   // Assumes putStateMutex is ALREADY held by the caller.
   void refreshTrackAndIndexLocked();
 
+  // Sets isPlaying=true (session active, independent of isBuffering) and
+  // recomputes playbackSpeed from the given isPaused/isBuffering.
+  // Assumes putStateMutex is ALREADY held by the caller.
+  void announcePlaybackFlagsLocked(bool isPaused, bool isBuffering);
+
   // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand(),
   // its sole dispatcher) - matches putStateLocked()'s own naming/contract.
   bell::Result<> handleTransferCommandLocked(std::string_view payloadDataStr,
