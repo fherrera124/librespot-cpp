@@ -183,6 +183,11 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
   bool haveFastPathTarget =
       currentTrackUri.has_value() || currentTrackIndex.has_value();
 
+  // True if the caller wants the context started from the beginning,
+  // not pointed at a specific track.
+  bool noTrackHintGiven =
+      !currentTrackUri && !currentTrackUid && !currentTrackIndex;
+
   // In case we only have UID, we need to refetch the pages either way - we only keep the gids
   if (currentContextUri != contextUri || !haveFastPathTarget) {
     // New context, reset everything
@@ -192,13 +197,6 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
     targetTrackIndex = currentTrackIndex;
 
     contextIdType = SpotifyId::getTypeFromContext(contextUri);
-
-    if (!currentTrackUri && !currentTrackUid && !currentTrackIndex) {
-      contextIndex = {
-          0,
-          0,
-      };  // Start from the beginning if no current track is provided
-    }
 
     auto res = fetchRootPage(contextUri);
     if (!res) {
@@ -270,9 +268,12 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
     BELL_LOG(info, LOG_TAG, "Found current track at index=[{},{}]",
              contextIndex->track, contextIndex->page);
   } else if (!contextPages.empty() && !contextPages[0].trackGids.empty()) {
-    BELL_LOG(
-        error, LOG_TAG,
-        "Could not find current track in the given context, default to zero");
+    if (noTrackHintGiven) {
+      BELL_LOG(info, LOG_TAG, "No specific track requested, starting at index=[0,0]");
+    } else {
+      BELL_LOG(error, LOG_TAG,
+               "Could not find current track in the given context, default to zero");
+    }
     contextIndex = {
         0,
         0,
