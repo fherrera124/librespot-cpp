@@ -73,6 +73,25 @@ std::string hexDump(const std::vector<std::byte>& bytes) {
   return hex;
 }
 
+// Synthetic uid for an add_to_queue track that arrives without one.
+std::string manualQueueUid(uint64_t n) {
+  return "q" + std::to_string(n);
+}
+
+// The N from a "q<N>" uid, or nullopt if uid isn't in that format.
+std::optional<uint64_t> parseManualQueueUid(const std::string& uid) {
+  if (uid.size() <= 1 || uid[0] != 'q') {
+    return std::nullopt;
+  }
+  uint64_t n = 0;
+  auto [ptr, ec] =
+      std::from_chars(uid.data() + 1, uid.data() + uid.size(), n);
+  if (ec == std::errc() && ptr == uid.data() + uid.size()) {
+    return n;
+  }
+  return std::nullopt;
+}
+
 };  // namespace
 
 ConnectStateHandler::ConnectStateHandler(
@@ -719,14 +738,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
 
   nextManualQueueId = 0;
   for (auto& track : transferState.queue.tracks) {
-    const std::string& uid = track.uid;
-    if (uid.size() > 1 && uid[0] == 'q') {
-      uint64_t n = 0;
-      auto [ptr, ec] = std::from_chars(uid.data() + 1,
-                                       uid.data() + uid.size(), n);
-      if (ec == std::errc() && ptr == uid.data() + uid.size()) {
-        nextManualQueueId = std::max(nextManualQueueId, n);
-      }
+    if (auto n = parseManualQueueUid(track.uid)) {
+      nextManualQueueId = std::max(nextManualQueueId, *n);
     }
   }
 
@@ -953,7 +966,7 @@ bell::Result<> ConnectStateHandler::handleAddToQueueCommandLocked(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
   if (track.uid.empty()) {
-    track.uid = "q" + std::to_string(++nextManualQueueId);
+    track.uid = manualQueueUid(++nextManualQueueId);
   }
 
   trackQueueHandler->addToQueue(track);
