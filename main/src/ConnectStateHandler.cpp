@@ -67,6 +67,7 @@ ConnectStateHandler::ConnectStateHandler(
     std::shared_ptr<cspot::EventLoop> eventLoop,
     std::shared_ptr<AuthInfo> authInfo, std::shared_ptr<SpClient> spClient,
     std::shared_ptr<TimeProvider> timeProvider,
+    std::unique_ptr<TrackQueueHandler> trackQueueHandler,
     std::shared_ptr<AudioSink> audioSink,
     PlaybackNotificationCallback playbackNotificationCallback)
     // Stack sized for this task's own network work (the connect-state PUT
@@ -77,11 +78,9 @@ ConnectStateHandler::ConnectStateHandler(
       authInfo(std::move(authInfo)),
       spClient(std::move(spClient)),
       timeProvider(std::move(timeProvider)),
+      trackQueueHandler(std::move(trackQueueHandler)),
       audioSink(std::move(audioSink)),
       playbackNotificationCallback(std::move(playbackNotificationCallback)) {
-  trackQueueHandler =
-      createDefaultTrackQueueHandler(this->spClient, this->eventLoop);
-
   // StreamPlayer ran out of audio (natural end of track) - repeat-track is
   // honored here, unlike an explicit remote skip_next.
   this->eventLoop->registerHandler(

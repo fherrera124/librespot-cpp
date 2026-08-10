@@ -11,6 +11,7 @@
 #include "connect.pb.h"
 #include "events/EventLoop.h"
 #include "nonstd/expected.hpp"
+#include "tracks/TrackQueueHandler.h"
 #include "Utils.h"
 
 using namespace cspot;
@@ -34,8 +35,10 @@ cspot::Session::Session(
   dealerClient = std::make_shared<DealerClient>(eventLoop);
   apClient = std::make_unique<ApClient>(eventLoop, this->authInfo, timeProvider);
 
+  auto trackQueueHandler = createDefaultTrackQueueHandler(spClient, eventLoop);
   connectStateHandler = std::make_shared<ConnectStateHandler>(
-      eventLoop, this->authInfo, spClient, timeProvider, audioSink,
+      eventLoop, this->authInfo, spClient, timeProvider,
+      std::move(trackQueueHandler), audioSink,
       std::move(playbackNotificationCallback));
 
   auto fileProvider = createDefaultFileProvider(
