@@ -114,6 +114,14 @@ cspot::SpotifyId::SpotifyId(const std::string& uri)
   }
 }
 
+std::optional<SpotifyId> cspot::SpotifyId::tryParse(const std::string& uri) {
+  try {
+    return SpotifyId(uri);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+}
+
 std::string cspot::SpotifyId::hexGid() const {
   std::string hex;
   hex.reserve(32);  // 16 bytes * 2 hex digits per byte

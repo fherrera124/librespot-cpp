@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,11 @@ struct SpotifyId {
 
   // Default constructor
   SpotifyId() = default;
+
+  // Non-throwing counterpart to the URI constructor - nullopt for any
+  // uri this type system can't represent (unrecognized prefix, e.g.
+  // spotify:local:..., or malformed base62) instead of throwing.
+  static std::optional<SpotifyId> tryParse(const std::string& uri);
 
   // Guesses the type of the Spotify ID based on the URI context
   static SpotifyIdType getTypeFromContext(const std::string& contextUri);

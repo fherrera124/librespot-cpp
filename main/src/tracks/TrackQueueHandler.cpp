@@ -3,7 +3,6 @@
 #include <random>
 #include "bell/Result.h"
 #include "bell/http/Client.h"
-#include "crypto/Base62.h"
 #include "events/EventLoop.h"
 #include "proto/ConnectPb.h"
 #include "proto/SpotifyId.h"
@@ -20,26 +19,14 @@ const uint32_t trackWindowLen = 6;
 // Upper bound on tracks fetched by enableShuffle(true)'s full-context fetch.
 const uint32_t maxShuffleTracks = 20000;
 
-// Converts a spotify URI to a 16byte GID, returns empty array on failure
+// Converts a spotify URI to a 16byte GID, returns nullopt on failure
+// (unrecognized prefix, e.g. spotify:local:..., or malformed base62).
 std::optional<std::array<std::byte, 16>> uriToGid(const std::string& uri) {
-  std::array<std::byte, 16> trackGid{};
-  size_t outLen = 16;
-  auto uriDelimiter = uri.find_last_of(':');
-  if (uriDelimiter == std::string::npos) {
+  auto parsed = cspot::SpotifyId::tryParse(uri);
+  if (!parsed) {
     return std::nullopt;
   }
-
-  if (!cspot::base62Decode(uri.substr(uriDelimiter + 1), trackGid.data(),
-                           outLen)) {
-
-    return std::nullopt;
-  }
-  if (outLen < 16) {
-    // Move gid right to fill leading zeros
-    std::memmove(trackGid.data() + (16 - outLen), trackGid.data(), outLen);
-  }
-
-  return trackGid;
+  return parsed->gid;
 }
 
 // Shuffles `order` in place; tracks `pinIndex` (an index into `order`)
@@ -1173,8 +1160,11 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
 
     if (isPlayingQueue && !queue.empty()) {
       std::string resolvedUri = queue[0].resolvedUri(contextIdType);
+      // resolvedUri may be a well-formed but unrecognized uri (e.g. a
+      // spotify:local: track) - SpotifyId{} would throw on that, so use
+      // tryParse() instead.
       if (!resolvedUri.empty()) {
-        updateEvent.currentTrackId = SpotifyId{resolvedUri};
+        updateEvent.currentTrackId = SpotifyId::tryParse(resolvedUri);
       }
     } else if (currentContextIndex()) {
       auto& trackGid =
