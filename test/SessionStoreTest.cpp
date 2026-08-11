@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 #include <filesystem>
 
-#include "AuthInfo.h"
-#include "SessionStore.h"
+#include "session/AuthInfo.h"
+#include "session/SessionStore.h"
 
 TEST_CASE("SessionStore tests") {
   auto path = (std::filesystem::temp_directory_path() /

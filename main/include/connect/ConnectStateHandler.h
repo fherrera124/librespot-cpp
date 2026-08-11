@@ -15,10 +15,10 @@
 #include <vector>
 
 #include "AudioSink.h"
-#include "SessionContext.h"
 #include "api/SpClient.h"
 #include "connect/PlaybackNotifications.h"
 #include "events/EventModels.h"
+#include "session/SessionContext.h"
 #include "tracks/TrackQueueHandler.h"
 
 namespace cspot {

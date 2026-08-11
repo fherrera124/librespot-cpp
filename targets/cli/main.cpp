@@ -9,10 +9,10 @@
 #include <unistd.h>
 
 #include "AudioSinkALSA.h"
-#include "AuthInfo.h"
 #include "bell/Logger.h"
 #include "connect/ConnectReceiver.h"
 #include "connect/PlaybackNotifications.h"
+#include "session/AuthInfo.h"
 
 namespace {
 const char* sessionFilePath = "session.json";

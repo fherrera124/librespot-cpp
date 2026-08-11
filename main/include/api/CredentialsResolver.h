@@ -6,7 +6,7 @@
 #include "bell/Result.h"
 #include "bell/http/Client.h"
 
-#include "AuthInfo.h"
+#include "session/AuthInfo.h"
 
 namespace cspot {
 // Clock defined as template, allows for testing with a mocked clock externally

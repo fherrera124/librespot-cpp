@@ -3,11 +3,11 @@
 #include <atomic>
 #include <utility>
 
-#include "Authenticator.h"
 #include "bell/Logger.h"
 #include "bell/http/Server.h"
 #include "bell/utils/Semaphore.h"
 #include "connect/ZeroconfServer.h"
+#include "session/Authenticator.h"
 
 using namespace cspot;
 

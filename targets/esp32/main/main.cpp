@@ -1,10 +1,10 @@
 #include <memory>
 
 #include "AudioSinkI2S.h"
-#include "AuthInfo.h"
 #include "bell/Logger.h"
 #include "bell/utils/Task.h"
 #include "connect/ConnectReceiver.h"
+#include "session/AuthInfo.h"
 
 #include "esp_event.h"
 #include "esp_log.h"

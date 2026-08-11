@@ -5,11 +5,11 @@
 #include <optional>
 #include <unordered_map>
 #include <utility>
-#include "AuthInfo.h"
 #include "TimeProvider.h"
 #include "api/ApConnection.h"
 #include "events/EventLoop.h"
 #include "proto/SpotifyId.h"
+#include "session/AuthInfo.h"
 
 namespace cspot {
 class ApClient {

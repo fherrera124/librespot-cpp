@@ -6,10 +6,10 @@
 #include <vector>
 
 // Library includes
-#include "AuthInfo.h"
 #include "bell/Result.h"
 #include "bell/net/SocketPollListener.h"
 #include "bell/net/TCPSocket.h"
+#include "session/AuthInfo.h"
 
 // Own includes
 #include "crypto/DiffieHellman.h"

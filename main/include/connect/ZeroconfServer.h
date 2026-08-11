@@ -5,10 +5,10 @@
 #include <mutex>
 #include <string>
 
-#include "AuthInfo.h"
-#include "Authenticator.h"
 #include "bell/http/Server.h"
 #include "bell/mdns/Manager.h"
+#include "session/AuthInfo.h"
+#include "session/Authenticator.h"
 
 namespace cspot {
 

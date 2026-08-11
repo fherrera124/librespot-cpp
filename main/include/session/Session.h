@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "AudioSink.h"
-#include "AuthInfo.h"
 #include "api/CredentialsResolver.h"
 #include "api/DealerClient.h"
 #include "api/SpClient.h"
@@ -15,6 +14,7 @@
 #include "connect/ConnectStateHandler.h"
 #include "events/EventLoop.h"
 #include "proto/MetadataPb.h"
+#include "session/AuthInfo.h"
 #include "tracks/StreamPlayer.h"
 
 namespace cspot {

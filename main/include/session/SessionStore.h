@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "AuthInfo.h"
+#include "session/AuthInfo.h"
 
 namespace cspot {
 

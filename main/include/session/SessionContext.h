@@ -1,9 +1,9 @@
 #pragma once
 
-#include "AuthInfo.h"
 #include "api/CredentialsResolver.h"
 #include "bell/net/SocketPollListener.h"
 #include "events/EventLoop.h"
+#include "session/AuthInfo.h"
 
 namespace cspot {
 struct SessionContext {

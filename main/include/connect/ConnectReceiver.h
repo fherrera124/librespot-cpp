@@ -5,9 +5,9 @@
 #include <string>
 
 #include "AudioSink.h"
-#include "AuthInfo.h"
-#include "Session.h"
-#include "SessionStore.h"
+#include "session/AuthInfo.h"
+#include "session/Session.h"
+#include "session/SessionStore.h"
 
 namespace cspot {
 

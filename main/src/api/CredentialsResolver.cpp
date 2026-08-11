@@ -16,7 +16,7 @@
 #include "proto/Login5Pb.h"
 #include "proto/NanoPBHelper.h"
 
-#include "AuthInfo.h"
+#include "session/AuthInfo.h"
 
 using namespace cspot;
 
