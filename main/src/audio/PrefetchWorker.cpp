@@ -1,6 +1,7 @@
 #include "audio/PrefetchWorker.h"
 
 #include <chrono>
+#include <vector>
 
 #include "audio/ChunkFetcher.h"
 #include "audio/RangeAlignment.h"
@@ -16,6 +17,24 @@ namespace {
 // I2S DMA writes.
 const int kTaskStackSize = 32 * 1024;
 const int kTaskPriority = 5;
+
+// Chunk indices to prefetch ahead of currentChunkIndex, nearest first,
+// bounded by totalChunks (if known) near EOF.
+std::vector<size_t> chunksToPrefetch(size_t currentChunkIndex, size_t depth,
+                                     std::optional<size_t> totalChunks) {
+  std::vector<size_t> result;
+  result.reserve(depth);
+
+  for (size_t i = 1; i <= depth; ++i) {
+    size_t idx = currentChunkIndex + i;
+    if (totalChunks && idx >= *totalChunks) {
+      break;
+    }
+    result.push_back(idx);
+  }
+
+  return result;
+}
 }  // namespace
 
 PrefetchWorker::PrefetchWorker(std::shared_ptr<bell::HTTPClient> httpClient)
