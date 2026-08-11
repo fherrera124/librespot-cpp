@@ -13,8 +13,9 @@ namespace cspot {
 
 // Outcome of skipToNextTrack(): Advanced means the current track/index
 // moved forward within the existing queue/context; WrappedToStart means
-// the context ran out and the cursor was reset to its first track -
-// callers decide whether that counts as a real advance (repeat-context).
+// either the context ran out and the cursor was reset to its first
+// track, or there was nothing to advance to at all - callers decide
+// whether that counts as a real advance (repeat-context).
 enum class TrackAdvanceResult { Advanced, WrappedToStart };
 
 class TrackQueueHandler {

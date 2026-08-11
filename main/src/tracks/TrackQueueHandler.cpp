@@ -691,7 +691,9 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
     return TrackAdvanceResult::WrappedToStart;
   }
 
-  return TrackAdvanceResult::Advanced;
+  // Nothing loaded at all (no queue, no context) - same "nothing to
+  // advance to" case as the sole-queue-track check above.
+  return TrackAdvanceResult::WrappedToStart;
 }
 
 bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToTargetTrack(
