@@ -136,7 +136,9 @@ class CDNDataStream : public bell::io::DataStream {
   // a seek misses the current buffer window.
   std::optional<size_t> phaseAnchor;
 
-  // User-visible total size (trimmed to 16-byte boundary). Populated after first range response.
+  // Raw/wire total size (includes the Spotify header, trimmed to a 16-byte
+  // boundary) - see size()'s own comment for the header-excluded value
+  // actually exposed to callers. Populated after first range response.
   std::optional<size_t> totalSize;
 
   // Raw original total size from server (may be non 16-aligned).
