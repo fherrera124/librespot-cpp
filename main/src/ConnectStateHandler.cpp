@@ -61,18 +61,6 @@ std::string generateSessionId() {
   return sessionId;
 }
 
-std::string hexDump(const std::vector<std::byte>& bytes) {
-  std::string hex;
-  hex.reserve(bytes.size() * 2);
-  static const char* hexDigits = "0123456789abcdef";
-  for (std::byte b : bytes) {
-    auto v = std::to_integer<uint8_t>(b);
-    hex += hexDigits[v >> 4];
-    hex += hexDigits[v & 0x0f];
-  }
-  return hex;
-}
-
 // Synthetic uid for an add_to_queue track that arrives without one.
 std::string manualQueueUid(uint64_t n) {
   return "q" + std::to_string(n);
@@ -432,12 +420,6 @@ bool ConnectStateHandler::prepareAndEncodeLocked(
   // unlocked.
   bool encodeRes = nanopb_helper::encodeToVector(putStateRequestProto, outBody);
 
-  if (encodeRes &&
-      bell::BaseLogger::instance().shouldLog(bell::LogLevel::debug)) {
-    BELL_LOG(debug, LOG_TAG, "RAW outgoing PutStateRequest bytes ({}): {}",
-             outBody.size(), hexDump(outBody));
-  }
-
   return encodeRes;
 }
 
@@ -641,15 +623,6 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   }
   auto& decodedData = *decodedDataRes;
   cspot_proto::TransferState transferState;
-
-  // Raw hex dump to catch a field-number mismatch in this file's
-  // hand-written ConnectPb.h bindings, which would silently decode to
-  // defaults without nanopb ever erroring. Gated behind the debug log
-  // level so building it isn't a cost paid on every transfer command.
-  if (bell::BaseLogger::instance().shouldLog(bell::LogLevel::debug)) {
-    BELL_LOG(debug, LOG_TAG, "RAW TransferState bytes ({}): {}",
-             decodedData.size(), hexDump(decodedData));
-  }
 
   bool res = nanopb_helper::decodeFromVector(transferState, decodedData);
   if (!res) {

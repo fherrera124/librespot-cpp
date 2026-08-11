@@ -554,11 +554,6 @@ bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
     return bell::make_unexpected_errc(std::errc::io_error);
   }
 
-  BELL_LOG(info, LOG_TAG,
-           "RAW BODY DIAG: status={} contentLength={} body[0..{}]={}",
-           response.statusCode, *response.contentLength, diagBody.size(),
-           diagBody);
-
   return {};
 }
 
