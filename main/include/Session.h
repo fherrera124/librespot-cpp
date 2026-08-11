@@ -7,12 +7,12 @@
 
 #include "AudioSink.h"
 #include "AuthInfo.h"
-#include "ConnectStateHandler.h"
 #include "api/CredentialsResolver.h"
 #include "api/DealerClient.h"
 #include "api/SpClient.h"
 #include "bell/Result.h"
 #include "bell/net/SocketPollListener.h"
+#include "connect/ConnectStateHandler.h"
 #include "events/EventLoop.h"
 #include "proto/MetadataPb.h"
 #include "tracks/StreamPlayer.h"

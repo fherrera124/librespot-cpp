@@ -10,9 +10,9 @@
 
 #include "AudioSinkALSA.h"
 #include "AuthInfo.h"
-#include "ConnectReceiver.h"
-#include "PlaybackNotifications.h"
 #include "bell/Logger.h"
+#include "connect/ConnectReceiver.h"
+#include "connect/PlaybackNotifications.h"
 
 namespace {
 const char* sessionFilePath = "session.json";

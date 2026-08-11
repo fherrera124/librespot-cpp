@@ -1,13 +1,13 @@
-#include "ConnectReceiver.h"
+#include "connect/ConnectReceiver.h"
 
 #include <atomic>
 #include <utility>
 
 #include "Authenticator.h"
-#include "ZeroconfServer.h"
 #include "bell/Logger.h"
 #include "bell/http/Server.h"
 #include "bell/utils/Semaphore.h"
+#include "connect/ZeroconfServer.h"
 
 using namespace cspot;
 

@@ -15,9 +15,9 @@
 #include <vector>
 
 #include "AudioSink.h"
-#include "PlaybackNotifications.h"
 #include "SessionContext.h"
 #include "api/SpClient.h"
+#include "connect/PlaybackNotifications.h"
 #include "events/EventModels.h"
 #include "tracks/TrackQueueHandler.h"
 
