@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <random>
 #include "FileProvider.h"
-#include "Utils.h"
 
 using namespace cspot;
 
@@ -91,11 +90,12 @@ void StreamPlayer::registerHandlers() {
         handleFileProvided(providedFile);
       });
 
-  eventLoop->registerHandler(EventLoop::EventType::PLAYER_PLAY,
-                             [&](EventLoop::Event&& ev) {
-                               auto event = std::move(ev);
-                               handlePlayEvent(std::get<bool>(event.payload));
-                             });
+  eventLoop->registerHandler(
+      EventLoop::EventType::PLAYER_PLAY, [&](EventLoop::Event&& ev) {
+        auto event = std::move(ev);
+        auto& cmd = std::get<PlayPauseCommand>(event.payload);
+        handlePlayEvent(cmd.shouldPlay, cmd.pausePositionMs);
+      });
 
   eventLoop->registerHandler(
       EventLoop::EventType::PLAYER_FLUSH, [&](EventLoop::Event&& ev) {
@@ -186,11 +186,20 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
   queueUpdateSemaphore.give();
 }
 
-void StreamPlayer::handlePlayEvent(bool shouldPlay) {
+void StreamPlayer::handlePlayEvent(bool shouldPlay,
+                                   std::optional<int64_t> pausePositionMs) {
   std::scoped_lock lock(playbackMutex);
   BELL_LOG(info, LOG_TAG, "Received PLAYER_PLAY event, shouldPlay={}",
            shouldPlay);
   isPlaying = shouldPlay;
+
+  // Real pause with an open decoder: reuse handleSeekEvent()'s own path
+  // to cut audio now and land the decoder back on the frozen position,
+  // instead of draining whatever's queued in the sink on its own.
+  if (!shouldPlay && pausePositionMs && audioDecoder->isOpen()) {
+    pendingSeekMs = *pausePositionMs;
+  }
+
   // Not gated on shouldPlay: if the track was already opened while paused,
   // this is what re-announces the corrected isPlaying value on resume
   // (maybeStartCurrentTrack() is a no-op if the decoder's already open,

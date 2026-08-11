@@ -78,7 +78,8 @@ class StreamPlayer : public bell::Task {
   void handleQueueUpdate(const TrackQueueUpdate& queueUpdate);
   void handleFileProvided(const ProvidedFile& providedFile);
   bool isCurrentTrackReady();
-  void handlePlayEvent(bool play);
+  void handlePlayEvent(bool play,
+                       std::optional<int64_t> pausePositionMs = std::nullopt);
   // resumeState, when set, is applied atomically with the flush.
   void handleFlushEvent(std::optional<FlushResumeState> resumeState = std::nullopt);
   void handleSeekEvent(int64_t positionMs);

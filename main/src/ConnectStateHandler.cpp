@@ -537,7 +537,7 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
            clusterUpdate.cluster.activeDeviceId);
 
   putStateRequestProto.isActive = false;
-  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, false);
+  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, PlayPauseCommand{false});
 
   {
     auto& ps = putStateRequestProto.device.playerState;
@@ -854,7 +854,8 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   trackQueueHandler->updateTrackWindows();
 
   eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, std::monostate{});
-  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !initiallyPaused);
+  eventLoop->post(EventLoop::EventType::PLAYER_PLAY,
+                  PlayPauseCommand{!initiallyPaused});
 
   auto& playerState = putStateRequestProto.device.playerState;
   announcePlaybackFlagsLocked(initiallyPaused, /*isBuffering=*/true);
@@ -1028,7 +1029,7 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
     // StreamPlayer's own isPlaying otherwise stays true from before this
     // call (nothing else would clear it), which would start audio the
     // instant the wrapped-to-start track loads instead of pausing there.
-    eventLoop->post(EventLoop::EventType::PLAYER_PLAY, false);
+    eventLoop->post(EventLoop::EventType::PLAYER_PLAY, PlayPauseCommand{false});
   }
 
   return putStateLocked();
@@ -1051,7 +1052,7 @@ void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
       playerState.isBuffering = false;
       playerState.playbackSpeed = computePlaybackSpeed(
           playerState.isPaused, playerState.isBuffering);
-      eventLoop->post(EventLoop::EventType::PLAYER_PLAY, false);
+      eventLoop->post(EventLoop::EventType::PLAYER_PLAY, PlayPauseCommand{false});
       (void)putStateLocked();
       return;
     }
@@ -1129,16 +1130,21 @@ void ConnectStateHandler::announcePlaybackFlagsLocked(bool isPaused,
 }
 
 bell::Result<> ConnectStateHandler::handlePauseCommandLocked(bool pause) {
-  // Not routed through StreamPlayer's own announceState() flow - that's
-  // a no-op once the decoder is already open (the common pause/resume
-  // case), so this needs its own explicit putState() call.
-  eventLoop->post(EventLoop::EventType::PLAYER_PLAY, !pause);
-
   auto& playerState = putStateRequestProto.device.playerState;
 
   // Uses the OLD playbackSpeed/timestamp (before they're reassigned below).
   auto nowMs = timeProvider->getSyncedTimestamp();
-  playerState.positionAsOfTimestamp = currentPositionMsLocked(nowMs);
+  int64_t currentPosition = currentPositionMsLocked(nowMs);
+
+  // Not routed through StreamPlayer's own announceState() flow - that's
+  // a no-op once the decoder is already open (the common pause/resume
+  // case), so this needs its own explicit putState() call.
+  eventLoop->post(
+      EventLoop::EventType::PLAYER_PLAY,
+      PlayPauseCommand{!pause, pause ? std::optional<int64_t>(currentPosition)
+                                     : std::nullopt});
+
+  playerState.positionAsOfTimestamp = currentPosition;
 
   announcePlaybackFlagsLocked(pause, playerState.isBuffering);
   playerState.timestamp = nowMs;

@@ -34,6 +34,16 @@ struct FlushResumeState {
   bool isPlaying = true;
 };
 
+// PLAYER_PLAY's payload. pausePositionMs is set only for a genuine local
+// pause with an open decoder - StreamPlayer seeks back to it and flushes
+// the sink immediately instead of draining the ring buffer on its own.
+// Left nullopt for every other shouldPlay=false post (decoder not open
+// yet, or deliberately left where it is).
+struct PlayPauseCommand {
+  bool shouldPlay = true;
+  std::optional<int64_t> pausePositionMs;
+};
+
 struct TrackQueueUpdate {
   std::optional<SpotifyId> previousTrackId;
   std::vector<SpotifyId> nextTracks;
