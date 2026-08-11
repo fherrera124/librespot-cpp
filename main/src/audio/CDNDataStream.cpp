@@ -50,10 +50,8 @@ bell::Result<> CDNDataStream::open(const std::string& cdnUrl,
   // Reset sizes & state
   totalSize.reset();
   originalTotalSizeRaw = 0;
-  tailRemainderBytes = 0;
   bytesInLastReadChunk = 0;
   chunkStartPosition = 0;
-  pendingDiscardBack = 0;
   currentPosition = 0;
   resetPrefetchPhase();
 
@@ -74,8 +72,7 @@ bell::Result<> CDNDataStream::open(const std::string& cdnUrl,
 
   lastReadChunk.resize(chunkSize);
   // Initialize reuse metadata
-  bufferAlignedStart = bufferAlignedEnd = bufferVisibleStart =
-      bufferVisibleEnd = 0;
+  bufferVisibleStart = bufferVisibleEnd = 0;
 
   return {};
 }
@@ -158,7 +155,6 @@ bell::Result<> CDNDataStream::seek(size_t offset, SeekOrigin origin) {
   // (see requestRange()'s comment) - reset chunk state.
   bytesInLastReadChunk = 0;
   chunkStartPosition = 0;
-  pendingDiscardBack = 0;
   currentPosition = targetPos;
   resetPrefetchPhase();
 
@@ -265,8 +261,6 @@ bool CDNDataStream::adoptCachedChunk(const std::vector<std::byte>& data,
   chunkStartPosition = plan.skipPrefix;
   bytesInLastReadChunk = plan.requestSize - plan.skipSuffix;
   currentPosition = plan.desiredStart;
-  bufferAlignedStart = plan.requestStart;
-  bufferAlignedEnd = plan.requestStart + plan.requestSize;
   bufferVisibleStart = plan.desiredStart;
   bufferVisibleEnd = plan.desiredStart + plan.desiredLength;
   return true;
@@ -370,8 +364,7 @@ bool CDNDataStream::tryServeFromCache(size_t desiredStart, size_t desiredLen) {
       // too since this may be the stream's very first fetch (nothing
       // prefetched yet), so no earlier fetch is guaranteed to have set it.
       originalTotalSizeRaw = fetchRes->totalWireSize;
-      tailRemainderBytes = originalTotalSizeRaw % 16;
-      totalSize = originalTotalSizeRaw - tailRemainderBytes;
+      totalSize = originalTotalSizeRaw - (originalTotalSizeRaw % 16);
       advancePrefetchWindow(*idx);
       return true;
     }
@@ -451,8 +444,7 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
 
   // Update total size info
   originalTotalSizeRaw = totalRaw;
-  tailRemainderBytes = originalTotalSizeRaw % 16;
-  size_t trimmed = originalTotalSizeRaw - tailRemainderBytes;
+  size_t trimmed = originalTotalSizeRaw - (originalTotalSizeRaw % 16);
   totalSize = trimmed;
 
   size_t alignedOffsetInBuffer;
@@ -503,8 +495,6 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
       alignedOffsetInBuffer + plan.requestSize - plan.skipSuffix;
   currentPosition = plan.desiredStart;
   // Update reuse metadata
-  bufferAlignedStart = plan.requestStart;
-  bufferAlignedEnd = plan.requestStart + plan.requestSize;
   bufferVisibleStart = plan.desiredStart;
   bufferVisibleEnd = plan.desiredStart + plan.desiredLength;
 

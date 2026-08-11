@@ -142,9 +142,6 @@ class CDNDataStream : public bell::io::DataStream {
   // Raw original total size from server (may be non 16-aligned).
   size_t originalTotalSizeRaw = 0;
 
-  // Number of bytes trimmed off the tail (originalTotalSizeRaw % 16).
-  size_t tailRemainderBytes = 0;
-
   // Buffer to store the aligned fetched & decrypted data
   std::vector<std::byte> lastReadChunk;
   size_t bytesInLastReadChunk = 0;
@@ -152,18 +149,12 @@ class CDNDataStream : public bell::io::DataStream {
   // Offset inside lastReadChunk where the next readable user-visible byte resides
   size_t chunkStartPosition = 0;
 
-  // Bytes at the tail of lastReadChunk that are decrypted but should not be exposed
-  size_t pendingDiscardBack = 0;
-
   // Current user-visible position (0..*totalSize)
   size_t currentPosition = 0;
 
   int64_t totalRequestTimeMs = 0;
 
-  // Cached buffer coverage for reuse (aligned + visible)
-  size_t bufferAlignedStart = 0;  // aligned start (requestStart)
-  size_t bufferAlignedEnd =
-      0;  // aligned end (exclusive) (requestStart + requestSize)
+  // Cached buffer coverage for reuse (user-visible)
   size_t bufferVisibleStart = 0;  // user-visible start inside current buffer
   size_t bufferVisibleEnd = 0;    // user-visible end (exclusive)
 
