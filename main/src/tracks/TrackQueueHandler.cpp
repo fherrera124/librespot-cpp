@@ -493,14 +493,6 @@ bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
   size_t bytesToRead = *response.contentLength;
   std::array<std::byte, 512> buffer{};
 
-  // Temp diagnostic: capture what actually arrives on the wire (bounded, to
-  // avoid flooding the log on a real, populated page) - to confirm/rule out
-  // whether rawRequest()'s missing Accept header (see its own comment) is
-  // the reason contextPages ends up empty, before touching that header.
-  constexpr size_t kDiagCap = 1024;
-  std::string diagBody;
-  diagBody.reserve(std::min<size_t>(bytesToRead, kDiagCap));
-
   while (bytesToRead > 0 && !stream->eof() && !stream->bad()) {
     size_t toRead = std::min(buffer.size(), bytesToRead);
     stream->read(reinterpret_cast<char*>(buffer.data()), toRead);
@@ -511,22 +503,12 @@ bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
 
     size_t bytesRead = stream->gcount();
 
-    if (diagBody.size() < kDiagCap) {
-      size_t toCopy = std::min(bytesRead, kDiagCap - diagBody.size());
-      diagBody.append(reinterpret_cast<const char*>(buffer.data()), toCopy);
-    }
-
     auto res = pageParser.feed(buffer.data(), bytesRead);
     bytesToRead -= bytesRead;
 
     if (!res) {
       BELL_LOG(error, LOG_TAG, "Error occured while parsing page, err={}",
                res.error());
-      BELL_LOG(error, LOG_TAG,
-               "RAW BODY DIAG (parse failed): status={} contentLength={} "
-               "body[0..{}]={}",
-               response.statusCode, *response.contentLength, diagBody.size(),
-               diagBody);
       return nonstd::make_unexpected(res.error());
     }
   }

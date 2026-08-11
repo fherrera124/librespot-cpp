@@ -267,6 +267,7 @@ bell::Result<bell::HTTPResponse> DefaultSpClient::rawRequest(
       {
           {"Client-Token", clientToken},
           {"Authorization", fmt::format("Bearer {}", accessToken)},
+          {"Accept", "*/*"},
       });
 }
 
