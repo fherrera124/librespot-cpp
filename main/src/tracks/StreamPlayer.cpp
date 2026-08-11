@@ -112,6 +112,13 @@ void StreamPlayer::registerHandlers() {
         auto event = std::move(ev);
         handleSeekEvent(std::get<int64_t>(event.payload));
       });
+
+  eventLoop->registerHandler(
+      EventLoop::EventType::NEXT_TRACK_HINT, [&](EventLoop::Event&& ev) {
+        auto event = std::move(ev);
+        auto& hint = std::get<NextTrackHint>(event.payload);
+        handleNextTrackHint(hint);
+      });
 }
 
 void StreamPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
@@ -129,15 +136,32 @@ void StreamPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
     return;
   }
 
-  // No prefetch/"next" tracking - minimum needed to play the current
-  // track, nothing ahead of it. Cancels FileProvider's work on whatever's
-  // being discarded, then requests the new current track.
+  // Cancels FileProvider's work on whatever's being discarded, then
+  // requests the new current track - unless a TRACK_NEAR_END prefetch
+  // already resolved (or is already resolving) exactly this one.
   if (currentTrackId && !currentFile) {
     fileProvider->cancel(*currentTrackId);
   }
   currentTrackId = update.currentTrackId;
   currentFile.reset();
-  fileProvider->provideTrack(*currentTrackId);
+  nearEndSignaled = false;
+
+  bool pendingMatches =
+      pendingNextTrackId && *pendingNextTrackId == *currentTrackId;
+  if (pendingMatches && pendingNextFile && !pendingNextFile->isError) {
+    currentFile = std::move(pendingNextFile);
+    BELL_LOG(info, LOG_TAG, "Adopted prefetched file for track {}",
+             currentTrackId->uri);
+  } else if (!pendingMatches) {
+    if (pendingNextTrackId) {
+      fileProvider->cancel(*pendingNextTrackId);
+    }
+    fileProvider->provideTrack(*currentTrackId);
+  }
+  // else: pendingMatches but still in flight - handleFileProvided()'s
+  // currentTrackId match below picks up the result when it lands.
+  pendingNextTrackId.reset();
+  pendingNextFile.reset();
 
   // maybeStartCurrentTrack() is deliberately NOT called here, unlike
   // handleFileProvided()/handlePlayEvent() - only taskLoop() may open a
@@ -151,11 +175,15 @@ void StreamPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
 void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
   std::scoped_lock lock(playbackMutex);
 
+  bool isCurrentTrack = currentTrackId &&
+                       providedFile.itemId == *currentTrackId && !currentFile;
+  bool isPendingNextTrack =
+      pendingNextTrackId && providedFile.itemId == *pendingNextTrackId;
+
   if (providedFile.isError) {
     BELL_LOG(error, LOG_TAG, "Error providing file for track {}",
              providedFile.itemId.uri);
-    if (currentTrackId && providedFile.itemId == *currentTrackId &&
-        !currentFile) {
+    if (isCurrentTrack) {
       // A separate event from the natural-EOF one just below - TRACK_UNPLAYABLE
       // always advances regardless of repeat-track, unlike TRACK_ENDED (no
       // audio to repeat). Without this, a track whose audio key request
@@ -164,12 +192,15 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
       currentTrackId.reset();
       eventLoop->post(EventLoop::EventType::TRACK_UNPLAYABLE,
                       std::monostate{});
+    } else if (isPendingNextTrack) {
+      // Prefetch failed - not fatal, handleQueueUpdate() falls back to a
+      // fresh provideTrack() if this candidate really becomes current.
+      pendingNextTrackId.reset();
     }
     return;
   }
 
-  if (currentTrackId && providedFile.itemId == *currentTrackId &&
-      !currentFile) {
+  if (isCurrentTrack) {
     currentFile = providedFile;
 
     BELL_LOG(info, LOG_TAG, "Track {} is ready to play",
@@ -178,6 +209,9 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
     // Still buffering here - the decoder hasn't been opened yet, let alone
     // produced any real audio. See announceState()'s doc comment.
     announceState(/*isBuffering=*/true);
+  } else if (isPendingNextTrack) {
+    pendingNextFile = providedFile;
+    BELL_LOG(info, LOG_TAG, "Prefetched next track {}", providedFile.itemId.uri);
   } else {
     // Stale/cancelled request (superseded before it resolved) - ignore.
   }
@@ -232,6 +266,19 @@ void StreamPlayer::handleSeekEvent(int64_t positionMs) {
   // it on the same decoder/CDNDataStream, which has no locking of its own.
   pendingSeekMs = positionMs;
   queueUpdateSemaphore.give();
+}
+
+void StreamPlayer::handleNextTrackHint(const NextTrackHint& hint) {
+  std::scoped_lock lock(playbackMutex);
+  if (pendingNextTrackId && *pendingNextTrackId == hint.trackId) {
+    return;  // already requested
+  }
+  if (pendingNextTrackId) {
+    fileProvider->cancel(*pendingNextTrackId);
+  }
+  pendingNextTrackId = hint.trackId;
+  pendingNextFile.reset();
+  fileProvider->provideTrack(hint.trackId);
 }
 
 void StreamPlayer::maybeStartCurrentTrack() {
@@ -354,6 +401,9 @@ void StreamPlayer::taskLoop() {
       // skip_next) - this just signals we ran out of audio; the
       // resulting QUEUE_UPDATED is what actually advances playback.
       eventLoop->post(EventLoop::EventType::TRACK_ENDED, std::monostate{});
+    } else if (!nearEndSignaled && audioDecoder->isNearEnd()) {
+      nearEndSignaled = true;
+      eventLoop->post(EventLoop::EventType::TRACK_NEAR_END, std::monostate{});
     }
   } else {
     queueUpdateSemaphore.take(100);

@@ -38,6 +38,15 @@ class EventLoop : public bell::Task {
     // Posted by StreamPlayer when a track could never be loaded (CDN/audio
     // key failure) rather than reaching a natural end.
     TRACK_UNPLAYABLE,
+    // Posted by StreamPlayer once AudioDecoder::isNearEnd() first goes
+    // true for the current track (latched, once per track). Carries no
+    // payload - ConnectStateHandler is the one who knows what's next.
+    TRACK_NEAR_END,
+    // Posted by ConnectStateHandler in response to TRACK_NEAR_END: a
+    // best-effort guess (never authority - see NextTrackHint's own
+    // comment) at the track that will become current next, for
+    // StreamPlayer to prefetch ahead of the real advance.
+    NEXT_TRACK_HINT,
     // Posted by ConnectStateHandler on a seek_to command - payload is the
     // already-resolved absolute target position in ms (relative/beginning/
     // value math happens in ConnectStateHandler; StreamPlayer just seeks
@@ -61,7 +70,8 @@ class EventLoop : public bell::Task {
   using EventPayload =
       std::variant<std::monostate, bool, int64_t, AudioKeyResponse,
                    TrackQueueUpdate, ProvidedFile, tao::json::value,
-                   TrackMetadata, FlushResumeState, PlayPauseCommand>;
+                   TrackMetadata, FlushResumeState, PlayPauseCommand,
+                   NextTrackHint>;
 
   struct Event {
     EventType type;

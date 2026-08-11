@@ -53,6 +53,15 @@ class StreamPlayer : public bell::Task {
   std::optional<SpotifyId> currentTrackId;
   std::optional<ProvidedFile> currentFile;
 
+  // A best-effort guess at what becomes current next (see NEXT_TRACK_HINT/
+  // NextTrackHint), prefetched ahead of the real advance. Never adopted
+  // unless it matches the real currentTrackId at handleQueueUpdate() time -
+  // see NextTrackHint's own comment.
+  std::optional<SpotifyId> pendingNextTrackId;
+  std::optional<ProvidedFile> pendingNextFile;
+  // Latches TRACK_NEAR_END to once per track - reset in handleQueueUpdate().
+  bool nearEndSignaled = false;
+
   bool flushRequested = false;
   bool isPlaying = false;
 
@@ -77,6 +86,9 @@ class StreamPlayer : public bell::Task {
   void registerHandlers();
   void handleQueueUpdate(const TrackQueueUpdate& queueUpdate);
   void handleFileProvided(const ProvidedFile& providedFile);
+  // Requests (or, if already pending, ignores) a prefetch for hint.trackId -
+  // see NextTrackHint's own comment.
+  void handleNextTrackHint(const NextTrackHint& hint);
   bool isCurrentTrackReady();
   void handlePlayEvent(bool play,
                        std::optional<int64_t> pausePositionMs = std::nullopt);

@@ -48,6 +48,15 @@ struct TrackQueueUpdate {
   std::optional<SpotifyId> currentTrackId;
 };
 
+// TRACK_NEAR_END's answer: ConnectStateHandler's best guess at what
+// becomes current next (repeat-track's target, or the head of
+// TrackQueueHandler's next-tracks window). A hint, not authority -
+// StreamPlayer only uses it to prefetch ahead of time, and re-validates
+// identity against the real advance before adopting the result.
+struct NextTrackHint {
+  SpotifyId trackId;
+};
+
 struct PlayerStateUpdate {
   // isPlaying: same semantics as PlayerState.isPlaying (proto/ConnectPb.h).
   bool isPlaying;

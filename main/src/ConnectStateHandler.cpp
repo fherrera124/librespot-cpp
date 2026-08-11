@@ -116,6 +116,12 @@ ConnectStateHandler::ConnectStateHandler(
         handleTrackAdvanceSignal(AdvanceTrigger::TrackUnplayable);
       });
 
+  // StreamPlayer's current track is nearing its end - see
+  // handleTrackNearEnd()'s own comment.
+  this->eventLoop->registerHandler(
+      EventLoop::EventType::TRACK_NEAR_END,
+      [this](cspot::EventLoop::Event&&) { handleTrackNearEnd(); });
+
   // Outward "now playing" notifications (PlaybackNotifications.h) - posted
   // from onPlayerStateUpdate()/handlePauseCommandLocked()/applySeekLocked()
   // while putStateMutex is held, delivered here (this class's own
@@ -1069,6 +1075,35 @@ void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
                                                          : "ended",
              res.error());
   }
+}
+
+void ConnectStateHandler::handleTrackNearEnd() {
+  std::scoped_lock lock(putStateMutex);
+  auto& playerState = putStateRequestProto.device.playerState;
+
+  std::string candidateUri;
+  if (playerState.options.repeatingTrack) {
+    // Matches advanceToNextTrackLocked()'s own repeat-track handling: the
+    // next track is this same one again.
+    if (playerState.track.hasValue) {
+      candidateUri = playerState.track.value.uri;
+    }
+  } else {
+    auto nextTracks = trackQueueHandler->nextTracks();
+    candidateUri = nextTracks[0].uri;
+  }
+
+  if (candidateUri.empty()) {
+    return;  // end of context, no repeat, nothing queued - no-op
+  }
+
+  auto candidateId = SpotifyId::tryParse(candidateUri);
+  if (!candidateId) {
+    return;
+  }
+
+  eventLoop->post(EventLoop::EventType::NEXT_TRACK_HINT,
+                  NextTrackHint{*candidateId});
 }
 
 bell::Result<> ConnectStateHandler::handleSkipPrevCommandLocked() {

@@ -70,14 +70,15 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
     // How many kCDNChunkSize-sized chunks cover targetPrefetchDuration at
     // this track's resolved bitrate, rounded up - see
     // AudioDecoder.h's own comment on targetPrefetchDuration.
+    currentBytesPerSecond = bytesPerSecond(format);
     size_t targetBytes = static_cast<size_t>(targetPrefetchDuration.count()) *
-                         bytesPerSecond(format) / 1000;
+                         currentBytesPerSecond / 1000;
     size_t depth = std::max<size_t>(
         1, (targetBytes + kCDNChunkSize - 1) / kCDNChunkSize);
     BELL_LOG(info, LOG_TAG,
              "prefetchDepth={} chunks of {}KB (~{}ms/chunk) for format={}",
              depth, kCDNChunkSize / 1024,
-             kCDNChunkSize * 1000 / bytesPerSecond(format),
+             kCDNChunkSize * 1000 / currentBytesPerSecond,
              static_cast<int>(format));
 
     auto stream =
@@ -217,6 +218,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
     isOpenFlag = false;
     eof = false;
     consecutiveReadErrors = 0;
+    currentBytesPerSecond = 0;
     codec.reset();
     container.reset();
     dataStream.reset();
@@ -224,6 +226,20 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
   }
 
   bool isEOF() const override { return eof; }
+
+  bool isNearEnd() const override {
+    if (!isOpenFlag || !dataStream || currentBytesPerSecond == 0) {
+      return false;
+    }
+    auto total = dataStream->size();
+    size_t position = dataStream->position();
+    if (!total || *total < position) {
+      return false;
+    }
+    int64_t msRemaining = static_cast<int64_t>(*total - position) * 1000 /
+                          static_cast<int64_t>(currentBytesPerSecond);
+    return msRemaining <= targetPrefetchDuration.count();
+  }
 
   bell::Result<> seekToMs(int64_t positionMs) override {
     if (!isOpenFlag) {
@@ -265,6 +281,9 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
   std::unique_ptr<bell::audio::OggContainer> container;
   std::unique_ptr<bell::TremorVorbisCodec> codec;
   std::optional<SpotifySeekTable> seekTable;
+  // Set in openStream(), used by isNearEnd() - see bytesPerSecond()'s own
+  // comment for why this can't be computed once at construction.
+  size_t currentBytesPerSecond = 0;
   // isOpen()/isEOF() read without playbackMutex from the player thread
   // (avoids blocking flush/queue handling); written under that mutex from
   // openStream()/resetStream(). Atomic for visibility, not compound-op safety.

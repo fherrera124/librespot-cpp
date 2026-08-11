@@ -30,6 +30,13 @@ class AudioDecoder {
 
   virtual bool isEOF() const = 0;
 
+  // True once the currently open stream's estimated remaining playback
+  // time drops to targetPrefetchDuration or below (same threshold
+  // PrefetchWorker's own read-ahead is sized against - see
+  // createAudioDecoder()'s own comment). False if nothing is open or
+  // the stream's total size isn't known yet.
+  virtual bool isNearEnd() const = 0;
+
   // Seeks the currently open stream to an absolute position. No-op-safe
   // to call only while isOpen() - callers must check first.
   virtual bell::Result<> seekToMs(int64_t positionMs) = 0;

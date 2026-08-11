@@ -306,6 +306,12 @@ class ConnectStateHandler : public bell::Task {
   // AdvanceTrigger::TrackEnded or ::TrackUnplayable - no other caller.
   void handleTrackAdvanceSignal(AdvanceTrigger trigger);
 
+  // TRACK_NEAR_END event handler - takes putStateMutex itself, same as
+  // handleTrackAdvanceSignal(). Peeks (never mutates) TrackQueueHandler's
+  // state for a best-effort guess at the next track and, if found, posts
+  // NEXT_TRACK_HINT for StreamPlayer to prefetch.
+  void handleTrackNearEnd();
+
   bool encodeProtoTracks(pb_ostream_t* stream, const pb_field_t* field,
                          bool previous);
 
