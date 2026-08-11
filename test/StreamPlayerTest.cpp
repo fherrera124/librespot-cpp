@@ -28,13 +28,6 @@ TEST_CASE("StreamPlayer tests") {
     REQUIRE_CALL(*rawMockFileProvider, provideTrack(_)).TIMES(3);
 
     cspot::TrackQueueUpdate queueUpdate = {
-        .previousTrackId = std::nullopt,
-        .nextTracks =
-            {
-                cspot::SpotifyId("spotify:track:0987654321"),
-                cspot::SpotifyId("spotify:track:1122334455"),
-                cspot::SpotifyId("spotify:track:666"),
-            },
         .currentTrackId = cspot::SpotifyId("spotify:track:1234567890"),
     };
 

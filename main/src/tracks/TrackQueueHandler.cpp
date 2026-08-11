@@ -1141,25 +1141,11 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
       }
     }
 
-    // TODO: Make an event with updated tracks
     BELL_LOG(info, LOG_TAG, "Track windows updated");
 
     lastNotifiedCurrentTrackUri = newCurrentTrackUri;
 
     TrackQueueUpdate updateEvent{};
-    auto nextTracksItr = nextTracks();
-    for (auto& nextTrack : nextTracksItr) {
-      if (nextTrack.uri.empty()) {
-        break;
-      }
-      updateEvent.nextTracks.emplace_back(nextTrack.uri);
-    }
-
-    cspot_proto::ProvidedTrack& prevTrack = previousTracks().back();
-    if (!prevTrack.uri.empty()) {
-      updateEvent.previousTrackId = SpotifyId{prevTrack.uri};
-    }
-
     if (isPlayingQueue && !queue.empty()) {
       std::string resolvedUri = queue[0].resolvedUri(contextIdType);
       // resolvedUri may be a well-formed but unrecognized uri (e.g. a

@@ -45,8 +45,6 @@ struct PlayPauseCommand {
 };
 
 struct TrackQueueUpdate {
-  std::optional<SpotifyId> previousTrackId;
-  std::vector<SpotifyId> nextTracks;
   std::optional<SpotifyId> currentTrackId;
 };
 
