@@ -83,5 +83,13 @@ bell::Result<RangeFetchResult> CDNRangeFetcher::fetch(
   // Content-Length on a transient short read/EOF).
   result.data.resize(static_cast<size_t>(stream->gcount()));
 
+  // Every range fetched here is at least 16 bytes - zero actual bytes
+  // despite a parsed Content-Range means the connection died mid-body.
+  if (result.data.empty()) {
+    BELL_LOG(error, LOG_TAG, "Empty body for range {} (Content-Range: {})",
+             rangeHeaderValue, rangeHeader);
+    return bell::make_unexpected_errc<RangeFetchResult>(std::errc::io_error);
+  }
+
   return result;
 }
