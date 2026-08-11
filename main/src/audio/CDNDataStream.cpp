@@ -274,6 +274,9 @@ bool CDNDataStream::adoptCachedChunk(const std::vector<std::byte>& data,
 
 void CDNDataStream::advancePrefetchWindow(size_t chunkIndex) {
   chunkCache->advanceWindow(chunkIndex);
+  if (prefetchSuppressed) {
+    return;
+  }
   // .value() (not *phaseAnchor): every current call site only reaches
   // here after chunkIndexInPhase() already confirmed phaseAnchor is set,
   // but that guarantee lives outside this function - a future call site

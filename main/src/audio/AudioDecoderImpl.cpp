@@ -82,6 +82,11 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
 
     auto stream =
         std::make_shared<CDNDataStream>(httpClient, prefetchWorker, depth);
+    // Header read below starts at position 0 - suppress read-ahead if
+    // we're about to seek away from it anyway.
+    if (startPositionMs > 0) {
+      stream->setPrefetchSuppressed(true);
+    }
     auto openRes = stream->open(cdnUrl, decryptKey);
     if (!openRes) {
       BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}",
@@ -156,6 +161,8 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
                  startPositionMs);
       }
     }
+    // Real playback starts from wherever we landed - resume read-ahead.
+    stream->setPrefetchSuppressed(false);
 
     return {};
   }

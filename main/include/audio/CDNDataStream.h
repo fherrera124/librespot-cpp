@@ -82,6 +82,10 @@ class CDNDataStream : public bell::io::DataStream {
   // begins.
   bell::Result<std::vector<std::byte>> readRawHeaderBytes(size_t maxBytes);
 
+  // While true, reads still fetch what they need, but advancePrefetchWindow()
+  // stops asking PrefetchWorker to read ahead of it.
+  void setPrefetchSuppressed(bool suppressed) { prefetchSuppressed = suppressed; }
+
  private:
   const char* LOG_TAG = "CDNDataStream";
 
@@ -122,6 +126,9 @@ class CDNDataStream : public bell::io::DataStream {
   // duration stays roughly constant across audio qualities despite
   // chunkSize being fixed.
   const size_t prefetchDepth;
+
+  // See setPrefetchSuppressed().
+  bool prefetchSuppressed = false;
 
   // The desiredStart (logical) that anchors chunk index 0 of the current
   // phase - unset until the first cacheable (chunkSize-sized, non-tail)
