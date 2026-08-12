@@ -425,43 +425,13 @@ bell::Result<cspot_proto::Episode> DefaultSpClient::episodeMetadata(
         std::errc::invalid_argument);
   }
 
-  auto credentialsRes = updateCredentials();
-  if (!credentialsRes) {
-    return nonstd::make_unexpected(credentialsRes.error());
-  }
-
-  auto response = httpClient->get(
-      fmt::format("https://{}/metadata/4/episode/{}", spClientAddress,
-                  episodeId.hexGid()),
-      {
-          {"Client-Token", clientToken},
-          {"Authorization", fmt::format("Bearer {}", accessToken)},
-      });
-
-  if (!response) {
-    return nonstd::make_unexpected(response.error());
-  }
-
-  // Drain unconditionally, before checking status - same pooled-connection
-  // reuse hazard as putConnectState() above.
-  auto resultBytes = response->bytes();
-  if (!resultBytes) {
-    return bell::make_unexpected_errc<cspot_proto::Episode>(
-        std::errc::bad_message);
-  }
-
-  if (response->statusCode != 200) {
-    BELL_LOG(error, LOG_TAG, "Error while fetching episode metadata: {}",
-             response->statusCode);
-    return bell::make_unexpected_errc<cspot_proto::Episode>(
-        std::errc::bad_message);
+  auto rawBytes = extendedMetadataRaw(episodeId.uri, ExtensionKind_EPISODE_V4);
+  if (!rawBytes) {
+    return nonstd::make_unexpected(rawBytes.error());
   }
 
   cspot_proto::Episode episodeProto;
-
-  bool decodeRes = nanopb_helper::decodeFromVector(episodeProto, *resultBytes);
-
-  if (!decodeRes) {
+  if (!nanopb_helper::decodeFromVector(episodeProto, *rawBytes)) {
     BELL_LOG(error, LOG_TAG, "Error while decoding episode metadata");
     return bell::make_unexpected_errc<cspot_proto::Episode>(
         std::errc::bad_message);

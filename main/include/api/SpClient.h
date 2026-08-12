@@ -70,11 +70,10 @@ class SpClient {
       const std::vector<std::byte>& fileId, bool prefetch = false) = 0;
 
   /**
-   * @brief Fetches the AUDIO_FILES extended-metadata for an entity (track
-   * or episode) URI - modern spclient no longer serves AudioFile entries
-   * through trackMetadata()/episodeMetadata() at all, they live behind
-   * this separate extended-metadata API instead (matches go-librespot's
-   * own real, current behavior).
+   * @brief Fetches the AUDIO_FILES extended-metadata for a track URI -
+   * trackMetadata() doesn't carry AudioFile entries. Episodes carry
+   * their audio files directly in episodeMetadata()'s own response
+   * instead - this endpoint 410s for episode entities.
    */
   virtual bell::Result<std::vector<cspot_proto::AudioFile>> resolveAudioFiles(
       const std::string& entityUri) = 0;

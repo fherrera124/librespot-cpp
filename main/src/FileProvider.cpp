@@ -156,51 +156,83 @@ void DefaultFileProvider::taskLoop() {
       currentlyProvidedFiles.erase(currentlyProvidedFiles.begin());
     }
 
-    // TODO: Fetch episode metadata
-    auto metadataRes = spClient->trackMetadata(file->itemId);
-    if (!metadataRes) {
-      file->isError = true;
-      BELL_LOG(info, LOG_TAG, "Could not fetch track metadata, err={}",
-               metadataRes.error());
-
-      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
-      return;
-    }
-
     const std::string& countryCode = apClient->getCountryCode();
     SpotifyId effectiveTrackId = file->itemId;
     bool hasPlayableEntity = true;
 
-    if (doRestrictionsApply(metadataRes->restrictions, countryCode)) {
-      hasPlayableEntity = false;
-      for (auto& alt : metadataRes->alternativeTracks) {
-        if (!doRestrictionsApply(alt.restrictions, countryCode)) {
-          effectiveTrackId = SpotifyId(SpotifyIdType::Track, alt.gid);
-          hasPlayableEntity = true;
-          break;
+    std::optional<cspot_proto::Track> trackMeta;
+    std::optional<cspot_proto::Episode> episodeMeta;
+
+    if (file->itemId.type == SpotifyIdType::Episode) {
+      auto metadataRes = spClient->episodeMetadata(file->itemId);
+      if (!metadataRes) {
+        file->isError = true;
+        BELL_LOG(info, LOG_TAG, "Could not fetch episode metadata, err={}",
+                 metadataRes.error());
+
+        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+        return;
+      }
+
+      // Episodes carry no alternativeTracks list - restricted means
+      // unplayable, there is nothing to fall back to.
+      if (doRestrictionsApply(metadataRes->restrictions, countryCode)) {
+        hasPlayableEntity = false;
+      }
+
+      episodeMeta = std::move(*metadataRes);
+    } else {
+      auto metadataRes = spClient->trackMetadata(file->itemId);
+      if (!metadataRes) {
+        file->isError = true;
+        BELL_LOG(info, LOG_TAG, "Could not fetch track metadata, err={}",
+                 metadataRes.error());
+
+        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+        return;
+      }
+
+      if (doRestrictionsApply(metadataRes->restrictions, countryCode)) {
+        hasPlayableEntity = false;
+        for (auto& alt : metadataRes->alternativeTracks) {
+          if (!doRestrictionsApply(alt.restrictions, countryCode)) {
+            effectiveTrackId = SpotifyId(SpotifyIdType::Track, alt.gid);
+            hasPlayableEntity = true;
+            break;
+          }
         }
       }
+
+      trackMeta = std::move(*metadataRes);
     }
 
     if (!hasPlayableEntity) {
       file->isError = true;
       BELL_LOG(info, LOG_TAG,
-               "Track {} is restricted in {} with no playable alternative",
+               "{} {} is restricted in {} with no playable alternative",
+               file->itemId.type == SpotifyIdType::Episode ? "Episode" : "Track",
                file->itemId.uri, countryCode);
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
       return;
     }
 
-    auto filesRes = spClient->resolveAudioFiles(effectiveTrackId.uri);
-    if (!filesRes) {
-      file->isError = true;
-      BELL_LOG(info, LOG_TAG, "Could not resolve audio files, err={}",
-               filesRes.error());
-      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
-      return;
+    // Episodes carry their playable audio files directly in the EPISODE_V4
+    // response fetched above - a separate AUDIO_FILES extended-metadata
+    // request 410s for episode entities under this client's auth scope.
+    std::vector<cspot_proto::AudioFile> trackAudioFiles;
+    if (!episodeMeta) {
+      auto filesRes = spClient->resolveAudioFiles(effectiveTrackId.uri);
+      if (!filesRes) {
+        file->isError = true;
+        BELL_LOG(info, LOG_TAG, "Could not resolve audio files, err={}",
+                 filesRes.error());
+        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+        return;
+      }
+      trackAudioFiles = std::move(*filesRes);
     }
 
-    auto& files = *filesRes;
+    auto& files = episodeMeta ? episodeMeta->audioFiles : trackAudioFiles;
     // First format in qualityPreference that this track actually offers
     // wins - not necessarily the first entry in `files` itself.
     auto selectedAudioFile = files.end();
@@ -303,7 +335,11 @@ void DefaultFileProvider::taskLoop() {
     file->cdnUrl = *cdnUrlRes;
     file->fileId = selectedAudioFile->fileId;
     file->format = selectedAudioFile->format;
-    file->trackMetadata = *metadataRes;
+    if (episodeMeta) {
+      file->episodeMetadata = std::move(*episodeMeta);
+    } else {
+      file->trackMetadata = std::move(*trackMeta);
+    }
     file->decryptionKey = audioKeyResponse->audioKey;
 
     BELL_LOG(info, LOG_TAG, "File ready for track {} (keyLen={})",

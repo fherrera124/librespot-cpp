@@ -18,11 +18,25 @@ std::string generatePlaybackId() {
   return id;
 }
 
+std::string coverImageUrl(const nanopb_helper::Optional<cspot_proto::ImageGroup>& coverGroup) {
+  if (!coverGroup.hasValue || coverGroup.value.images.empty()) {
+    return {};
+  }
+  static const char* hexDigits = "0123456789abcdef";
+  std::string hex;
+  auto& fileId = coverGroup.value.images[0].fileId;
+  hex.reserve(fileId.size() * 2);
+  for (std::byte b : fileId) {
+    auto v = std::to_integer<uint8_t>(b);
+    hex += hexDigits[v >> 4];
+    hex += hexDigits[v & 0x0f];
+  }
+  return "https://i.scdn.co/image/" + hex;
+}
+
 // Flattens a resolved Track proto into the outward TrackChanged
 // notification's display fields: first artist only, album name, cover art
-// URL from the album's first cover image. Episodes aren't handled here -
-// FileProvider doesn't fetch episode metadata yet (its own TODO), so
-// currentFile->trackMetadata is Track-only in practice.
+// URL from the album's first cover image.
 cspot::TrackMetadata toTrackMetadata(const cspot::SpotifyId& trackId,
                                      const cspot_proto::Track& track) {
   cspot::TrackMetadata metadata;
@@ -33,21 +47,21 @@ cspot::TrackMetadata toTrackMetadata(const cspot::SpotifyId& trackId,
   }
   if (track.album.hasValue) {
     metadata.album = track.album.value.name;
-    auto& coverGroup = track.album.value.coverGroup;
-    if (coverGroup.hasValue && !coverGroup.value.images.empty()) {
-      static const char* hexDigits = "0123456789abcdef";
-      std::string hex;
-      auto& fileId = coverGroup.value.images[0].fileId;
-      hex.reserve(fileId.size() * 2);
-      for (std::byte b : fileId) {
-        auto v = std::to_integer<uint8_t>(b);
-        hex += hexDigits[v >> 4];
-        hex += hexDigits[v & 0x0f];
-      }
-      metadata.imageUrl = "https://i.scdn.co/image/" + hex;
-    }
+    metadata.imageUrl = coverImageUrl(track.album.value.coverGroup);
   }
   metadata.durationMs = static_cast<uint32_t>(track.durationMs);
+  return metadata;
+}
+
+// Same flattening for a podcast episode - no artist/album, so those stay
+// empty; the episode's own cover takes the album art's place.
+cspot::TrackMetadata toTrackMetadata(const cspot::SpotifyId& episodeId,
+                                     const cspot_proto::Episode& episode) {
+  cspot::TrackMetadata metadata;
+  metadata.uri = episodeId.uri;
+  metadata.name = episode.name;
+  metadata.imageUrl = coverImageUrl(episode.coverGroup);
+  metadata.durationMs = static_cast<uint32_t>(episode.durationMs);
   return metadata;
 }
 }  // namespace
@@ -339,6 +353,12 @@ void StreamPlayer::announceState(bool isBuffering,
       stateUpdate.trackMetadata =
           toTrackMetadata(*currentTrackId, *currentFile->trackMetadata);
     }
+  } else if (currentFile && currentFile->episodeMetadata) {
+    stateUpdate.playbackDurationMs = currentFile->episodeMetadata->durationMs;
+    if (!isBuffering && currentTrackId) {
+      stateUpdate.trackMetadata =
+          toTrackMetadata(*currentTrackId, *currentFile->episodeMetadata);
+    }
   }
 
   playerStateAnnounceCallback(stateUpdate);
@@ -413,5 +433,6 @@ void StreamPlayer::taskLoop() {
 bool StreamPlayer::isCurrentTrackReady() {
   return currentFile.has_value() && !currentFile->cdnUrl.empty() &&
          !currentFile->decryptionKey.empty() &&
-         currentFile->trackMetadata.has_value();
+         (currentFile->trackMetadata.has_value() ||
+          currentFile->episodeMetadata.has_value());
 }
