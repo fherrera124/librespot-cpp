@@ -46,6 +46,9 @@ class Session {
               [](const PlaybackNotificationEvent&) {},
           AudioConfig audioConfig = AudioConfig());
 
+  // Stops eventLoop's dispatch thread before any other member is destroyed.
+  ~Session();
+
   bell::Result<> start();
 
   // Blocks polling the AP/dealer sockets forever, UNLESS restartRequested

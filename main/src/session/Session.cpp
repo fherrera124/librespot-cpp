@@ -65,6 +65,13 @@ cspot::Session::Session(
                                        this, std::placeholders::_1));
 }
 
+cspot::Session::~Session() {
+  // eventLoop is also held by apClient/dealerClient/connectStateHandler/
+  // streamPlayer, so ~EventLoop() alone won't stop it before they're torn
+  // down below - stop it explicitly here, first.
+  eventLoop->stopTask();
+}
+
 void cspot::Session::handleDealerMessage(EventLoop::Event&& event) {
   auto dealerMessageEvent = std::move(event);
   auto& messageJson = std::get<tao::json::value>(dealerMessageEvent.payload);
