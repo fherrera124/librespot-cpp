@@ -319,6 +319,11 @@ void StreamPlayer::maybeStartCurrentTrack() {
   BELL_LOG(info, LOG_TAG, "openStream() returned for {}", file.itemId.uri);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
+    // Without this, the next taskLoop() pass sees the same currentFile as
+    // still ready and retries the same broken stream forever.
+    currentFile.reset();
+    currentTrackId.reset();
+    eventLoop->post(EventLoop::EventType::TRACK_UNPLAYABLE, std::monostate{});
     return;
   }
 
