@@ -60,6 +60,7 @@ message Episode {
     repeated AudioFile file = 12;
     repeated Restriction restriction = 0x4B;
     optional ImageGroup covers = 0x44;
+    optional string external_url = 83;
 }
 
 enum AudioFormat {

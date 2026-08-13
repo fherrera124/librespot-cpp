@@ -319,6 +319,12 @@ void StreamPlayer::maybeStartCurrentTrack() {
   BELL_LOG(info, LOG_TAG, "openStream() returned for {}", file.itemId.uri);
   if (!res) {
     BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
+    if (file.episodeMetadata && !file.episodeMetadata->externalUrl.empty()) {
+      BELL_LOG(error, LOG_TAG,
+               "Episode {} also has an externally hosted copy at {} - the "
+               "Spotify-hosted file picked above may just be stale",
+               file.itemId.uri, file.episodeMetadata->externalUrl);
+    }
     // Without this, the next taskLoop() pass sees the same currentFile as
     // still ready and retries the same broken stream forever.
     currentFile.reset();

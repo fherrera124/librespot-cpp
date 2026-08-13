@@ -135,6 +135,10 @@ struct Episode {
   std::vector<cspot_proto::Restriction> restrictions;
   std::vector<cspot_proto::AudioFile> audioFiles;
   nanopb_helper::Optional<ImageGroup> coverGroup;
+  // Non-empty when this episode also has an alternate copy hosted outside
+  // Spotify's own CDN - audioFiles is still the primary source, this isn't
+  // a substitute for it.
+  std::string externalUrl;
 
   static auto bindFields(Episode* self, bool isDecode) {
     _Episode rawProto = Episode_init_zero;
@@ -145,6 +149,8 @@ struct Episode {
                              isDecode);
     nanopb_helper::bindField(rawProto.file, self->audioFiles, isDecode);
     nanopb_helper::bindField(rawProto.covers, self->coverGroup, isDecode);
+    nanopb_helper::bindField(rawProto.external_url, self->externalUrl,
+                             isDecode);
 
     return rawProto;
   }

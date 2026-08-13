@@ -258,6 +258,12 @@ void DefaultFileProvider::taskLoop() {
                "Could not find suitable audio file, {} files available, "
                "formats: {}",
                files.size(), formatsSeen);
+      if (episodeMeta && !episodeMeta->externalUrl.empty()) {
+        BELL_LOG(info, LOG_TAG,
+                 "Episode {} has no playable Spotify-hosted file - its audio "
+                 "is externally hosted at {} (unsupported today)",
+                 file->itemId.uri, episodeMeta->externalUrl);
+      }
 
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
       return;
