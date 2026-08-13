@@ -22,6 +22,12 @@ class AudioDecoder {
       const SpotifyId& trackId, AudioFormat format,
       int64_t startPositionMs = 0) = 0;
 
+  // Plain unencrypted HTTP MP3 - e.g. a podcast episode's external_url,
+  // unrelated to Spotify's CDN. startPositionMs: same as openStream().
+  virtual bell::Result<> openExternalStream(
+      const std::string& url, const SpotifyId& trackId,
+      int64_t startPositionMs = 0) = 0;
+
   virtual void processPacket() = 0;
 
   virtual bool isOpen() const = 0;

@@ -9,9 +9,12 @@
 #include "audio/PrefetchWorker.h"
 #include "audio/SpotifySeekTable.h"
 #include "bell/Logger.h"
+#include "bell/audio/Mp3Codec.h"
+#include "bell/audio/Mp3Container.h"
 #include "bell/audio/OggContainer.h"
 #include "bell/audio/TremorVorbisCodec.h"
 #include "bell/http/Client.h"
+#include "bell/http/DataStream.h"
 #include "bell/utils/Utils.h"
 #include "nonstd/expected.hpp"
 
@@ -168,6 +171,94 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
     return {};
   }
 
+  bell::Result<> openExternalStream(const std::string& url, const SpotifyId&,
+                                    int64_t startPositionMs) override {
+    resetStream();
+
+    auto stream = std::make_shared<bell::HTTPDataStream>(httpClient);
+    auto openRes = stream->open(bell::HTTPMethod::GET, url, {});
+    if (!openRes) {
+      BELL_LOG(error, LOG_TAG, "Failed to open external stream: {}",
+               openRes.error());
+      return nonstd::make_unexpected(openRes.error());
+    }
+
+    dataStream = stream;
+
+    container = std::make_unique<bell::Mp3Container>();
+    auto containerRes = container->openForRead(dataStream);
+    if (!containerRes) {
+      BELL_LOG(error, LOG_TAG, "Failed to open MP3 container: {}",
+               containerRes.error());
+      resetStream();
+      return nonstd::make_unexpected(containerRes.error());
+    }
+
+    codec = std::make_unique<bell::Mp3Codec>();
+
+    // This frame's header carries everything setupDecodeFromHeaders()
+    // needs, but the frame itself is also real audio - decoded below,
+    // not discarded.
+    auto packetRes = container->readNextPacket();
+    if (!packetRes) {
+      BELL_LOG(error, LOG_TAG, "Failed to read first MP3 frame: {}",
+               packetRes.error());
+      resetStream();
+      return nonstd::make_unexpected(packetRes.error());
+    }
+    auto headerRes = codec->setupDecodeFromHeaders(packetRes->data);
+    if (!headerRes) {
+      BELL_LOG(error, LOG_TAG, "Failed to parse first MP3 frame: {}",
+               headerRes.error());
+      resetStream();
+      return nonstd::make_unexpected(headerRes.error());
+    }
+
+    auto pcmFormat = codec->getAudioFormat();
+    if (pcmFormat.getSampleRateValue() != 44100 ||
+        pcmFormat.getNumChannels() != 2) {
+      BELL_LOG(warn, LOG_TAG,
+               "MP3 stream is {}Hz/{}ch - AudioSinkI2S assumes "
+               "44100Hz/2ch, audio will sound wrong",
+               pcmFormat.getSampleRateValue(), pcmFormat.getNumChannels());
+    }
+
+    // bytesPerSecond() above doesn't apply here (no Spotify quality tier) -
+    // derive an estimate from the container's own sample/byte counts instead.
+    auto totalFrames = container->getTotalFrames();
+    auto totalBytes = dataStream->size();
+    if (totalFrames > 0 && totalBytes && pcmFormat.getSampleRateValue() > 0) {
+      double durationSeconds =
+          static_cast<double>(totalFrames) / pcmFormat.getSampleRateValue();
+      currentBytesPerSecond =
+          static_cast<size_t>(static_cast<double>(*totalBytes) / durationSeconds);
+    }
+
+    isOpenFlag = true;
+
+    if (startPositionMs > 0) {
+      // Best-effort, same as openStream() - the probe frame's audio is
+      // deliberately not fed to the sink, since we're about to seek elsewhere.
+      auto seekRes = seekToMs(startPositionMs);
+      if (!seekRes) {
+        BELL_LOG(error, LOG_TAG, "Start-position seek to {}ms failed: {}",
+                 startPositionMs, seekRes.error());
+      } else {
+        BELL_LOG(info, LOG_TAG, "Start-position seek to {}ms applied",
+                 startPositionMs);
+      }
+    } else {
+      auto decodeRes = codec->decode(packetRes->data);
+      if (decodeRes && !decodeRes->pcm.empty()) {
+        audioSink->feedPCMFrames(
+            reinterpret_cast<const uint8_t*>(decodeRes->pcm.data()),
+            decodeRes->pcm.size());
+      }
+    }
+
+    return {};
+  }
+
   void processPacket() override {
     if (!isOpenFlag || eof) {
       return;
@@ -189,7 +280,7 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
         return;
       }
 
-      BELL_LOG(error, LOG_TAG, "Failed to read Ogg packet ({}/{}): {}",
+      BELL_LOG(error, LOG_TAG, "Failed to read packet ({}/{}): {}",
                errorCount, kMaxConsecutiveReadErrors, packetRes.error());
       bell::utils::sleepMs(kReadErrorBackoffMs);
       return;
@@ -198,10 +289,10 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
 
     auto decodeRes = codec->decode(packetRes->data);
     if (!decodeRes) {
-      // NotEnoughBytes is expected while Vorbis's windowing lookahead
-      // fills up right after the headers - not a real error.
+      // NotEnoughBytes is expected while a codec's own decode lookahead
+      // fills up right after opening or seeking - not a real error.
       if (decodeRes.error() != bell::audio::Errc::NotEnoughBytes) {
-        BELL_LOG(error, LOG_TAG, "Failed to decode Vorbis packet: {}",
+        BELL_LOG(error, LOG_TAG, "Failed to decode packet: {}",
                  decodeRes.error());
       }
       return;
@@ -263,6 +354,10 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
                seekRes.error());
       return nonstd::make_unexpected(seekRes.error());
     }
+
+    // Drops any inter-frame decoder state (e.g. a bit reservoir) left over
+    // from before the seek - a no-op for codecs that don't carry any.
+    codec->resetDecoderState();
 
     // A seek can land before EOF even if we'd already hit it (or clear a
     // transient read-error streak) - let processPacket() resume from here

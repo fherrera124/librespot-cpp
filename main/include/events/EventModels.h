@@ -86,5 +86,9 @@ struct ProvidedFile {
   // the preferred format wasn't offered)
   AudioFormat format = AudioFormat_OGG_VORBIS_160;
   bool isError = false;
+  // cdnUrl is an episode's plain external_url (unencrypted HTTP, no
+  // decryptionKey) rather than a Spotify-CDN AudioFile - routes to
+  // AudioDecoder::openExternalStream() instead of openStream().
+  bool isExternalUrl = false;
 };
 };  // namespace cspot

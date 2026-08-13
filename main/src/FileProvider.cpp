@@ -249,7 +249,6 @@ void DefaultFileProvider::taskLoop() {
     }
 
     if (selectedAudioFile == files.rend()) {
-      file->isError = true;
       std::string formatsSeen;
       for (const auto& f : files) {
         formatsSeen += std::to_string(static_cast<int>(f.format)) + " ";
@@ -258,13 +257,20 @@ void DefaultFileProvider::taskLoop() {
                "Could not find suitable audio file, {} files available, "
                "formats: {}",
                files.size(), formatsSeen);
+
       if (episodeMeta && !episodeMeta->externalUrl.empty()) {
         BELL_LOG(info, LOG_TAG,
-                 "Episode {} has no playable Spotify-hosted file - its audio "
-                 "is externally hosted at {} (unsupported today)",
+                 "Episode {} has no playable Spotify-hosted file - falling "
+                 "back to its externally hosted copy at {}",
                  file->itemId.uri, episodeMeta->externalUrl);
+        file->cdnUrl = episodeMeta->externalUrl;
+        file->isExternalUrl = true;
+        file->episodeMetadata = std::move(*episodeMeta);
+        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+        return;
       }
 
+      file->isError = true;
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
       return;
     }

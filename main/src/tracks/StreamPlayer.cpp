@@ -311,15 +311,25 @@ void StreamPlayer::maybeStartCurrentTrack() {
   int64_t startPositionMs = pendingStartPositionMs.value_or(0);
   pendingStartPositionMs.reset();
 
-  BELL_LOG(debug, LOG_TAG, "Opening CDN stream for {} at {}ms: {}",
-           file.itemId.uri, startPositionMs, file.cdnUrl);
-  auto res = audioDecoder->openStream(file.cdnUrl, file.decryptionKey,
-                                      file.itemId, file.format,
-                                      startPositionMs);
-  BELL_LOG(info, LOG_TAG, "openStream() returned for {}", file.itemId.uri);
+  bell::Result<> res;
+  if (file.isExternalUrl) {
+    BELL_LOG(debug, LOG_TAG, "Opening external stream for {} at {}ms: {}",
+             file.itemId.uri, startPositionMs, file.cdnUrl);
+    res = audioDecoder->openExternalStream(file.cdnUrl, file.itemId,
+                                           startPositionMs);
+    BELL_LOG(info, LOG_TAG, "openExternalStream() returned for {}",
+             file.itemId.uri);
+  } else {
+    BELL_LOG(debug, LOG_TAG, "Opening CDN stream for {} at {}ms: {}",
+             file.itemId.uri, startPositionMs, file.cdnUrl);
+    res = audioDecoder->openStream(file.cdnUrl, file.decryptionKey,
+                                   file.itemId, file.format, startPositionMs);
+    BELL_LOG(info, LOG_TAG, "openStream() returned for {}", file.itemId.uri);
+  }
   if (!res) {
-    BELL_LOG(error, LOG_TAG, "Failed to open CDN stream: {}", res.error());
-    if (file.episodeMetadata && !file.episodeMetadata->externalUrl.empty()) {
+    BELL_LOG(error, LOG_TAG, "Failed to open stream: {}", res.error());
+    if (!file.isExternalUrl && file.episodeMetadata &&
+        !file.episodeMetadata->externalUrl.empty()) {
       BELL_LOG(error, LOG_TAG,
                "Episode {} also has an externally hosted copy at {} - the "
                "Spotify-hosted file picked above may just be stale",
@@ -442,8 +452,12 @@ void StreamPlayer::taskLoop() {
 }
 
 bool StreamPlayer::isCurrentTrackReady() {
-  return currentFile.has_value() && !currentFile->cdnUrl.empty() &&
-         !currentFile->decryptionKey.empty() &&
-         (currentFile->trackMetadata.has_value() ||
-          currentFile->episodeMetadata.has_value());
+  if (!currentFile.has_value() || currentFile->cdnUrl.empty() ||
+      !(currentFile->trackMetadata.has_value() ||
+        currentFile->episodeMetadata.has_value())) {
+    return false;
+  }
+  // External files carry no decryptionKey - openExternalStream() plays
+  // them unencrypted.
+  return currentFile->isExternalUrl || !currentFile->decryptionKey.empty();
 }
