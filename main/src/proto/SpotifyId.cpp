@@ -109,8 +109,12 @@ cspot::SpotifyId::SpotifyId(const std::string& uri)
   }
 
   if (gidSize < 16) {
-    // Move gid right to fill leading zeros
+    // Move gid right, then actually zero the vacated leading bytes -
+    // base62Decode() only writes gidSize bytes starting at [0], so those
+    // bytes still hold decoded data, not zeros, until this runs.
     memmove(this->gid.data() + (16 - gidSize), this->gid.data(), gidSize);
+    std::fill(this->gid.data(), this->gid.data() + (16 - gidSize),
+              std::byte{0});
   }
 }
 

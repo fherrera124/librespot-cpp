@@ -48,24 +48,26 @@ std::string base62Encode(const std::byte* data, size_t size) {
   }
 
   std::vector<int> bytes = bytesToBigInt(data, size);
-  std::string encodedStr;
-
-  // Handle leading zeros in the input byte array
-  size_t leadingZeros = 0;
-  while (leadingZeros < size && data[leadingZeros] == std::byte{0}) {
-    encodedStr += BASE62_ALPHABET[0];  // Append '0' for each leading zero byte
-    leadingZeros++;
-  }
 
   if (bytes.empty() || (bytes.size() == 1 && bytes[0] == 0)) {
     return "0";  // Special case for input {0}
   }
 
+  std::string encodedStr;
   std::vector<int> currentNumber = bytes;
   while (currentNumber.size() != 1 || currentNumber[0] != 0) {
     int remainder;
     currentNumber = divMod(currentNumber, BASE62_BASE, remainder);
     encodedStr += BASE62_ALPHABET[remainder];
+  }
+
+  // Leading zero bytes in the input become leading '0' characters in the
+  // output - appended here, before the reverse below, so they end up at
+  // the front instead of the back.
+  size_t leadingZeros = 0;
+  while (leadingZeros < size && data[leadingZeros] == std::byte{0}) {
+    encodedStr += BASE62_ALPHABET[0];
+    leadingZeros++;
   }
 
   std::reverse(encodedStr.begin(), encodedStr.end());

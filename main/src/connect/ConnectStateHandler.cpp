@@ -825,6 +825,11 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
       skipToTrackIndex = static_cast<uint32_t>(*skipToTrackIndexRaw);
     }
   }
+  BELL_LOG(debug, LOG_TAG,
+           "PLAY DIAG: contextUri={} skipToUri={} skipToUid={} "
+           "skipToTrackIndex={}",
+           contextUri.value_or(""), skipToUri.value_or(""),
+           skipToUid.value_or(""), skipToTrackIndex.value_or(0));
   bool initiallyPaused =
       options.optional<bool>("initially_paused").value_or(false);
   // Only overrides fields actually present in the JSON (optional<bool>
