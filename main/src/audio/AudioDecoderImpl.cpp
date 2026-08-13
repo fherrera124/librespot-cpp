@@ -278,8 +278,8 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
   std::shared_ptr<PrefetchWorker> prefetchWorker;
   const std::chrono::milliseconds targetPrefetchDuration;
   std::shared_ptr<bell::io::DataStream> dataStream;
-  std::unique_ptr<bell::audio::OggContainer> container;
-  std::unique_ptr<bell::TremorVorbisCodec> codec;
+  std::unique_ptr<bell::AudioContainer> container;
+  std::unique_ptr<bell::AudioCodec> codec;
   std::optional<SpotifySeekTable> seekTable;
   // Set in openStream(), used by isNearEnd() - see bytesPerSecond()'s own
   // comment for why this can't be computed once at construction.
