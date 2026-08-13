@@ -214,7 +214,7 @@ void ConnectStateHandler::initialize() {
   capabilities.connect_disabled = false;
   capabilities.supports_playlist_v2 = true;
   capabilities.is_controllable = true;
-  capabilities.supports_external_episodes = false;
+  capabilities.supports_external_episodes = true;
   capabilities.supports_set_backend_metadata = true;
   capabilities.supports_transfer_command = true;
   capabilities.supports_command_request = true;
