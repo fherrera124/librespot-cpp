@@ -234,20 +234,21 @@ void DefaultFileProvider::taskLoop() {
 
     auto& files = episodeMeta ? episodeMeta->audioFiles : trackAudioFiles;
     // First format in qualityPreference that this track actually offers
-    // wins - not necessarily the first entry in `files` itself.
-    auto selectedAudioFile = files.end();
+    // wins - the LAST matching entry when a format has more than one,
+    // since a duplicate's later entry is more likely to be the live one.
+    auto selectedAudioFile = files.rend();
     for (AudioFormat preferred : qualityPreference) {
       selectedAudioFile =
-          std::find_if(files.begin(), files.end(),
+          std::find_if(files.rbegin(), files.rend(),
                        [preferred](const cspot_proto::AudioFile& f) {
                          return f.format == preferred;
                        });
-      if (selectedAudioFile != files.end()) {
+      if (selectedAudioFile != files.rend()) {
         break;
       }
     }
 
-    if (selectedAudioFile == files.end()) {
+    if (selectedAudioFile == files.rend()) {
       file->isError = true;
       std::string formatsSeen;
       for (const auto& f : files) {

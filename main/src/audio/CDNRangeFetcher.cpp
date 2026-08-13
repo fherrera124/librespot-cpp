@@ -51,6 +51,10 @@ bell::Result<RangeFetchResult> CDNRangeFetcher::fetch(
   }
 
   if (!response->headers.contains("Content-Range")) {
+    BELL_LOG(error, LOG_TAG,
+             "No Content-Range for range {} (status={}, contentLength={})",
+             rangeHeaderValue, response->statusCode,
+             *response->contentLength);
     return bell::make_unexpected_errc<RangeFetchResult>(
         std::errc::bad_message);
   }
