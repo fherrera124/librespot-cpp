@@ -70,10 +70,8 @@ class SpClient {
       const std::vector<std::byte>& fileId, bool prefetch = false) = 0;
 
   /**
-   * @brief Fetches the AUDIO_FILES extended-metadata for a track URI -
-   * trackMetadata() doesn't carry AudioFile entries. Episodes carry
-   * their audio files directly in episodeMetadata()'s own response
-   * instead - this endpoint 410s for episode entities.
+   * @brief Fetches the AUDIO_FILES extended-metadata for a track URI.
+   * Currently unused - kept for a possible reinstated fallback.
    */
   virtual bell::Result<std::vector<cspot_proto::AudioFile>> resolveAudioFiles(
       const std::string& entityUri) = 0;

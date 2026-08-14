@@ -159,6 +159,8 @@ void DefaultFileProvider::taskLoop() {
     const std::string& countryCode = apClient->getCountryCode();
     SpotifyId effectiveTrackId = file->itemId;
     bool hasPlayableEntity = true;
+    // Populated only when relinked to an alternative.
+    std::vector<cspot_proto::AudioFile> alternativeAudioFiles;
 
     std::optional<cspot_proto::Track> trackMeta;
     std::optional<cspot_proto::Episode> episodeMeta;
@@ -167,7 +169,7 @@ void DefaultFileProvider::taskLoop() {
       auto metadataRes = spClient->episodeMetadata(file->itemId);
       if (!metadataRes) {
         file->isError = true;
-        BELL_LOG(info, LOG_TAG, "Could not fetch episode metadata, err={}",
+        BELL_LOG(error, LOG_TAG, "Could not fetch episode metadata, err={}",
                  metadataRes.error());
 
         eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
@@ -185,19 +187,31 @@ void DefaultFileProvider::taskLoop() {
       auto metadataRes = spClient->trackMetadata(file->itemId);
       if (!metadataRes) {
         file->isError = true;
-        BELL_LOG(info, LOG_TAG, "Could not fetch track metadata, err={}",
+        BELL_LOG(error, LOG_TAG, "Could not fetch track metadata, err={}",
                  metadataRes.error());
 
         eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
         return;
       }
 
-      if (doRestrictionsApply(metadataRes->restrictions, countryCode)) {
+      bool restricted =
+          doRestrictionsApply(metadataRes->restrictions, countryCode);
+      if (restricted) {
         hasPlayableEntity = false;
+      }
+      // Alternatives are also tried when the track isn't restricted but its
+      // own audioFiles came back empty - not just on restriction.
+      if (restricted || metadataRes->audioFiles.empty()) {
         for (auto& alt : metadataRes->alternativeTracks) {
           if (!doRestrictionsApply(alt.restrictions, countryCode)) {
             effectiveTrackId = SpotifyId(SpotifyIdType::Track, alt.gid);
             hasPlayableEntity = true;
+            alternativeAudioFiles = std::move(alt.audioFiles);
+            BELL_LOG(info, LOG_TAG,
+                     "Relinked track {} -> alternative {} "
+                     "({} embedded audio file(s) on the alternative)",
+                     file->itemId.uri, effectiveTrackId.uri,
+                     alternativeAudioFiles.size());
             break;
           }
         }
@@ -208,7 +222,7 @@ void DefaultFileProvider::taskLoop() {
 
     if (!hasPlayableEntity) {
       file->isError = true;
-      BELL_LOG(info, LOG_TAG,
+      BELL_LOG(error, LOG_TAG,
                "{} {} is restricted in {} with no playable alternative",
                file->itemId.type == SpotifyIdType::Episode ? "Episode" : "Track",
                file->itemId.uri, countryCode);
@@ -216,23 +230,28 @@ void DefaultFileProvider::taskLoop() {
       return;
     }
 
-    // Episodes carry their playable audio files directly in the EPISODE_V4
-    // response fetched above - a separate AUDIO_FILES extended-metadata
-    // request 410s for episode entities under this client's auth scope.
-    std::vector<cspot_proto::AudioFile> trackAudioFiles;
-    if (!episodeMeta) {
-      auto filesRes = spClient->resolveAudioFiles(effectiveTrackId.uri);
-      if (!filesRes) {
-        file->isError = true;
-        BELL_LOG(info, LOG_TAG, "Could not resolve audio files, err={}",
-                 filesRes.error());
-        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
-        return;
-      }
-      trackAudioFiles = std::move(*filesRes);
+    // trackMeta's own audioFiles is only trusted when there was no
+    // restriction-driven alternative; otherwise use the alternative's own
+    // embedded files captured above.
+    std::vector<cspot_proto::AudioFile> resolvedFiles =
+        episodeMeta ? episodeMeta->audioFiles
+                   : (trackMeta && effectiveTrackId == file->itemId
+                          ? trackMeta->audioFiles
+                          : std::move(alternativeAudioFiles));
+
+    if (!resolvedFiles.empty()) {
+      BELL_LOG(info, LOG_TAG, "Using {} audio file(s) embedded in {} for {}",
+               resolvedFiles.size(), episodeMeta ? "EPISODE_V4" : "TRACK_V4",
+               effectiveTrackId.uri);
+    } else if (episodeMeta) {
+      // No Spotify-hosted file for this episode - falls through to the
+      // externalUrl fallback below.
+    } else {
+      // No Spotify-hosted file for this track, and no alternative had one
+      // either - falls through to the no-suitable-file branch below.
     }
 
-    auto& files = episodeMeta ? episodeMeta->audioFiles : trackAudioFiles;
+    auto& files = resolvedFiles;
     // First format in qualityPreference that this track actually offers
     // wins - the LAST matching entry when a format has more than one,
     // since a duplicate's later entry is more likely to be the live one.
@@ -253,7 +272,7 @@ void DefaultFileProvider::taskLoop() {
       for (const auto& f : files) {
         formatsSeen += std::to_string(static_cast<int>(f.format)) + " ";
       }
-      BELL_LOG(info, LOG_TAG,
+      BELL_LOG(warn, LOG_TAG,
                "Could not find suitable audio file, {} files available, "
                "formats: {}",
                files.size(), formatsSeen);
@@ -283,7 +302,7 @@ void DefaultFileProvider::taskLoop() {
         apClient->requestAudioKey(effectiveTrackId, selectedAudioFile->fileId);
     if (!requestRes) {
       file->isError = true;
-      BELL_LOG(info, LOG_TAG, "Could not request audio key, err={}",
+      BELL_LOG(error, LOG_TAG, "Could not request audio key, err={}",
                requestRes.error());
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
       return;
@@ -293,7 +312,7 @@ void DefaultFileProvider::taskLoop() {
         spClient->resolveStorageInteractive(selectedAudioFile->fileId);
     if (!cdnUrlRes) {
       file->isError = true;
-      BELL_LOG(info, LOG_TAG, "Could not resolve cdn url, err={}",
+      BELL_LOG(error, LOG_TAG, "Could not resolve cdn url, err={}",
                cdnUrlRes.error());
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
       return;
@@ -326,7 +345,7 @@ void DefaultFileProvider::taskLoop() {
 
     if (!audioKeyResponse) {
       file->isError = true;
-      BELL_LOG(info, LOG_TAG, "Timed out waiting for audio key for track {}",
+      BELL_LOG(error, LOG_TAG, "Timed out waiting for audio key for track {}",
                file->itemId.uri);
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
       return;
@@ -339,7 +358,7 @@ void DefaultFileProvider::taskLoop() {
       // mbedtls_aes_setkey_enc downstream, reproduced on real hardware as
       // "Failed to set AES key" retried forever for the affected track.
       file->isError = true;
-      BELL_LOG(info, LOG_TAG, "Audio key request denied for track {}",
+      BELL_LOG(error, LOG_TAG, "Audio key request denied for track {}",
                file->itemId.uri);
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
       return;
