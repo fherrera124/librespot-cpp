@@ -228,9 +228,8 @@ void ConnectStateHandler::initialize() {
 
   auto& playerState = deviceProto.playerState;
   playerState.isSystemInitiated = true;
-  // TODO: probar dejar esto vacío (como hace go-librespot, que no genera
-  // sessionId hasta el primer transfer/play) en vez de generarlo acá -
-  // matches master hoy, no go-librespot.
+  // TODO: try leaving this empty until the first transfer/play instead of
+  // generating it here.
   playerState.sessionId = generateSessionId();
 
   // Assign next and previous tracks encode callbacks
@@ -394,8 +393,7 @@ bool ConnectStateHandler::prepareAndEncodeLocked(
   putStateRequestProto.putStateReason = reason;
   // This device's own outgoing sequence number - distinct from
   // lastCommandMessageId (which echoes an incoming command's id back).
-  // Must increment on every PUT (matches master's own
-  // sendPutStateRequest()), or the backend may read a repeated
+  // Must increment on every PUT, or the backend may read a repeated
   // message_id=0 as a replay rather than a new update.
   putStateRequestProto.messageId = ++nextMessageId;
 
@@ -462,13 +460,13 @@ void ConnectStateHandler::runTask() {
                                "this flush");
     } else {
       // This runs with putStateMutex already released (see the unlock()
-      // above). Used to run locked, but the round-trip itself can take
-      // 250-1500ms normally, up to ~11s worst case (SpClient's own
-      // retry/timeout budget) - holding the lock that long blocked every
-      // other state mutator, including StreamPlayer's synchronous
-      // onPlayerStateUpdate(), which sits right on the track-load path.
-      // Safe to call unlocked because putConnectStateRaw() takes the
-      // already-encoded body, not the live proto.
+      // above) - the round-trip itself can take 250-1500ms normally, up to
+      // ~11s worst case (SpClient's own retry/timeout budget), and holding
+      // the lock that long would block every other state mutator,
+      // including StreamPlayer's synchronous onPlayerStateUpdate(), which
+      // sits right on the track-load path. Safe to call unlocked because
+      // putConnectStateRaw() takes the already-encoded body, not the live
+      // proto.
       //
       // The heap snapshots around it: this device can have up to three
       // other TLS contexts alive at the same time (AP connection, dealer
@@ -530,7 +528,7 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
            clusterUpdate.cluster.playerState.value.timestamp);
 
   // Someone else just became the active device while we thought we were -
-  // back off unconditionally (matches master).
+  // back off unconditionally.
   bool stopBeingActive = putStateRequestProto.isActive &&
                          clusterUpdate.cluster.activeDeviceId !=
                              authInfo->deviceId;
@@ -705,10 +703,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   // this only changes behavior for the other three branches, which
   // otherwise left a stale contextPages/contextIndex silently readable
   // by currentTrack()/currentContextIndex().
-  // TODO: fixes a bug reasoned out from code review (go-librespot
-  // comparison), not yet reproduced on hardware - unconfirmed whether a
-  // real transfer sequence actually hits this. Revisit if it turns out
-  // not to be needed.
+  // TODO: not yet confirmed whether a real transfer sequence actually hits
+  // this - revisit if it turns out not to be needed.
   trackQueueHandler->clearContext();
 
   nextManualQueueId = 0;
@@ -726,9 +722,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     std::string currentTrackUri =
         transferState.playback.currentTrack.resolvedUri(trackType);
 
-    // context.uri/currentUid are needed to resolve "the current track" -
-    // both master (contextResolver.resolve()) and go-librespot
-    // (loadContext(), before loadCurrentTrack()) resolve first too.
+    // context.uri/currentUid are needed to resolve "the current track"
+    // before anything else here can use it.
     //
     // This network fetch runs with putStateMutex still held (by the
     // caller) rather than released around it, so a half-updated transfer
@@ -750,8 +745,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     trackQueueHandler->setPlayingQueue(transferState.queue.isPlayingQueue);
   } else if (!transferState.queue.tracks.empty()) {
     // The queue itself is the whole playback source here, not an
-    // override layered on top of a context - matches master's own
-    // haveContext==false, has_queue branch.
+    // override layered on top of a context.
     BELL_LOG(info, LOG_TAG,
              "Transfer has no context, playing queue directly ({} tracks)",
              transferState.queue.tracks.size());
@@ -761,8 +755,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
                   .resolvedUri(SpotifyIdType::Track)
                   .empty()) {
     // Single-track transfer: no context/queue, but a real current_track -
-    // matches master's own single-track fallback. Modeled as a one-entry
-    // queue (this file has no separate "just this track" concept).
+    // modeled as a one-entry queue (this file has no separate "just this
+    // track" concept).
     BELL_LOG(info, LOG_TAG,
              "Transfer has no context/queue, playing single track {}",
              transferState.playback.currentTrack.resolvedUri(
@@ -804,20 +798,18 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   const tao::json::value& context = command.at("context");
   const tao::json::value& options = command.at("options");
   // skip_to isn't present on every play command (e.g. a plain "resume my
-  // library" play has none) - options.at("skip_to") threw and silently
-  // dropped the whole command on real hardware.
+  // library" play has none) - options.at("skip_to") would throw and drop
+  // the whole command if used directly here.
   static const tao::json::value emptySkipTo = tao::json::empty_object;
   const tao::json::value* skipToPtr = options.find("skip_to");
   const tao::json::value& skipTo = skipToPtr ? *skipToPtr : emptySkipTo;
   auto contextUri = context.optional<std::string>("uri");
   auto skipToUid = skipTo.optional<std::string>("track_uid");
   auto skipToUri = skipTo.optional<std::string>("track_uri");
-  // Only meaningful when neither uid nor uri is present - matches
-  // go-librespot's own uid/uri/index priority order (daemon/player.go's
-  // skipToFunc). >0 rather than a presence check because Options.SkipTo
-  // isn't a pointer on go-librespot's side either, so index 0 there is
-  // already indistinguishable from "absent" - harmless either way, since
-  // both fall back to the same "start from the beginning" default.
+  // Only meaningful when neither uid nor uri is present. >0 rather than a
+  // presence check: index 0 is indistinguishable from "absent" here, but
+  // both cases fall back to the same "start from the beginning" default,
+  // so treating index 0 as absent is harmless.
   std::optional<uint32_t> skipToTrackIndex;
   if (!skipToUid && !skipToUri) {
     auto skipToTrackIndexRaw = skipTo.optional<int>("track_index");
@@ -833,11 +825,7 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   bool initiallyPaused =
       options.optional<bool>("initially_paused").value_or(false);
   // Only overrides fields actually present in the JSON (optional<bool>
-  // tells "absent" from "sent false") - more precise than go-librespot's
-  // own handling of this same field, which overwrites all three
-  // unconditionally whenever the override object is present at all
-  // (ContextPlayerOptionOverrides uses plain bool, not optional, in its
-  // own proto).
+  // tells "absent" from "sent false").
   const tao::json::value* overrideJson =
       options.find("player_options_override");
 
@@ -880,14 +868,10 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   refreshTrackAndIndexLocked();
 
   // contextUri/contextUrl/playOrigin/suppressions, unlike
-  // handleTransferCommandLocked(), were never set here - left holding the
-  // PREVIOUS transfer/play's values while track.value.uri already pointed
-  // at the new context, an internally contradictory PUT (confirmed on
-  // real hardware to surface as "Spotify can't play this right now").
-  // play_origin/suppressions match go-librespot's own "play" case
-  // (PlayOrigin = req.Command.PlayOrigin, DeviceIdentifier always
-  // overwritten; Suppressions = req.Command.Options.Suppressions,
-  // unconditional either way).
+  // handleTransferCommandLocked(), were never set before this line -
+  // leaving them at the previous transfer/play's values while
+  // track.value.uri already points at the new context would be an
+  // internally contradictory PUT.
   playerState.contextUri = *contextUri;
   playerState.contextUrl = context.optional<std::string>("url").value_or("");
   static const tao::json::value emptyPlayOrigin = tao::json::empty_object;
@@ -1055,8 +1039,7 @@ bell::Result<> ConnectStateHandler::advanceToNextTrackLocked(
 }
 
 void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
-  // Matches go-librespot's own maxConsecutiveUnplayableSkips (controls.go) -
-  // guards against a context where every track is unplayable.
+  // Guards against a context where every track is unplayable.
   constexpr int kMaxConsecutiveUnplayableSkips = 50;
 
   std::scoped_lock lock(putStateMutex);
@@ -1131,8 +1114,8 @@ bell::Result<> ConnectStateHandler::handleSkipPrevCommandLocked() {
   auto& playerState = putStateRequestProto.device.playerState;
   refreshTrackAndIndexLocked();
 
-  // isPaused preserved (not forced false) - matches go-librespot's
-  // skipPrev(), unlike its plain advanceNext().
+  // isPaused preserved (not forced false) - skipping to a previous track
+  // shouldn't start playback if it was paused.
   announcePlaybackFlagsLocked(playerState.isPaused, /*isBuffering=*/true);
 
   playerState.positionAsOfTimestamp = 0;

@@ -178,15 +178,13 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   // client was last shown via next_tracks) for targetTrackUid/
   // targetTrackUri and jumps straight there, dropping any queue entries
   // skipped over along the way. Falls back to WrappedToStart (reset to
-  // context start, queue untouched - mirrors go-librespot's own
-  // TrySeek-failure fallback) when the target isn't found in the window,
-  // e.g. a stale client message.
+  // context start, queue untouched) when the target isn't found in the
+  // window, e.g. a stale client message.
   bell::Result<TrackAdvanceResult> skipToTargetTrack(
       const std::string& targetTrackUri, const std::string& targetTrackUid);
 
   // Converts a flat 0-based track index (position across the whole
-  // context, not per-page - matches go-librespot's own SkipTo.TrackIndex
-  // semantics in daemon/player.go) into a {page, track} pair, by walking
+  // context, not per-page) into a {page, track} pair, by walking
   // contextPages. Only correct once every page up to the target has
   // actually been fetched; returns nullopt if the walk runs past what's
   // currently populated (not yet fetched, or genuinely out of range) -
@@ -221,8 +219,7 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
   // The "same context" fast path below only knows how to resolve a uri
   // (cached GID search) or an index (resolveFlatIndex against the cache) -
   // a uid-only target still needs a fresh fetch+parse for onTrackParsed()'s
-  // own uid check to find it, same as before this function took an index
-  // at all.
+  // own uid check to find it.
   bool haveFastPathTarget =
       currentTrackUri.has_value() || currentTrackIndex.has_value();
 
@@ -331,11 +328,9 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
     };  // Default to start if we could not find the current track
   } else {
     // contextPages has no actual track data (e.g. an unsupported/empty
-    // context) - defaulting contextIndex to {0,0} here used to leave it
-    // pointing at a page that was never populated, crashing later in
-    // ensureEnoughTracks(). Matches master's own ContextResolver::resolve(),
-    // which explicitly treats "resolved OK but zero tracks" as failure
-    // (`ok && !tracksOut.empty()`), not success.
+    // context) - treat that as failure instead of defaulting contextIndex
+    // to {0,0}, which would point at a page that was never populated and
+    // crash later in ensureEnoughTracks().
     BELL_LOG(error, LOG_TAG, "Context resolved with no tracks, uri={}",
              contextUri);
     return bell::make_unexpected_errc(std::errc::no_such_file_or_directory);
@@ -394,10 +389,9 @@ bell::Result<> DefaultTrackQueueHandler::ensureEnoughTracks() {
   }
 
   // Same invariant getOffsetIndex()/currentTrack() already guard
-  // defensively instead of trusting - contextIndex pointing past what's
-  // actually in contextPages (e.g. a context that resolved with no tracks)
-  // used to hit these as raw assert()s, aborting the whole device instead
-  // of degrading gracefully.
+  // defensively instead of trusting - contextIndex can point past what's
+  // actually in contextPages (e.g. a context that resolved with no
+  // tracks), so bounds-check rather than assert.
   if (contextIndex->page >= contextPages.size() ||
       contextIndex->track >= contextPages[contextIndex->page].trackGids.size()) {
     return {};
@@ -443,12 +437,10 @@ bell::Result<> DefaultTrackQueueHandler::fetchRootPage(
     return feedRes;
   }
 
-  // Only claim this context as loaded once it actually is - a real hardware
-  // crash (LoadProhibited in getOffsetIndex(), out-of-bounds contextPages[0]
-  // on an empty vector) traced back to this being set unconditionally
-  // before the fetch/parse could fail: a failed first attempt still left
-  // currentContextUri pointing at the target playlist, so the app's retry
-  // took loadContext()'s "same context, don't refetch" branch against a
+  // Only claim this context as loaded once it actually is - setting this
+  // unconditionally would let a failed fetch/parse still leave
+  // currentContextUri pointing at the target playlist, so a retry would
+  // take loadContext()'s "same context, don't refetch" branch against a
   // contextPages that was never actually populated.
   this->currentContextUri = rootContextUri;
   return {};
@@ -491,12 +483,10 @@ bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
     bell::HTTPResponse& response) {
   if (response.statusCode != 200) {
     // Drain before returning - a pooled HTTP/1.1 connection is only safe
-    // to reuse once the body's been read, error responses included. Real
-    // hardware failure: skipping this on an error path (SpClient's own
-    // putConnectState/putInactive/extendedMetadataRaw had the same bug)
-    // left the error body sitting unread on the wire, so the next request
-    // to reuse this connection - here, spClient's own contextResolve() -
-    // read that leftover body instead of its own response headers.
+    // to reuse once the body's been read, error responses included.
+    // Skipping this would leave the error body sitting unread on the wire,
+    // so the next request to reuse this connection reads that leftover
+    // body instead of its own response headers.
     (void)response.bytes();
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
@@ -810,10 +800,8 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToTargetTrack(
     return TrackAdvanceResult::Advanced;
   }
 
-  // Target not found in the exposed window (stale client state) - mirrors
-  // go-librespot's own TrySeek-failure fallback (tracks/tracks.go
-  // moveStart): reset the context cursor to the start, leave the manual
-  // queue untouched.
+  // Target not found in the exposed window (stale client state) - reset
+  // the context cursor to the start, leave the manual queue untouched.
   BELL_LOG(debug, LOG_TAG,
            "Could not find target track in next-tracks window, wrapping to "
            "start (uri={}, uid={})",
@@ -1001,12 +989,11 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
   }
 
   // Defensive: contextIndex should always refer to a real page once set,
-  // but a real hardware crash (out-of-bounds contextPages[page] on an empty
-  // vector, in the case where contextIndex got defaulted to {0, 0} against
-  // a context that failed to actually populate any pages) showed this
-  // invariant can't be fully trusted at every call site. Bounds-checking
-  // here once, rather than at every caller, matches this function's own
-  // existing contract of returning nullopt for any "can't get there" case.
+  // but that invariant can't be fully trusted at every call site (e.g.
+  // contextIndex defaulted to {0, 0} against a context that failed to
+  // populate any pages). Bounds-checking here once, rather than at every
+  // caller, matches this function's existing contract of returning
+  // nullopt for any "can't get there" case.
   if (contextIndex->page >= contextPages.size()) {
     return std::nullopt;
   }
@@ -1015,10 +1002,7 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
   if (totalOffset < 0) {
     // Walk back as many previous pages as needed - a single-page step
     // isn't enough once the lookahead window (up to trackWindowLen tracks)
-    // reaches past a short page. Without this loop a still-negative
-    // totalOffset got cast straight to uint32_t (a huge number) and used
-    // to index trackGids, an out-of-bounds vector access/crash near short
-    // pages - mirrors the while loop already used below for positive
+    // reaches past a short page. Mirrors the while loop below for positive
     // offsets crossing page boundaries.
     uint32_t remaining = static_cast<uint32_t>(-totalOffset);
     uint32_t page = contextIndex->page;
@@ -1091,12 +1075,9 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
   // normally masked by there also being a real "next" track most of the
   // time (which flips updated=true as a side effect), but a track with
   // nothing before/after it (an ad-hoc single/queue track with no context,
-  // or a single-track context) never touches either window, so updated
-  // stayed false and QUEUE_UPDATED - and the currentTrackId it carries -
-  // never got posted at all. Real hardware symptom: a single-track,
-  // no-context transfer silently never told StreamPlayer a track was
-  // ready to load, leaving isBuffering=true forever and the remote client
-  // stuck on "Connecting...".
+  // or a single-track context) never touches either window - the
+  // lastNotifiedCurrentTrackUri check right below is what still catches
+  // that case.
   std::string newCurrentTrackUri;
   if (isPlayingQueue && !queue.empty()) {
     newCurrentTrackUri = queue[0].resolvedUri(contextIdType);
@@ -1143,9 +1124,8 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
 
       // offsetIndex is nullopt whenever the lookahead window runs past the
       // last fetched context page (getOffsetIndex()'s own "no next page
-      // available" case) - dereferencing it before this check was a real
-      // hardware crash (LoadProhibited, near-null vector access) reproduced
-      // with a short context whose track count didn't fill the whole
+      // available" case) - must check before dereferencing, e.g. with a
+      // short context whose track count doesn't fill the whole
       // nextTracksWindow lookahead.
       if (offsetIndex.has_value()) {
         auto& page = contextPages[offsetIndex->page];

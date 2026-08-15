@@ -56,14 +56,13 @@ class TrackQueueHandler {
   virtual std::optional<cspot_proto::ContextIndex> currentContextIndex() = 0;
 
   // targetTrackUri/targetTrackUid: when both are empty, advances one
-  // position (queue pop, or context index + 1) same as before this pair of
-  // parameters existed. When either is set, searches the exposed
-  // next-tracks window (queue entries first, then context) for a match and
-  // jumps straight there instead - this is how a remote "skip_next" that
-  // names an explicit track (e.g. clicking an item in the client's Queue
-  // panel) is expected to behave. A target that isn't found in that window
-  // (stale client state) falls back to WrappedToStart, same as running off
-  // the end of the context.
+  // position (queue pop, or context index + 1). When either is set,
+  // searches the exposed next-tracks window (queue entries first, then
+  // context) for a match and jumps straight there instead - this is how a
+  // remote "skip_next" naming an explicit track (e.g. clicking an item in
+  // the client's Queue panel) is expected to behave. A target not found in
+  // that window (stale client state) falls back to WrappedToStart, same as
+  // running off the end of the context.
   virtual bell::Result<TrackAdvanceResult> skipToNextTrack(
       const std::string& targetTrackUri = "",
       const std::string& targetTrackUid = "") = 0;
