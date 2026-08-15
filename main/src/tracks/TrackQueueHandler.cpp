@@ -233,8 +233,12 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
 
   // In case we only have UID, we need to refetch the pages either way - we only keep the gids
   if (currentContextUri != contextUri || !haveFastPathTarget) {
-    // New context, reset everything
+    // New context, reset everything - resetContext() leaves
+    // queue/isPlayingQueue alone (ad-hoc queue-only sessions rely on
+    // that), so clear them here too.
     resetContext();
+    queue.clear();
+    isPlayingQueue = false;
     targetTrackIds = {currentTrackUri.value_or(""),
                       currentTrackUid.value_or("")};
     targetTrackIndex = currentTrackIndex;
