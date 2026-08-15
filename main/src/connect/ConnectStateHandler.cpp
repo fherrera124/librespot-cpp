@@ -190,7 +190,10 @@ void ConnectStateHandler::initialize() {
 
   auto& deviceInfo = deviceProto.deviceInfo;
   deviceInfo.canPlay = true;
-  deviceInfo.volume = 65535;
+  deviceInfo.volume = 32768;  // 50% of UINT16_MAX
+  // RingBufferedAudioSink::volumeScale defaults independently of
+  // deviceInfo.volume - keep them in sync from the start.
+  audioSink->volumeChanged(deviceInfo.volume);
   deviceInfo.name = authInfo->deviceName;
 
   deviceInfo.deviceType = DeviceType_SPEAKER;
