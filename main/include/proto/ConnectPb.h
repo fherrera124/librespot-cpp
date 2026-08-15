@@ -216,12 +216,34 @@ struct ContextPlayerOptions {
 NANOPB_STRUCT(cspot_proto::ContextPlayerOptions, ContextPlayerOptions_fields)
 
 namespace cspot_proto {
+// nanopb has no native map<string,string> support - ProvidedTrack's
+// metadata (proto field 3) is generated as repeated MetadataEntry{key,value}
+// instead.
+struct ProvidedTrackMetadataEntry {
+  std::string key;
+  std::string value;
+
+  static auto bindFields(ProvidedTrackMetadataEntry* self, bool isDecode) {
+    _ProvidedTrack_MetadataEntry rawProto =
+        ProvidedTrack_MetadataEntry_init_zero;
+    nanopb_helper::bindField(rawProto.key, self->key, isDecode);
+    nanopb_helper::bindField(rawProto.value, self->value, isDecode);
+    return rawProto;
+  }
+};
+}  // namespace cspot_proto
+
+NANOPB_STRUCT(cspot_proto::ProvidedTrackMetadataEntry,
+             ProvidedTrack_MetadataEntry_fields)
+
+namespace cspot_proto {
 struct ProvidedTrack {
   std::string uri;
   std::string uid = "";
   std::string provider = "";
   std::string artistUri = "";
   std::string albumUri = "";
+  std::vector<ProvidedTrackMetadataEntry> metadata{};
 
   std::optional<std::array<std::byte, 16>> gid =
       std::nullopt;  // Not part of protobuf, added for convenience
@@ -233,6 +255,7 @@ struct ProvidedTrack {
     nanopb_helper::bindField(rawProto.provider, self->provider, isDecode);
     nanopb_helper::bindField(rawProto.artist_uri, self->artistUri, isDecode);
     nanopb_helper::bindField(rawProto.album_uri, self->albumUri, isDecode);
+    nanopb_helper::bindField(rawProto.metadata, self->metadata, isDecode);
     return rawProto;
   }
 };

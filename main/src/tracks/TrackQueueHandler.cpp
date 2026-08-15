@@ -1050,6 +1050,9 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
             queueTrack.uid.empty() ? "q" + std::to_string(x) : queueTrack.uid;
         nextTracksWindow[x].provider = "queue";
         nextTracksWindow[x].gid.reset();
+        // Marks this as queue-provided for the client's later set_queue
+        // echo (handleSetQueueCommandLocked() keys off it).
+        nextTracksWindow[x].metadata = {{"is_queued", "true"}};
       }
     } else {
       int32_t trackOffset = x - queueOffset;
@@ -1078,6 +1081,9 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
           nextTracksWindow[x].albumUri =
               page.trackAlbumUris[offsetIndex->track];
           nextTracksWindow[x].gid = gid;
+          // nextTracksWindow[x] is reused across calls - clear a leftover
+          // is_queued from when this slot was last a queue entry.
+          nextTracksWindow[x].metadata.clear();
         }
 
         highestValidIndex = x;
