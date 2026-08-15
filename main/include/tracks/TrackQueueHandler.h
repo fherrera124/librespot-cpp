@@ -40,8 +40,16 @@ class TrackQueueHandler {
   // Replaces the manual queue with queuedTracksInOrder: keeps the
   // currently-playing entry (queue[0] when isPlayingQueue) and appends
   // the rest after it.
+  //
+  // contextTracksInOrder is the other thing a remote set_queue can mean: a
+  // drag-reorder of the upcoming "Next from: <context>" tracks (no
+  // is_queued flag), possibly including a track foreign to this context.
+  // Absorbed into the queue in the given order; contextIndex is caught up
+  // once the real context tracks among them finish playing.
   virtual void reorderQueue(
-      const std::vector<cspot_proto::ContextTrack>& queuedTracksInOrder) = 0;
+      const std::vector<cspot_proto::ContextTrack>& queuedTracksInOrder,
+      const std::vector<cspot_proto::ContextTrack>& contextTracksInOrder =
+          {}) = 0;
 
   virtual std::optional<cspot_proto::ProvidedTrack> currentTrack() = 0;
 

@@ -63,8 +63,10 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
 
   void addToQueue(const cspot_proto::ContextTrack& track) override;
 
-  void reorderQueue(const std::vector<cspot_proto::ContextTrack>&
-                        queuedTracksInOrder) override;
+  void reorderQueue(
+      const std::vector<cspot_proto::ContextTrack>& queuedTracksInOrder,
+      const std::vector<cspot_proto::ContextTrack>& contextTracksInOrder)
+      override;
 
   std::optional<cspot_proto::ProvidedTrack> currentTrack() override;
 
@@ -108,6 +110,12 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
 
   std::vector<cspot_proto::ContextTrack> queue;
   bool isPlayingQueue = false;
+
+  // Count of queue-front entries that came from a context reorder
+  // (reorderQueue()), not a real add - contextIndex can't advance past
+  // them yet since it also identifies the currently-playing track.
+  // Applied in skipToNextTrack() once queue drains back to context.
+  size_t pendingContextAdvanceCount = 0;
 
   std::string currentContextUri;
 
@@ -538,6 +546,7 @@ void DefaultTrackQueueHandler::resetContext() {
   shuffled = false;
   shuffleOrder.clear();
   shufflePos = 0;
+  pendingContextAdvanceCount = 0;
 }
 
 void DefaultTrackQueueHandler::clearContext() {
@@ -591,6 +600,9 @@ void DefaultTrackQueueHandler::setQueue(
     const std::vector<cspot_proto::ContextTrack>& queue) {
   this->queue = queue;
   isPlayingQueue = false;
+  // Wholesale replacement (e.g. from a transfer) - any catch-up owed to a
+  // previous reorderQueue() no longer refers to what's actually queued.
+  pendingContextAdvanceCount = 0;
 }
 
 void DefaultTrackQueueHandler::setPlayingQueue(bool isPlayingQueue) {
@@ -603,7 +615,8 @@ void DefaultTrackQueueHandler::addToQueue(
 }
 
 void DefaultTrackQueueHandler::reorderQueue(
-    const std::vector<cspot_proto::ContextTrack>& queuedTracksInOrder) {
+    const std::vector<cspot_proto::ContextTrack>& queuedTracksInOrder,
+    const std::vector<cspot_proto::ContextTrack>& contextTracksInOrder) {
   if (isPlayingQueue && !queue.empty()) {
     queue.resize(1);
   } else {
@@ -611,6 +624,58 @@ void DefaultTrackQueueHandler::reorderQueue(
   }
   queue.insert(queue.end(), queuedTracksInOrder.begin(),
                queuedTracksInOrder.end());
+
+  pendingContextAdvanceCount = 0;
+
+  if (contextTracksInOrder.empty()) {
+    return;
+  }
+
+  // contextTracksInOrder may include a track foreign to this context (e.g.
+  // dragged in from an album view), so it's absorbed into `queue` wholesale
+  // (playable by uri/uid alone) instead of assuming every entry matches a
+  // known context slot. contextIndex only advances once queue drains back
+  // to context (skipToNextTrack()) - see pendingContextAdvanceCount.
+  //
+  // contextTracksInOrder.size() upper-bounds the real context matches - a
+  // foreign entry only adds to the total, never replaces a real one.
+  struct SlotData {
+    std::string uri;
+    std::string uid;
+  };
+  std::vector<SlotData> snapshot;
+  snapshot.reserve(contextTracksInOrder.size());
+  for (size_t i = 1; i <= contextTracksInOrder.size(); i++) {
+    auto idx = getOffsetIndex(static_cast<int32_t>(i));
+    if (!idx) {
+      break;  // Context has fewer upcoming tracks than that - nothing more to match.
+    }
+    auto& page = contextPages[idx->page];
+    snapshot.push_back({SpotifyId(contextIdType, page.trackGids[idx->track]).uri,
+                        page.trackUids[idx->track]});
+  }
+
+  size_t realContextMatches = 0;
+  for (auto& want : contextTracksInOrder) {
+    // Erase each match as it's consumed - the same track can legitimately
+    // repeat in the window (e.g. a playlist that repeats a song), and each
+    // occurrence must bind to a distinct original slot rather than all of
+    // them collapsing onto the first match.
+    auto it = std::find_if(
+        snapshot.begin(), snapshot.end(), [&](const SlotData& s) {
+          return (!want.uid.empty() && s.uid == want.uid) ||
+                 (!want.uri.empty() && s.uri == want.uri);
+        });
+    if (it == snapshot.end()) {
+      continue;  // Foreign track, or ran past what we could match - fine.
+    }
+    realContextMatches++;
+    snapshot.erase(it);
+  }
+
+  queue.insert(queue.end(), contextTracksInOrder.begin(),
+               contextTracksInOrder.end());
+  pendingContextAdvanceCount = realContextMatches;
 }
 
 std::optional<cspot_proto::ContextIndex>
@@ -651,6 +716,17 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
       BELL_LOG(debug, LOG_TAG,
                "Finished playing queue, switching to context tracks");
       isPlayingQueue = false;  // No more tracks in queue, switch to context
+      // Catch contextIndex up past the real context tracks reorderQueue()
+      // absorbed into the queue that just drained.
+      if (pendingContextAdvanceCount > 0) {
+        if (!advanceContextBy(static_cast<int32_t>(pendingContextAdvanceCount))) {
+          BELL_LOG(error, LOG_TAG,
+                   "Could not advance context by {} after draining a "
+                   "reordered queue segment",
+                   pendingContextAdvanceCount);
+        }
+        pendingContextAdvanceCount = 0;
+      }
     }
     return TrackAdvanceResult::Advanced;
   }
@@ -723,6 +799,9 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToTargetTrack(
       // manual queue, same as skipping past it one track at a time would.
       queue.clear();
       setPlayingQueue(false);
+      // advanceContextBy() above already lands on the exact target -
+      // discard any pending catch-up so it isn't double-applied.
+      pendingContextAdvanceCount = 0;
     }
     return TrackAdvanceResult::Advanced;
   }

@@ -963,17 +963,21 @@ bell::Result<> ConnectStateHandler::handleSetQueueCommandLocked(
     const tao::json::value& command) {
   // prev_tracks is accepted on the wire but unused - only next_tracks
   // carries anything reorderQueue() needs.
+  //
+  // next_tracks is always [is_queued prefix][context tail] - once the
+  // first non-queued entry is seen, everything after it is the context
+  // tail (see TrackQueueHandler::reorderQueue()).
   std::vector<cspot_proto::ContextTrack> queuedPrefix;
+  std::vector<cspot_proto::ContextTrack> contextReorder;
   const tao::json::value* nextTracksPtr = command.find("next_tracks");
   if (nextTracksPtr && nextTracksPtr->is_array()) {
+    bool inQueuedPrefix = true;
     for (const auto& trackJson : nextTracksPtr->get_array()) {
       const tao::json::value* metadataPtr = trackJson.find("metadata");
       bool isQueued = metadataPtr &&
           metadataPtr->optional<std::string>("is_queued").value_or("") ==
               "true";
-      if (!isQueued) {
-        break;
-      }
+      inQueuedPrefix = inQueuedPrefix && isQueued;
 
       auto track = parseTrackRef(trackJson);
       // A track without a uri or uid would leave a hole in
@@ -981,11 +985,15 @@ bell::Result<> ConnectStateHandler::handleSetQueueCommandLocked(
       if (track.uri.empty() && track.uid.empty()) {
         break;
       }
-      queuedPrefix.push_back(std::move(track));
+      if (inQueuedPrefix) {
+        queuedPrefix.push_back(std::move(track));
+      } else {
+        contextReorder.push_back(std::move(track));
+      }
     }
   }
 
-  trackQueueHandler->reorderQueue(queuedPrefix);
+  trackQueueHandler->reorderQueue(queuedPrefix, contextReorder);
   trackQueueHandler->updateTrackWindows();
   return putStateLocked();
 }
