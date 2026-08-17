@@ -47,6 +47,32 @@ cspot_proto::ContextTrack parseTrackRef(const tao::json::value& trackJson) {
   return track;
 }
 
+// Parses the context "pages" embedded in a `play` command from the dealer.
+// Returns empty if none were embedded.
+std::vector<cspot_proto::ContextPage> parseEmbeddedContextPages(
+    const tao::json::value& context) {
+  std::vector<cspot_proto::ContextPage> pages;
+  const tao::json::value* pagesJson = context.find("pages");
+  if (!pagesJson) {
+    return pages;
+  }
+
+  for (const auto& pageJson : pagesJson->get_array()) {
+    cspot_proto::ContextPage page;
+    page.pageUrl = pageJson.optional<std::string>("page_url").value_or("");
+    page.nextPageUrl =
+        pageJson.optional<std::string>("next_page_url").value_or("");
+
+    if (const tao::json::value* tracksJson = pageJson.find("tracks")) {
+      for (const auto& trackJson : tracksJson->get_array()) {
+        page.tracks.push_back(parseTrackRef(trackJson));
+      }
+    }
+    pages.push_back(std::move(page));
+  }
+  return pages;
+}
+
 // Generates a random session ID of 16 characters
 std::string generateSessionId() {
   static std::independent_bits_engine<std::default_random_engine, CHAR_BIT,
@@ -738,14 +764,19 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     // via TrackQueueHandler::ensureEnoughTracks().
     auto loadRes = trackQueueHandler->loadContext(
         transferState.current_session.context.uri, currentTrackUri,
-        transferState.current_session.currentUid);
+        transferState.current_session.currentUid, std::nullopt,
+        transferState.current_session.context.pages);
     if (!loadRes) {
       BELL_LOG(error, LOG_TAG, "Failed to load context: {}", loadRes.error());
       return nonstd::make_unexpected(loadRes.error());
     }
 
-    trackQueueHandler->setQueue(transferState.queue.tracks);
-    trackQueueHandler->setPlayingQueue(transferState.queue.isPlayingQueue);
+    // Only when there's an actual queue to restore - avoids clobbering
+    // any pre-existing queue state with an empty one.
+    if (!transferState.queue.tracks.empty()) {
+      trackQueueHandler->setQueue(transferState.queue.tracks);
+      trackQueueHandler->setPlayingQueue(transferState.queue.isPlayingQueue);
+    }
   } else if (!transferState.queue.tracks.empty()) {
     // The queue itself is the whole playback source here, not an
     // override layered on top of a context.
@@ -847,8 +878,9 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
 
   // See handleTransferCommandLocked()'s own comment on this same network
   // fetch running with putStateMutex still held.
-  auto loadRes = trackQueueHandler->loadContext(*contextUri, skipToUri,
-                                                skipToUid, skipToTrackIndex);
+  auto loadRes = trackQueueHandler->loadContext(
+      *contextUri, skipToUri, skipToUid, skipToTrackIndex,
+      parseEmbeddedContextPages(context));
   if (!loadRes) {
     return nonstd::make_unexpected(loadRes.error());
   }
