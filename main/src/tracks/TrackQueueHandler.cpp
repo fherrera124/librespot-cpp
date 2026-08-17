@@ -55,7 +55,8 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   bell::Result<> loadContext(
       const std::string& contextUri, std::optional<std::string> currentTrackUri,
       std::optional<std::string> currentTrackUid,
-      std::optional<uint32_t> currentTrackIndex) override;
+      std::optional<uint32_t> currentTrackIndex,
+      const std::vector<cspot_proto::ContextPage>& embeddedPages) override;
 
   void setQueue(const std::vector<cspot_proto::ContextTrack>& queue) override;
 
@@ -95,16 +96,28 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   // Gid is always 16bytes
   using GidBytes = std::array<std::byte, 16>;
 
+  struct ContextPageEntry {
+    SpotifyIdType type;
+    GidBytes gid;
+    std::string uid;
+    std::string artistUri;
+    std::string albumUri;
+  };
+
   struct FetchedContextPage {
     std::optional<std::string> url{};
-    std::vector<GidBytes> trackGids{};
-    // Parallel to trackGids, always pushed together in onTrackParsed().
-    std::vector<std::string> trackUids{};
-    std::vector<std::string> trackArtistUris{};
-    std::vector<std::string> trackAlbumUris{};
+    std::vector<ContextPageEntry> entries{};
 
     bool operator==(const FetchedContextPage& other) const {
-      return url == other.url && trackGids == other.trackGids;
+      if (url != other.url || entries.size() != other.entries.size()) {
+        return false;
+      }
+      for (size_t i = 0; i < entries.size(); i++) {
+        if (entries[i].gid != other.entries[i].gid) {
+          return false;
+        }
+      }
+      return true;
     }
   };
 
@@ -145,11 +158,23 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
 
   void resetContext();
 
+  // Shared by onTrackParsed() (live SAX parse of an HTTP page) and
+  // seedContextFromEmbeddedPages() (a command's already-in-hand pages) -
+  // both just need one track ingested at a known {page,track} slot.
+  void processContextTrackAt(uint32_t pageIndex, uint32_t trackIndex,
+                             const cspot_proto::ContextTrack& track);
+
   void onTrackParsed(uint32_t pageIndex, uint32_t trackIndex,
                      const cspot_proto::ContextTrack& track);
 
   void onPageMetadataParsed(uint32_t pageIndex,
                             const PageMetadata& pageMetadata);
+
+  // Populates contextPages directly from pages a command already handed
+  // us, instead of fetching context-resolve - see loadContext()'s own
+  // embeddedPages parameter.
+  void seedContextFromEmbeddedPages(
+      const std::vector<cspot_proto::ContextPage>& pages);
 
   std::optional<cspot_proto::ContextIndex> getOffsetIndex(int32_t offset) const;
 
@@ -197,6 +222,13 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   bell::Result<> fetchRootPage(const std::string& rootContextUri);
   bell::Result<> fetchContextPage(FetchedContextPage& page);
   bell::Result<> feedResponseToParser(bell::HTTPResponse& response);
+
+  // Fetches a playlist's own full item list (playlist4_external), which
+  // includes episodes an ordinary context-resolve wouldn't return.
+  // nullopt on any failure (wrong context type, network error, decode
+  // error).
+  std::optional<std::vector<cspot_proto::ContextPage>>
+  fetchPlaylistContentAsPages(const std::string& contextUri);
 };
 };  // namespace
 
@@ -215,7 +247,8 @@ DefaultTrackQueueHandler::DefaultTrackQueueHandler(
 bell::Result<> DefaultTrackQueueHandler::loadContext(
     const std::string& contextUri, std::optional<std::string> currentTrackUri,
     std::optional<std::string> currentTrackUid,
-    std::optional<uint32_t> currentTrackIndex) {
+    std::optional<uint32_t> currentTrackIndex,
+    const std::vector<cspot_proto::ContextPage>& embeddedPages) {
   // The "same context" fast path below only knows how to resolve a uri
   // (cached GID search) or an index (resolveFlatIndex against the cache) -
   // a uid-only target still needs a fresh fetch+parse for onTrackParsed()'s
@@ -228,8 +261,10 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
   bool noTrackHintGiven =
       !currentTrackUri && !currentTrackUid && !currentTrackIndex;
 
-  // In case we only have UID, we need to refetch the pages either way - we only keep the gids
-  if (currentContextUri != contextUri || !haveFastPathTarget) {
+  // A fresh embeddedPages forces a rebuild even for the same context uri,
+  // rather than taking the "same context" fast path below.
+  if (currentContextUri != contextUri || !haveFastPathTarget ||
+      !embeddedPages.empty()) {
     // New context, reset everything - resetContext() leaves
     // queue/isPlayingQueue alone (ad-hoc queue-only sessions rely on
     // that), so clear them here too.
@@ -242,11 +277,23 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
 
     contextIdType = SpotifyId::getTypeFromContext(contextUri);
 
-    auto res = fetchRootPage(contextUri);
-    if (!res) {
-      BELL_LOG(error, LOG_TAG, "Could not resolve context root, uri={}, err={}",
-               contextUri, res.error());
-      return nonstd::make_unexpected(res.error());
+    // Tried ahead of embeddedPages for playlist contexts - a direct fetch
+    // of the playlist's own content, more complete than a sending
+    // client's own cached view.
+    if (auto pages = fetchPlaylistContentAsPages(contextUri)) {
+      seedContextFromEmbeddedPages(*pages);
+      currentContextUri = contextUri;
+    } else if (!embeddedPages.empty()) {
+      seedContextFromEmbeddedPages(embeddedPages);
+      currentContextUri = contextUri;
+    } else {
+      auto res = fetchRootPage(contextUri);
+      if (!res) {
+        BELL_LOG(error, LOG_TAG,
+                 "Could not resolve context root, uri={}, err={}", contextUri,
+                 res.error());
+        return nonstd::make_unexpected(res.error());
+      }
     }
 
     if (targetTrackIndex && !contextIndex) {
@@ -268,15 +315,17 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
       auto targetGid = uriToGid(*currentTrackUri);
 
       for (size_t pageIdx = 0; pageIdx < contextPages.size(); pageIdx++) {
-        auto trackItr =
-            std::find(contextPages[pageIdx].trackGids.begin(),
-                      contextPages[pageIdx].trackGids.end(), targetGid);
-        if (trackItr != contextPages[pageIdx].trackGids.end()) {
+        auto& entries = contextPages[pageIdx].entries;
+        auto trackItr = std::find_if(
+            entries.begin(), entries.end(),
+            [&targetGid](const ContextPageEntry& e) {
+              return targetGid && e.gid == *targetGid;
+            });
+        if (trackItr != entries.end()) {
           // Found current track in the parsed data
           contextIndex = {
               static_cast<uint32_t>(pageIdx),
-              static_cast<uint32_t>(std::distance(
-                  contextPages[pageIdx].trackGids.begin(), trackItr))};
+              static_cast<uint32_t>(std::distance(entries.begin(), trackItr))};
           break;
         }
       }
@@ -296,7 +345,7 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
     }
 
     // Find page that does not have track ids
-    if (!page.trackGids.empty()) {
+    if (!page.entries.empty()) {
       continue;
     }
 
@@ -315,12 +364,14 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
   if (contextIndex.has_value()) {
     BELL_LOG(info, LOG_TAG, "Found current track at index=[{},{}]",
              contextIndex->track, contextIndex->page);
-  } else if (!contextPages.empty() && !contextPages[0].trackGids.empty()) {
+  } else if (!contextPages.empty() && !contextPages[0].entries.empty()) {
     if (noTrackHintGiven) {
       BELL_LOG(info, LOG_TAG, "No specific track requested, starting at index=[0,0]");
     } else {
-      BELL_LOG(error, LOG_TAG,
-               "Could not find current track in the given context, default to zero");
+      BELL_LOG(warn, LOG_TAG,
+               "Could not find target track {} (uid={}) in the resolved "
+               "context",
+               targetTrackIds.first, targetTrackIds.second);
     }
     contextIndex = {
         0,
@@ -339,7 +390,7 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
   return {};
 }
 
-void DefaultTrackQueueHandler::onTrackParsed(
+void DefaultTrackQueueHandler::processContextTrackAt(
     uint32_t pageIndex, uint32_t trackIndex,
     const cspot_proto::ContextTrack& track) {
   if (contextPages.size() < pageIndex + 1) {
@@ -352,18 +403,52 @@ void DefaultTrackQueueHandler::onTrackParsed(
     contextIndex = {pageIndex, trackIndex};
   }
 
-  auto trackGid = uriToGid(track.uri);
+  auto parsed = SpotifyId::tryParse(track.uri);
 
-  if (!trackGid) {
+  if (!parsed) {
     BELL_LOG(error, LOG_TAG, "Could not parse uri={}", track.uri);
     return;
   }
 
   auto& page = contextPages[pageIndex];
-  page.trackGids.push_back(*trackGid);
-  page.trackUids.push_back(track.uid);
-  page.trackArtistUris.push_back(track.artistUri);
-  page.trackAlbumUris.push_back(track.albumUri);
+  page.entries.push_back({
+      .type = parsed->type,
+      .gid = parsed->gid,
+      .uid = track.uid,
+      .artistUri = track.artistUri,
+      .albumUri = track.albumUri,
+  });
+}
+
+void DefaultTrackQueueHandler::onTrackParsed(
+    uint32_t pageIndex, uint32_t trackIndex,
+    const cspot_proto::ContextTrack& track) {
+  processContextTrackAt(pageIndex, trackIndex, track);
+}
+
+void DefaultTrackQueueHandler::seedContextFromEmbeddedPages(
+    const std::vector<cspot_proto::ContextPage>& pages) {
+  contextPages.clear();
+  for (uint32_t pageIndex = 0; pageIndex < pages.size(); pageIndex++) {
+    auto& page = pages[pageIndex];
+    if (contextPages.size() < pageIndex + 1) {
+      contextPages.resize(pageIndex + 1);
+    }
+    contextPages[pageIndex].url =
+        page.pageUrl.empty() ? std::nullopt : std::make_optional(page.pageUrl);
+
+    for (uint32_t trackIndex = 0; trackIndex < page.tracks.size();
+        trackIndex++) {
+      processContextTrackAt(pageIndex, trackIndex, page.tracks[trackIndex]);
+    }
+
+    // Mirrors onPageMetadataParsed()'s own continuation handling - a
+    // command may embed only a window of a very large context, leaving
+    // the rest to be fetched over HTTP same as any other page.
+    if (!page.nextPageUrl.empty() && contextPages.size() == pageIndex + 1) {
+      contextPages.push_back({.url = page.nextPageUrl});
+    }
+  }
 }
 
 void DefaultTrackQueueHandler::onPageMetadataParsed(
@@ -393,10 +478,10 @@ bell::Result<> DefaultTrackQueueHandler::ensureEnoughTracks() {
   // actually in contextPages (e.g. a context that resolved with no
   // tracks), so bounds-check rather than assert.
   if (contextIndex->page >= contextPages.size() ||
-      contextIndex->track >= contextPages[contextIndex->page].trackGids.size()) {
+      contextIndex->track >= contextPages[contextIndex->page].entries.size()) {
     return {};
   }
-  size_t nextTracksCount = contextPages[contextIndex->page].trackGids.size() -
+  size_t nextTracksCount = contextPages[contextIndex->page].entries.size() -
                            (contextIndex->track + 1);
 
   size_t nextPageIndex = contextIndex->page + 1;
@@ -404,8 +489,8 @@ bell::Result<> DefaultTrackQueueHandler::ensureEnoughTracks() {
   // Iterate over next pages until we have enough tracks or run out of pages
   while (contextPages.size() > (nextPageIndex) &&
          (nextTracksCount < trackFetchThreshold)) {
-    if (!contextPages[nextPageIndex].trackGids.empty()) {
-      nextTracksCount += contextPages[nextPageIndex].trackGids.size();
+    if (!contextPages[nextPageIndex].entries.empty()) {
+      nextTracksCount += contextPages[nextPageIndex].entries.size();
       nextPageIndex++;
       continue;
     }
@@ -416,7 +501,7 @@ bell::Result<> DefaultTrackQueueHandler::ensureEnoughTracks() {
                *contextPages[nextPageIndex].url, res.error());
       return nonstd::make_unexpected(res.error());
     }
-    nextTracksCount += contextPages[nextPageIndex].trackGids.size();
+    nextTracksCount += contextPages[nextPageIndex].entries.size();
     nextPageIndex++;
   }
 
@@ -426,6 +511,15 @@ bell::Result<> DefaultTrackQueueHandler::ensureEnoughTracks() {
 bell::Result<> DefaultTrackQueueHandler::fetchRootPage(
     const std::string& rootContextUri) {
   BELL_LOG(info, LOG_TAG, "Fetching context root, uri={}", rootContextUri);
+  if (rootContextUri.starts_with("spotify:playlist:")) {
+    // context-resolve never returns episodes embedded in an ordinary
+    // playlist - next/previous may not be able to reach some content.
+    BELL_LOG(warn, LOG_TAG,
+             "Loading playlist context via context-resolve fallback - may "
+             "be missing content types it doesn't return (e.g. podcast "
+             "episodes), uri={}",
+             rootContextUri);
+  }
   pageParser.reset();
   auto res = spClient->contextResolve(rootContextUri);
   if (!res) {
@@ -444,6 +538,54 @@ bell::Result<> DefaultTrackQueueHandler::fetchRootPage(
   // contextPages that was never actually populated.
   this->currentContextUri = rootContextUri;
   return {};
+}
+
+std::optional<std::vector<cspot_proto::ContextPage>>
+DefaultTrackQueueHandler::fetchPlaylistContentAsPages(
+    const std::string& contextUri) {
+  auto playlistId = SpotifyId::tryParse(contextUri);
+  if (!playlistId || playlistId->type != SpotifyIdType::Playlist) {
+    return std::nullopt;
+  }
+
+  BELL_LOG(info, LOG_TAG, "Fetching playlist content, uri={}", contextUri);
+  auto res = spClient->resolvePlaylistContent(*playlistId);
+  if (!res) {
+    BELL_LOG(warn, LOG_TAG,
+             "Could not fetch playlist content for {}, falling back to "
+             "context-resolve, err={}",
+             contextUri, res.error());
+    return std::nullopt;
+  }
+
+  if (!res->contents.hasValue) {
+    BELL_LOG(warn, LOG_TAG,
+             "Playlist content response for {} had no contents, falling "
+             "back to context-resolve",
+             contextUri);
+    return std::nullopt;
+  }
+
+  auto& items = res->contents.value.items;
+  cspot_proto::ContextPage page;
+  page.tracks.reserve(items.size());
+  for (auto& item : items) {
+    page.tracks.push_back({.uri = item.uri});
+  }
+
+  if (res->contents.value.truncated) {
+    BELL_LOG(warn, LOG_TAG,
+             "Playlist content for {} is truncated - got {} of {} reported "
+             "item(s), continuation not implemented",
+             contextUri, items.size(), res->length);
+  }
+
+  BELL_LOG(info, LOG_TAG, "Fetched {} item(s) from playlist content for {}",
+           items.size(), contextUri);
+
+  std::vector<cspot_proto::ContextPage> pages;
+  pages.push_back(std::move(page));
+  return pages;
 }
 
 bell::Result<> DefaultTrackQueueHandler::fetchContextPage(
@@ -568,21 +710,22 @@ DefaultTrackQueueHandler::currentTrack() {
   if (contextIndex) {
     // Ensure context index is valid
     if ((contextPages.size() < contextIndex->page + 1) ||
-        (contextPages[contextIndex->page].trackGids.size() <
+        (contextPages[contextIndex->page].entries.size() <
          contextIndex->track + 1)) {
       return std::nullopt;
     }
 
     auto& page = contextPages[contextIndex->page];
-    // Reconstruct spotify ID from the bare gid
-    SpotifyId trackId(contextIdType, page.trackGids[contextIndex->track]);
+    auto& entry = page.entries[contextIndex->track];
+    // Reconstruct spotify ID from the entry's own type + gid.
+    SpotifyId trackId(entry.type, entry.gid);
 
     return cspot_proto::ProvidedTrack{
         .uri = trackId.uri,
-        .uid = page.trackUids[contextIndex->track],
+        .uid = entry.uid,
         .provider = "context",
-        .artistUri = page.trackArtistUris[contextIndex->track],
-        .albumUri = page.trackAlbumUris[contextIndex->track],
+        .artistUri = entry.artistUri,
+        .albumUri = entry.albumUri,
         .gid = std::nullopt,
     };
   }
@@ -625,14 +768,11 @@ void DefaultTrackQueueHandler::reorderQueue(
     return;
   }
 
-  // contextTracksInOrder may include a track foreign to this context (e.g.
-  // dragged in from an album view), so it's absorbed into `queue` wholesale
-  // (playable by uri/uid alone) instead of assuming every entry matches a
-  // known context slot. contextIndex only advances once queue drains back
-  // to context (skipToNextTrack()) - see pendingContextAdvanceCount.
-  //
-  // contextTracksInOrder.size() upper-bounds the real context matches - a
-  // foreign entry only adds to the total, never replaces a real one.
+  // contextTracksInOrder can include a track foreign to this context (e.g.
+  // dragged in from an album view) - absorbed into `queue` wholesale
+  // rather than assumed to match a context slot; contextIndex catches up
+  // via pendingContextAdvanceCount once queue drains (skipToNextTrack()).
+  // Its size() below is only an upper bound on real context matches.
   struct SlotData {
     std::string uri;
     std::string uid;
@@ -644,9 +784,9 @@ void DefaultTrackQueueHandler::reorderQueue(
     if (!idx) {
       break;  // Context has fewer upcoming tracks than that - nothing more to match.
     }
-    auto& page = contextPages[idx->page];
-    snapshot.push_back({SpotifyId(contextIdType, page.trackGids[idx->track]).uri,
-                        page.trackUids[idx->track]});
+    auto& entry = contextPages[idx->page].entries[idx->track];
+    snapshot.push_back(
+        {SpotifyId(entry.type, entry.gid).uri, entry.uid});
   }
 
   size_t realContextMatches = 0;
@@ -750,11 +890,9 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
 
 bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToTargetTrack(
     const std::string& targetTrackUri, const std::string& targetTrackUid) {
-  // nextTracksWindow is exactly the next_tracks list last PUT to Spotify -
-  // the only tracks the client could have shown (and so the only tracks a
-  // remote skip_next's "track" field could legitimately name). Searching
-  // it directly, instead of re-deriving uid/uri from queue/contextPages,
-  // guarantees this can't drift from what the client actually saw.
+  // nextTracksWindow is the exact next_tracks list last PUT to Spotify -
+  // the only tracks a remote skip_next could legitimately name. Searching
+  // it directly avoids drifting from what the client actually saw.
   for (size_t x = 0; x < nextTracksWindow.size(); x++) {
     auto& candidate = nextTracksWindow[x];
     if (candidate.uri.empty()) {
@@ -769,18 +907,15 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToTargetTrack(
 
     size_t offsetInQueue = isPlayingQueue ? 1 : 0;
     if (candidate.provider == "queue") {
-      // Inverts updateTrackWindows()'s own construction of this same
-      // window slot (nextTracksWindow[x] <- queue[x + offsetInQueue]):
-      // drop the current track (if playing from queue) plus every queue
-      // entry skipped over to reach the target, which becomes the new
-      // queue[0].
+      // Inverts updateTrackWindows()'s construction of this slot
+      // (nextTracksWindow[x] <- queue[x + offsetInQueue]): drops the
+      // current track plus every queue entry skipped to reach the target.
       queue.erase(queue.begin(), queue.begin() + (x + offsetInQueue));
       setPlayingQueue(true);
     } else {
-      // Context portion of the window starts right after the queue
-      // portion (queueOffset entries) - same split updateTrackWindows()
-      // uses, inverted here to recover the context offset this window
-      // slot was built from.
+      // Context portion of the window starts after the queue portion
+      // (queueOffset entries) - inverts the split updateTrackWindows()
+      // uses.
       size_t queueOffset =
           queue.size() > offsetInQueue ? queue.size() - offsetInQueue : 0;
       if (!advanceContextBy(static_cast<int32_t>(x - queueOffset) + 1)) {
@@ -839,14 +974,14 @@ bell::Result<> DefaultTrackQueueHandler::skipToPreviousTrack(
 bell::Result<> DefaultTrackQueueHandler::fetchAllContextPages() {
   size_t totalTracks = 0;
   for (auto& page : contextPages) {
-    totalTracks += page.trackGids.size();
+    totalTracks += page.entries.size();
   }
 
   // Index-based, not a range-for: fetchContextPage() can append to
   // contextPages mid-loop, invalidating cached iterators.
   size_t pageIndex = 0;
   while (pageIndex < contextPages.size()) {
-    if (contextPages[pageIndex].trackGids.empty()) {
+    if (contextPages[pageIndex].entries.empty()) {
       auto res = fetchContextPage(contextPages[pageIndex]);
       if (!res) {
         BELL_LOG(error, LOG_TAG,
@@ -854,7 +989,7 @@ bell::Result<> DefaultTrackQueueHandler::fetchAllContextPages() {
                  res.error());
         return nonstd::make_unexpected(res.error());
       }
-      totalTracks += contextPages[pageIndex].trackGids.size();
+      totalTracks += contextPages[pageIndex].entries.size();
       if (totalTracks > maxShuffleTracks) {
         BELL_LOG(error, LOG_TAG,
                  "Context too large to shuffle (>{} tracks), aborting",
@@ -893,7 +1028,7 @@ bell::Result<> DefaultTrackQueueHandler::enableShuffle(bool shuffle) {
   bool foundPin = false;
   for (uint32_t page = 0; page < contextPages.size(); page++) {
     uint32_t trackCount =
-        static_cast<uint32_t>(contextPages[page].trackGids.size());
+        static_cast<uint32_t>(contextPages[page].entries.size());
     for (uint32_t track = 0; track < trackCount; track++) {
       if (page == contextIndex->page && track == contextIndex->track) {
         pinIndex = order.size();
@@ -988,12 +1123,9 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
     return shuffleOrder[static_cast<size_t>(newPos)];
   }
 
-  // Defensive: contextIndex should always refer to a real page once set,
-  // but that invariant can't be fully trusted at every call site (e.g.
-  // contextIndex defaulted to {0, 0} against a context that failed to
-  // populate any pages). Bounds-checking here once, rather than at every
-  // caller, matches this function's existing contract of returning
-  // nullopt for any "can't get there" case.
+  // Defensive: contextIndex isn't always trustworthy here - e.g.
+  // defaulted to {0,0} against a context that failed to populate any
+  // pages.
   if (contextIndex->page >= contextPages.size()) {
     return std::nullopt;
   }
@@ -1013,7 +1145,7 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
       }
       page -= 1;
 
-      auto pageSize = static_cast<uint32_t>(contextPages[page].trackGids.size());
+      auto pageSize = static_cast<uint32_t>(contextPages[page].entries.size());
       if (remaining <= pageSize) {
         return cspot_proto::ContextIndex{page, pageSize - remaining};
       }
@@ -1024,24 +1156,24 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
   }
 
   if (totalOffset >=
-      static_cast<int32_t>(contextPages[contextIndex->page].trackGids.size())) {
+      static_cast<int32_t>(contextPages[contextIndex->page].entries.size())) {
 
     size_t skipByPages = 1;
     int32_t remainingOffset =
         totalOffset -
-        static_cast<int32_t>(contextPages[contextIndex->page].trackGids.size());
+        static_cast<int32_t>(contextPages[contextIndex->page].entries.size());
 
     while (contextPages.size() > contextIndex->page + skipByPages) {
       if (remainingOffset <
           static_cast<int32_t>(contextPages[contextIndex->page + skipByPages]
-                                   .trackGids.size())) {
+                                   .entries.size())) {
         return cspot_proto::ContextIndex{
             static_cast<uint32_t>(contextIndex->page + skipByPages),
             static_cast<uint32_t>(remainingOffset),
         };
       }
       remainingOffset -= static_cast<int32_t>(
-          contextPages[contextIndex->page + skipByPages].trackGids.size());
+          contextPages[contextIndex->page + skipByPages].entries.size());
       skipByPages++;
     }
     return std::nullopt;  // No next page available
@@ -1058,7 +1190,7 @@ std::optional<cspot_proto::ContextIndex>
 DefaultTrackQueueHandler::resolveFlatIndex(uint32_t flatIndex) const {
   uint32_t remaining = flatIndex;
   for (uint32_t page = 0; page < contextPages.size(); page++) {
-    auto pageSize = static_cast<uint32_t>(contextPages[page].trackGids.size());
+    auto pageSize = static_cast<uint32_t>(contextPages[page].entries.size());
     if (remaining < pageSize) {
       return cspot_proto::ContextIndex{page, remaining};
     }
@@ -1070,23 +1202,17 @@ DefaultTrackQueueHandler::resolveFlatIndex(uint32_t flatIndex) const {
 void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
   bool updated = forceNotify;
 
-  // The next/previous-window diffing below only catches a change in what's
-  // *around* the current track - not the current track itself. That's
-  // normally masked by there also being a real "next" track most of the
-  // time (which flips updated=true as a side effect), but a track with
-  // nothing before/after it (an ad-hoc single/queue track with no context,
-  // or a single-track context) never touches either window - the
-  // lastNotifiedCurrentTrackUri check right below is what still catches
-  // that case.
+  // Window diffing below misses a change to the current track itself when
+  // there's nothing before/after it (single track, no context) -
+  // lastNotifiedCurrentTrackUri below covers that case.
   std::string newCurrentTrackUri;
   if (isPlayingQueue && !queue.empty()) {
     newCurrentTrackUri = queue[0].resolvedUri(contextIdType);
   } else if (contextIndex && contextIndex->page < contextPages.size() &&
              contextIndex->track <
-                 contextPages[contextIndex->page].trackGids.size()) {
-    SpotifyId trackId(
-        contextIdType,
-        contextPages[contextIndex->page].trackGids[contextIndex->track]);
+                 contextPages[contextIndex->page].entries.size()) {
+    auto& entry = contextPages[contextIndex->page].entries[contextIndex->track];
+    SpotifyId trackId(entry.type, entry.gid);
     newCurrentTrackUri = trackId.uri;
   }
   if (newCurrentTrackUri != lastNotifiedCurrentTrackUri) {
@@ -1122,28 +1248,25 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
       int32_t trackOffset = x - queueOffset;
       auto offsetIndex = getOffsetIndex(trackOffset + 1);
 
-      // offsetIndex is nullopt whenever the lookahead window runs past the
-      // last fetched context page (getOffsetIndex()'s own "no next page
-      // available" case) - must check before dereferencing, e.g. with a
-      // short context whose track count doesn't fill the whole
-      // nextTracksWindow lookahead.
+      // offsetIndex is nullopt when the lookahead runs past the last
+      // fetched page (e.g. a short context) - must check before
+      // dereferencing.
       if (offsetIndex.has_value()) {
         auto& page = contextPages[offsetIndex->page];
-        auto& gid = page.trackGids[offsetIndex->track];
+        auto& entry = page.entries[offsetIndex->track];
 
-        if (!nextTracksWindow[x].gid || (nextTracksWindow[x].gid != gid)) {
+        if (!nextTracksWindow[x].gid ||
+            (nextTracksWindow[x].gid != entry.gid)) {
           updated = true;
 
           // Construct ProvidedTrack from next context track
-          SpotifyId trackId(contextIdType, gid);
+          SpotifyId trackId(entry.type, entry.gid);
           nextTracksWindow[x].uri = trackId.uri;
-          nextTracksWindow[x].uid = page.trackUids[offsetIndex->track];
+          nextTracksWindow[x].uid = entry.uid;
           nextTracksWindow[x].provider = "context";
-          nextTracksWindow[x].artistUri =
-              page.trackArtistUris[offsetIndex->track];
-          nextTracksWindow[x].albumUri =
-              page.trackAlbumUris[offsetIndex->track];
-          nextTracksWindow[x].gid = gid;
+          nextTracksWindow[x].artistUri = entry.artistUri;
+          nextTracksWindow[x].albumUri = entry.albumUri;
+          nextTracksWindow[x].gid = entry.gid;
           // nextTracksWindow[x] is reused across calls - clear a leftover
           // is_queued from when this slot was last a queue entry.
           nextTracksWindow[x].metadata.clear();
@@ -1175,18 +1298,16 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
 
       if (offsetIndex.has_value()) {
         auto& page = contextPages[offsetIndex->page];
-        auto& gid = page.trackGids[offsetIndex->track];
+        auto& entry = page.entries[offsetIndex->track];
 
         // Construct ProvidedTrack from previous context track
-        SpotifyId trackId(contextIdType, gid);
+        SpotifyId trackId(entry.type, entry.gid);
         previousTracksWindow[x].uri = trackId.uri;
-        previousTracksWindow[x].uid = page.trackUids[offsetIndex->track];
+        previousTracksWindow[x].uid = entry.uid;
         previousTracksWindow[x].provider = "context";
-        previousTracksWindow[x].artistUri =
-            page.trackArtistUris[offsetIndex->track];
-        previousTracksWindow[x].albumUri =
-            page.trackAlbumUris[offsetIndex->track];
-        previousTracksWindow[x].gid = gid;
+        previousTracksWindow[x].artistUri = entry.artistUri;
+        previousTracksWindow[x].albumUri = entry.albumUri;
+        previousTracksWindow[x].gid = entry.gid;
       } else {
         previousTracksWindow[x] = {};
       }
@@ -1206,10 +1327,10 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
         updateEvent.currentTrackId = SpotifyId::tryParse(resolvedUri);
       }
     } else if (currentContextIndex()) {
-      auto& trackGid =
-          contextPages[contextIndex->page].trackGids[contextIndex->track];
+      auto& entry =
+          contextPages[contextIndex->page].entries[contextIndex->track];
 
-      updateEvent.currentTrackId = SpotifyId{contextIdType, trackGid};
+      updateEvent.currentTrackId = SpotifyId{entry.type, entry.gid};
     }
 
     // Post queue updated event

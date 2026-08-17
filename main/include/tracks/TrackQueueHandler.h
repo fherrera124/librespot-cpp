@@ -22,11 +22,15 @@ class TrackQueueHandler {
  public:
   virtual ~TrackQueueHandler() = default;
 
+  // embeddedPages: seeds the context from pages/tracks a play/transfer
+  // command already carried, skipping a fetch. Left empty, fetches as
+  // usual.
   virtual bell::Result<> loadContext(
       const std::string& contextUri,
       std::optional<std::string> currentTrackUri = std::nullopt,
       std::optional<std::string> currentTrackUid = std::nullopt,
-      std::optional<uint32_t> currentTrackIndex = std::nullopt) = 0;
+      std::optional<uint32_t> currentTrackIndex = std::nullopt,
+      const std::vector<cspot_proto::ContextPage>& embeddedPages = {}) = 0;
 
   virtual void setQueue(
       const std::vector<cspot_proto::ContextTrack>& queue) = 0;
