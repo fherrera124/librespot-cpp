@@ -45,6 +45,9 @@ class DefaultSpClient : public SpClient {
   bell::Result<cspot_proto::Episode> episodeMetadata(
       const SpotifyId& episodeId) override;
 
+  bell::Result<cspot_proto::SelectedListContent> resolvePlaylistContent(
+      const SpotifyId& playlistId) override;
+
   bell::Result<std::string> resolveStorageInteractive(
       const std::vector<std::byte>& fileId, bool prefetch = false) override;
 
@@ -438,6 +441,46 @@ bell::Result<cspot_proto::Episode> DefaultSpClient::episodeMetadata(
   }
 
   return episodeProto;
+}
+
+bell::Result<cspot_proto::SelectedListContent>
+DefaultSpClient::resolvePlaylistContent(const SpotifyId& playlistId) {
+  if (playlistId.type != SpotifyIdType::Playlist) {
+    BELL_LOG(error, LOG_TAG, "Invalid ID type: expected Playlist, got {}",
+             static_cast<int>(playlistId.type));
+    return bell::make_unexpected_errc<cspot_proto::SelectedListContent>(
+        std::errc::invalid_argument);
+  }
+
+  auto response =
+      rawRequest(fmt::format("playlist/v2/playlist/{}", playlistId.base62Gid));
+  if (!response) {
+    return nonstd::make_unexpected(response.error());
+  }
+
+  // Drain unconditionally, before checking status - see
+  // extendedMetadataRaw()'s own comment on why (pooled connection reuse).
+  auto resultBytes = response->bytes();
+  if (!resultBytes) {
+    return bell::make_unexpected_errc<cspot_proto::SelectedListContent>(
+        std::errc::bad_message);
+  }
+
+  if (response->statusCode != 200) {
+    BELL_LOG(error, LOG_TAG, "Playlist content request failed: {}",
+             response->statusCode);
+    return bell::make_unexpected_errc<cspot_proto::SelectedListContent>(
+        std::errc::bad_message);
+  }
+
+  cspot_proto::SelectedListContent content;
+  if (!nanopb_helper::decodeFromVector(content, *resultBytes)) {
+    BELL_LOG(error, LOG_TAG, "Error while decoding playlist content");
+    return bell::make_unexpected_errc<cspot_proto::SelectedListContent>(
+        std::errc::bad_message);
+  }
+
+  return content;
 }
 
 bell::Result<std::string> DefaultSpClient::resolveStorageInteractive(

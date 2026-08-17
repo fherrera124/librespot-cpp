@@ -12,6 +12,7 @@
 #include "proto/ConnectPb.h"
 #include "proto/ExtendedMetadataPb.h"
 #include "proto/MetadataPb.h"
+#include "proto/PlaylistPb.h"
 #include "proto/SpotifyId.h"
 
 // Own includes
@@ -65,6 +66,15 @@ class SpClient {
 
   virtual bell::Result<cspot_proto::Episode> episodeMetadata(
       const SpotifyId& episodeId) = 0;
+
+  /**
+   * @brief Fetches a playlist's own full, unfiltered item list
+   * (playlist4_external) - unlike contextResolve(), this includes episodes
+   * embedded in an ordinary playlist. Only the first response is fetched;
+   * see TrackQueueHandler's own handling of SelectedListContent.truncated.
+   */
+  virtual bell::Result<cspot_proto::SelectedListContent> resolvePlaylistContent(
+      const SpotifyId& playlistId) = 0;
 
   virtual bell::Result<std::string> resolveStorageInteractive(
       const std::vector<std::byte>& fileId, bool prefetch = false) = 0;

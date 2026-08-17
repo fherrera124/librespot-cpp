@@ -1,0 +1,28 @@
+syntax = "proto2";
+
+import "nanopb.proto";
+
+// Trimmed subset of Spotify's playlist4_external.proto - only the fields
+// needed to seed a TrackQueueHandler context from a playlist's full,
+// unfiltered item list (episodes included, unlike context-resolve). Field
+// numbers must stay wire-compatible with the real schema; everything else
+// (ItemAttributes, ListAttributes, Diff, capabilities, geoblock, ...) is
+// left undeclared and safely skipped on decode.
+
+message Item {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    optional string uri = 1;
+}
+
+message ListItems {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    optional bool truncated = 2;
+    repeated Item items = 3;
+    optional string continuation_token = 6;
+}
+
+message SelectedListContent {
+    option (nanopb_msgopt).type = FT_CALLBACK;
+    optional int32 length = 2;
+    optional ListItems contents = 5;
+}
