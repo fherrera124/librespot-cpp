@@ -198,23 +198,16 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   // bounded by maxShuffleTracks.
   bell::Result<> fetchAllContextPages();
 
-  // skipToNextTrack()'s explicit-target path: searches nextTracksWindow
-  // (queue entries first, then context - the exact set of tracks the
-  // client was last shown via next_tracks) for targetTrackUid/
-  // targetTrackUri and jumps straight there, dropping any queue entries
-  // skipped over along the way. Falls back to WrappedToStart (reset to
-  // context start, queue untouched) when the target isn't found in the
-  // window, e.g. a stale client message.
+  // skipToNextTrack()'s explicit-target path: searches nextTracksWindow,
+  // not context/queue directly, so it can't name something the client
+  // was never shown. Falls back to WrappedToStart if not found (stale
+  // client message).
   bell::Result<TrackAdvanceResult> skipToTargetTrack(
       const std::string& targetTrackUri, const std::string& targetTrackUid);
 
-  // Converts a flat 0-based track index (position across the whole
-  // context, not per-page) into a {page, track} pair, by walking
-  // contextPages. Only correct once every page up to the target has
-  // actually been fetched; returns nullopt if the walk runs past what's
-  // currently populated (not yet fetched, or genuinely out of range) -
-  // callers fall back to loadContext()'s own "default to zero" handling
-  // in that case.
+  // Walks contextPages to convert a flat 0-based index into {page,
+  // track} - only correct once every page up to the target has been
+  // fetched. nullopt if the walk runs past what's populated.
   std::optional<cspot_proto::ContextIndex> resolveFlatIndex(
       uint32_t flatIndex) const;
 
@@ -531,11 +524,9 @@ bell::Result<> DefaultTrackQueueHandler::fetchRootPage(
     return feedRes;
   }
 
-  // Only claim this context as loaded once it actually is - setting this
-  // unconditionally would let a failed fetch/parse still leave
-  // currentContextUri pointing at the target playlist, so a retry would
-  // take loadContext()'s "same context, don't refetch" branch against a
-  // contextPages that was never actually populated.
+  // Only claim the context as loaded once it actually is - setting this
+  // on a failed fetch would make a retry take loadContext()'s "same
+  // context" fast path against contextPages that was never populated.
   this->currentContextUri = rootContextUri;
   return {};
 }
@@ -624,11 +615,10 @@ bell::Result<> DefaultTrackQueueHandler::fetchContextPage(
 bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
     bell::HTTPResponse& response) {
   if (response.statusCode != 200) {
-    // Drain before returning - a pooled HTTP/1.1 connection is only safe
-    // to reuse once the body's been read, error responses included.
-    // Skipping this would leave the error body sitting unread on the wire,
-    // so the next request to reuse this connection reads that leftover
-    // body instead of its own response headers.
+    // Drain before returning - a pooled HTTP/1.1 connection isn't safe
+    // to reuse until the body is read, error responses included, or the
+    // next request reusing it reads this leftover body instead of its
+    // own headers.
     (void)response.bytes();
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
@@ -834,13 +824,10 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
 
   if (isPlayingQueue && !queue.empty()) {
     if (queue.size() == 1 && !contextIndex) {
-      // Sole queue track with no context to fall back to (an ad-hoc/
-      // single-track transfer) - nothing to advance to. Matches
-      // skipToPreviousTrack()'s own boundary handling: stay put rather
-      // than erasing the only track and leaving currentTrack() with
-      // nothing to report. The caller (advanceToNextTrackLocked())
-      // already treats a non-Advanced result plus no repeat-context as
-      // "pause here".
+      // Sole queue track with no context (ad-hoc/single-track transfer) -
+      // nothing to advance to. Stays put (matches skipToPreviousTrack()'s
+      // boundary handling) rather than leaving currentTrack() with
+      // nothing to report.
       return TrackAdvanceResult::WrappedToStart;
     }
 
