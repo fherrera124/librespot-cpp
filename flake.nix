@@ -37,7 +37,7 @@
         target-cli = llvm.stdenv.mkDerivation {
           name = "cspotcli";
           src = ./.;
-          cmakeFlags = ["-DCSPOT_TARGET_CLI=ON"];
+          cmakeFlags = ["-DCSPOT_TARGET_CLI=ON" "-DBELL_EXTERNAL_MBEDTLS=MbedTLS::mbedtls_static"];
           nativeBuildInputs = with pkgs; [
             avahi
             avahi-compat
@@ -52,7 +52,7 @@
           ];
           # Patch nanopb shebangs to refer to provided python
           postPatch = ''
-            patchShebangs cspot/bell/external/nanopb/generator/*
+            patchShebangs external/nanopb/generator/*
           '';
           enableParallelBuilding = true;
         };
