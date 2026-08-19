@@ -19,4 +19,35 @@ menu "CSPOT Configuration"
             bool "96 bps"
     endchoice
 
+    config CSPOT_I2S_BCLK_GPIO
+        int "I2S BCK (bit clock) GPIO"
+        default 42
+        help
+            Defaults match the JC3248W535's onboard NS4168 wiring. Change
+            to match your own DAC/amp (e.g. an external PCM5102 breakout).
+
+    config CSPOT_I2S_WS_GPIO
+        int "I2S LRCK (word select) GPIO"
+        default 2
+
+    config CSPOT_I2S_DOUT_GPIO
+        int "I2S DIN (data) GPIO"
+        default 41
+
+    config CSPOT_I2S_MCLK_GPIO
+        int "I2S MCLK GPIO (-1 if unused)"
+        default 0
+        help
+            GPIO_NUM_0 is the JC3248W535's boot-strap pin, safe once
+            running - that's what the onboard NS4168 uses. Most DACs with
+            an internal PLL (e.g. PCM5102) don't need MCLK at all - set to
+            -1 in that case.
+
+    config CSPOT_I2S_MONO_OUTPUT
+        bool "Downmix to mono"
+        default y
+        help
+            Enable for mono amps (e.g. the JC3248W535's onboard NS4168).
+            Disable for real stereo DACs (e.g. PCM5102).
+
 endmenu

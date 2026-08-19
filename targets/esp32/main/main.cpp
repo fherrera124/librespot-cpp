@@ -21,12 +21,16 @@ namespace {
 const char* TAG = "cspot";
 const char* sessionFilePath = "/spiffs/session.json";
 
-// JC3248W535 I2S pinout - onboard NS4168 mono class-D amp, I2S-only, no
-// DIN/I2C control lines needed.
-constexpr gpio_num_t kI2sBclkGpio = GPIO_NUM_42;
-constexpr gpio_num_t kI2sWsGpio = GPIO_NUM_2;
-constexpr gpio_num_t kI2sDoutGpio = GPIO_NUM_41;
-constexpr gpio_num_t kI2sMclkGpio = GPIO_NUM_0;  // boot-strap pin, safe once running
+// I2S pinout/format - see Kconfig.projbuild (idf.py menuconfig -> CSPOT
+// Configuration) to match your actual DAC/amp wiring.
+constexpr gpio_num_t kI2sBclkGpio =
+    static_cast<gpio_num_t>(CONFIG_CSPOT_I2S_BCLK_GPIO);
+constexpr gpio_num_t kI2sWsGpio =
+    static_cast<gpio_num_t>(CONFIG_CSPOT_I2S_WS_GPIO);
+constexpr gpio_num_t kI2sDoutGpio =
+    static_cast<gpio_num_t>(CONFIG_CSPOT_I2S_DOUT_GPIO);
+constexpr gpio_num_t kI2sMclkGpio =
+    static_cast<gpio_num_t>(CONFIG_CSPOT_I2S_MCLK_GPIO);
 }  // namespace
 
 class CSpotTask : public bell::Task {
@@ -50,7 +54,7 @@ class CSpotTask : public bell::Task {
         .wsPin = kI2sWsGpio,
         .doutPin = kI2sDoutGpio,
         .mclkPin = kI2sMclkGpio,
-        .monoOutput = true,
+        .monoOutput = CONFIG_CSPOT_I2S_MONO_OUTPUT,
     };
     auto audioSink = std::make_shared<cspot::AudioSinkI2S>(sinkConfig);
 
