@@ -31,6 +31,14 @@ constexpr gpio_num_t kI2sDoutGpio =
     static_cast<gpio_num_t>(CONFIG_CSPOT_I2S_DOUT_GPIO);
 constexpr gpio_num_t kI2sMclkGpio =
     static_cast<gpio_num_t>(CONFIG_CSPOT_I2S_MCLK_GPIO);
+// bool Kconfig options only emit CONFIG_CSPOT_I2S_MONO_OUTPUT when set to
+// y - it doesn't exist as a macro at all when disabled, so it can't be
+// used as a plain expression.
+#ifdef CONFIG_CSPOT_I2S_MONO_OUTPUT
+constexpr bool kMonoOutput = true;
+#else
+constexpr bool kMonoOutput = false;
+#endif
 }  // namespace
 
 class CSpotTask : public bell::Task {
@@ -54,7 +62,7 @@ class CSpotTask : public bell::Task {
         .wsPin = kI2sWsGpio,
         .doutPin = kI2sDoutGpio,
         .mclkPin = kI2sMclkGpio,
-        .monoOutput = CONFIG_CSPOT_I2S_MONO_OUTPUT,
+        .monoOutput = kMonoOutput,
     };
     auto audioSink = std::make_shared<cspot::AudioSinkI2S>(sinkConfig);
 
