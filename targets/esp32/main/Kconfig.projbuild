@@ -47,7 +47,6 @@ menu "CSPOT Configuration"
         bool "Downmix to mono"
         default y
         help
-            Enable for mono amps (e.g. the JC3248W535's onboard NS4168).
-            Disable for real stereo DACs (e.g. PCM5102).
+            Enable for mono amps. Disable for real stereo DACs (e.g. PCM5102).
 
 endmenu
