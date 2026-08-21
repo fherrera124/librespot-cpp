@@ -24,9 +24,8 @@ Summary:
 - cmake (version 3.0 or higher)
 - gcc / clang for the CLI target
 - [esp-idf](https://github.com/espressif/esp-idf) for building for the esp32
-- portaudio for playback on MacOS
+- macOS/Windows are not currently supported for the CLI target (Linux/ALSA only)
 - downloaded submodules
-- golang (1.16)
 - protoc
 - on Linux you will additionally need:
     - `libasound` and `libavahi-compat-libdnssd`
@@ -53,18 +52,13 @@ $ sudo apt-get install libavahi-compat-libdnssd-dev libasound2-dev
 ```
 
 
-### Building for macOS
-### Building for macOS/Linux & Windows
+### Building the CLI target
 
 The cli target is used mainly for testing and development purposes, as of now it has the same features as the esp32 target.
 
-As MbedTLS is now use instead of OpenSSL, you need to install it or your system or have a local build. If you have a system-wide install of MbedTLS, ignore what's below
+**Only Linux is currently supported** - `targets/cli/CMakeLists.txt` requires ALSA (`find_package(ALSA REQUIRED)`) and there's no macOS/Windows sink or CMake branch in this fork. CI only builds and verifies Ubuntu.
 
-To use a local build, you have to specify the BELL_EXTERNAL_MBEDTLS and potentially MBEDTLS_RELEASE. The first one points to the "./cmake" subdir of the MbedTLS's build directory, the second optionally defines the name of the MbedTLS build (it's by default set to 'RELEASE' for Windows and 'NOCONFIG' for others). 
-
-See running the CLI for information on how to run cspot on a desktop computer.
-
-#### macOS/Linux
+MbedTLS is required - a system-wide install is picked up automatically. To link a specific existing CMake target instead (e.g. a local build, or nixpkgs' `mbedtls` as `flake.nix` does), pass `-DBELL_EXTERNAL_MBEDTLS=<target_name>` - it only names a target, bell doesn't define one.
 
 ```shell
 # navigate to the targets/cli directory
@@ -73,47 +67,13 @@ $ cd targets/cli
 # create a build directory and navigate to it
 $ mkdir -p build && cd build
 
-# use cmake to generate build files, and select an audio sink
-$ cmake .. -DUSE_PORTAUDIO=ON [-DBELL_EXTERNAL_MBEDTLS=<mbedtls_build_dir>/cmake>] [-DMBEDTLS_RELEASE=<release_name>]
+# use cmake to generate build files
+$ cmake ..
 
 # compile
-$ make 
+$ make
 ```
 
-#### Windows
-
-```shell
-# navigate to the targets/cli directory
-$ cd targets/cli
-
-# create a build directory and navigate to it
-$ mkdir -p build && cd build
-
-# use cmake to generate build files, and select an audio sink
-$ cmake .. -A Win32|x64 -DUSE_PORTAUDIO=ON [-DBELL_EXTERNAL_MBEDTLS=<mbedtls_build_dir>/cmake>] [-DMBEDTLS_RELEASE=<release_name>]
-```
-
-Go to `build` and use `cspotcli.sln` under VisualStudio or use `msbuild` from command line.
-
-Note that for now, only the Win32 build has been tested, not the x64 version. Under some VS releases, the protobuf might not be rebuilt automatically, just go to the project "generate_proto_sources" and do a C^F7 on each `*.pb.rule`
-
-### Building for Linux
-
-The cli target is used mainly for testing and development purposes, as of now it has the same features as the esp32 target.
-
-```shell
-# navigate to the targets/cli directory
-$ cd targets/cli
-
-# create a build directory and navigate to it
-$ mkdir -p build && cd build
-
-# use cmake to generate build files, and select an audio sink
-$ cmake .. -DUSE_ALSA=ON
-
-# compile
-$ make 
-```
 See running the CLI for information on how to run cspot on a desktop computer.
 
 ### Building for ESP32
