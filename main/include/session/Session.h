@@ -33,6 +33,10 @@ struct AudioConfig {
   std::vector<AudioFormat> qualityPreference = {AudioFormat_OGG_VORBIS_320,
                                                 AudioFormat_OGG_VORBIS_160,
                                                 AudioFormat_OGG_VORBIS_96};
+
+  // Spotify-standard loudness normalization (ITU-R BS.1770, -14 LUFS
+  // target) - see AudioDecoder.h/LoudnessNormalisation.h.
+  bool normalisationEnabled = true;
 };
 
 class Session {

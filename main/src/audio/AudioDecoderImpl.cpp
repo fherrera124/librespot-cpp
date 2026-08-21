@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <optional>
 
 #include "audio/CDNDataStream.h"
+#include "audio/LoudnessNormalisation.h"
 #include "audio/PrefetchWorker.h"
 #include "audio/SpotifySeekTable.h"
 #include "bell/Logger.h"
@@ -52,14 +54,16 @@ size_t bytesPerSecond(AudioFormat format) {
 class AudioDecoderImpl : public cspot::AudioDecoder {
  public:
   explicit AudioDecoderImpl(std::shared_ptr<AudioSink> audioSink,
-                            std::chrono::milliseconds targetPrefetchDuration)
+                            std::chrono::milliseconds targetPrefetchDuration,
+                            bool normalisationEnabled)
       : audioSink(std::move(audioSink)),
         httpClient(std::make_shared<bell::HTTPClient>()),
         // One long-lived worker for this decoder's whole lifetime, reused
         // across tracks - see PrefetchWorker's own header comment for why
         // (mirrors AudioSinkI2S's own bell::Task, not spun up per track).
         prefetchWorker(std::make_shared<PrefetchWorker>(httpClient)),
-        targetPrefetchDuration(targetPrefetchDuration) {}
+        targetPrefetchDuration(targetPrefetchDuration),
+        normalisationEnabled(normalisationEnabled) {}
 
   // No default for startPositionMs here - default args aren't virtual,
   // so repeating one on the override wouldn't apply through the
@@ -103,6 +107,20 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
     auto headerRes = stream->readRawHeaderBytes(kHeaderProbeSize);
     if (headerRes) {
       seekTable = SpotifySeekTable::tryParse(*headerRes);
+
+      if (normalisationEnabled) {
+        if (auto normData = parseNormalizationData(*headerRes)) {
+          normalizationGain = computeNormalizationGain(normData->trackGainDb,
+                                                        normData->trackPeak);
+          if (!std::isfinite(normalizationGain)) {
+            normalizationGain = 1.0f;
+          }
+          BELL_LOG(info, LOG_TAG,
+                   "Loudness: track_gain={}dB track_peak={} -> factor={}",
+                   normData->trackGainDb, normData->trackPeak,
+                   normalizationGain);
+        }
+      }
     }
     BELL_LOG(info, LOG_TAG, "Spotify seek table {}",
              seekTable ? "found" : "not found - will use bisection search");
@@ -298,6 +316,10 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
       return;
     }
 
+    if (normalizationGain != 1.0f) {
+      applyLoudnessGain(decodeRes->pcm, normalizationGain);
+    }
+
     audioSink->feedPCMFrames(
         reinterpret_cast<const uint8_t*>(decodeRes->pcm.data()),
         decodeRes->pcm.size());
@@ -314,6 +336,9 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
     container.reset();
     dataStream.reset();
     seekTable.reset();
+    // 1.0 (no-op) also covers openExternalStream()'s podcast/MP3 path -
+    // there's no Spotify header to read a gain from there.
+    normalizationGain = 1.0f;
   }
 
   bool isEOF() const override { return eof; }
@@ -372,10 +397,16 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
   std::shared_ptr<bell::HTTPClient> httpClient;
   std::shared_ptr<PrefetchWorker> prefetchWorker;
   const std::chrono::milliseconds targetPrefetchDuration;
+  const bool normalisationEnabled;
   std::shared_ptr<bell::io::DataStream> dataStream;
   std::unique_ptr<bell::AudioContainer> container;
   std::unique_ptr<bell::AudioCodec> codec;
   std::optional<SpotifySeekTable> seekTable;
+  // Recomputed once per track (openStream(), right after the seek-table
+  // parse above) from its own CDN-embedded gain/peak - see
+  // LoudnessNormalisation.h. Plain, not atomic - same threading rationale
+  // as seekTable: only ever touched from StreamPlayer's own player task.
+  float normalizationGain = 1.0f;
   // Set in openStream(), used by isNearEnd() - see bytesPerSecond()'s own
   // comment for why this can't be computed once at construction.
   size_t currentBytesPerSecond = 0;
@@ -392,7 +423,8 @@ class AudioDecoderImpl : public cspot::AudioDecoder {
 
 std::unique_ptr<AudioDecoder> cspot::createAudioDecoder(
     std::shared_ptr<AudioSink> audioSink,
-    std::chrono::milliseconds targetPrefetchDuration) {
-  return std::make_unique<AudioDecoderImpl>(std::move(audioSink),
-                                            targetPrefetchDuration);
+    std::chrono::milliseconds targetPrefetchDuration,
+    bool normalisationEnabled) {
+  return std::make_unique<AudioDecoderImpl>(
+      std::move(audioSink), targetPrefetchDuration, normalisationEnabled);
 }

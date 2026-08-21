@@ -43,8 +43,9 @@ cspot::Session::Session(
 
   auto fileProvider = createDefaultFileProvider(
       eventLoop, spClient, apClient, audioConfig.qualityPreference);
-  auto audioDecoder =
-      createAudioDecoder(audioSink, audioConfig.targetPrefetchDuration);
+  auto audioDecoder = createAudioDecoder(audioSink,
+                                        audioConfig.targetPrefetchDuration,
+                                        audioConfig.normalisationEnabled);
   // Direct callback, not an EventLoop-posted event - see
   // ConnectStateHandler::onPlayerStateUpdate()'s own comment.
   streamPlayer = std::make_shared<StreamPlayer>(

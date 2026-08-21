@@ -56,8 +56,11 @@ class AudioDecoder {
 // bytesPerSecond()) - keeping the actual buffered duration roughly
 // constant across audio qualities. 0 disables read-ahead entirely (every
 // fetch stays fully synchronous, the same as before read-ahead existed).
+// normalisationEnabled: see AudioConfig::normalisationEnabled
+// (session/Session.h) - just forwarded here.
 std::unique_ptr<AudioDecoder> createAudioDecoder(
     std::shared_ptr<AudioSink> audioSink,
     std::chrono::milliseconds targetPrefetchDuration =
-        std::chrono::milliseconds(6500));
+        std::chrono::milliseconds(6500),
+    bool normalisationEnabled = true);
 }  // namespace cspot

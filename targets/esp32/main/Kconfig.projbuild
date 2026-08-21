@@ -49,4 +49,10 @@ menu "CSPOT Configuration"
         help
             Enable for mono amps. Disable for real stereo DACs (e.g. PCM5102).
 
+    config CSPOT_NORMALISATION_ENABLED
+        bool "Loudness normalization (Spotify standard, -14 LUFS)"
+        default y
+        help
+            Applies each track's own CDN-provided gain (ITU-R BS.1770).
+
 endmenu

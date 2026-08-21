@@ -36,6 +36,11 @@ constexpr bool kMonoOutput = true;
 #else
 constexpr bool kMonoOutput = false;
 #endif
+#ifdef CONFIG_CSPOT_NORMALISATION_ENABLED
+constexpr bool kNormalisationEnabled = true;
+#else
+constexpr bool kNormalisationEnabled = false;
+#endif
 }  // namespace
 
 class CSpotTask : public bell::Task {
@@ -66,6 +71,7 @@ class CSpotTask : public bell::Task {
     cspot::AudioConfig audioConfig{
         .qualityPreference = {AudioFormat_OGG_VORBIS_160,
                               AudioFormat_OGG_VORBIS_96},
+        .normalisationEnabled = kNormalisationEnabled,
     };
 
     cspot::ConnectReceiver(

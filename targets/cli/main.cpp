@@ -4,6 +4,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <string_view>
 #include <termios.h>
 #include <thread>
 #include <unistd.h>
@@ -141,6 +142,14 @@ void handlePlaybackNotification(const cspot::PlaybackNotificationEvent& event) {
 int main(int argc, char** argv) {
   bell::registerDefaultLogger();
 
+  bool normalisationEnabled = true;
+  for (int i = 1; i < argc; i++) {
+    std::string_view arg = argv[i];
+    if (arg == "--disable-normalisation") {
+      normalisationEnabled = false;
+    }
+  }
+
   auto authInfo = std::make_shared<cspot::AuthInfo>("Cspot player");
 
   auto audioSink = std::make_shared<cspot::AudioSinkALSA>();
@@ -148,7 +157,8 @@ int main(int argc, char** argv) {
   cspot::ConnectReceiver receiver(
       authInfo, sessionFilePath,
       {.audioSink = audioSink,
-       .playbackNotificationCallback = handlePlaybackNotification});
+       .playbackNotificationCallback = handlePlaybackNotification,
+       .audioConfig = {.normalisationEnabled = normalisationEnabled}});
 
   std::thread receiverThread([&receiver]() { receiver.run(); });
 
