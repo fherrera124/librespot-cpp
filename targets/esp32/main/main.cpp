@@ -124,14 +124,15 @@ extern "C" void app_main(void) {
 
   init_spiffs();
 
-  esp_wifi_set_ps(WIFI_PS_NONE);
   ESP_ERROR_CHECK(esp_netif_init());
   ESP_ERROR_CHECK(esp_event_loop_create_default());
   ESP_ERROR_CHECK(example_connect());
+  ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 
   ESP_LOGI(TAG, "Connected to AP, starting Spotify Connect receiver");
   bell::registerDefaultLogger();
 
   static auto task = std::make_unique<CSpotTask>();
-  vTaskSuspend(NULL);
+  // ESP-IDF deletes the main task when app_main returns, reclaiming its
+  // internal-RAM stack. The static receiver task remains alive.
 }
