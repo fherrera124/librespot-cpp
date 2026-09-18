@@ -12,14 +12,18 @@ set(BELL_CODEC_HQLC OFF CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
 set(BELL_CODEC_LC3PLUS OFF CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
 set(BELL_DISABLE_MQTT ON CACHE BOOL "Unused by cspot's Session/api/tracks" FORCE)
 
-# sdkconfig.defaults.local (gitignored, not tracked) carries this machine's
-# real WiFi SSID/password for example_connect() - never committed. Falls
-# back to just sdkconfig.defaults (ESP-IDF's own placeholder
-# myssid/mypassword) if the local file doesn't exist yet.
-set(_sdkconfig_defaults "sdkconfig.defaults")
+# Honor SDKCONFIG_DEFAULTS and append optional sdkconfig.defaults.local.
+if(DEFINED SDKCONFIG_DEFAULTS)
+    set(_sdkconfig_defaults "${SDKCONFIG_DEFAULTS}")
+elseif(DEFINED ENV{SDKCONFIG_DEFAULTS})
+    set(_sdkconfig_defaults "$ENV{SDKCONFIG_DEFAULTS}")
+else()
+    set(_sdkconfig_defaults "sdkconfig.defaults")
+endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.defaults.local")
     list(APPEND _sdkconfig_defaults "sdkconfig.defaults.local")
 endif()
+list(REMOVE_DUPLICATES _sdkconfig_defaults)
 set(SDKCONFIG_DEFAULTS "${_sdkconfig_defaults}")
 
 if(NOT IDF_NO_INCLUDE)
