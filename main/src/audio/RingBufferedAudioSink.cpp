@@ -37,7 +37,9 @@ void RingBufferedAudioSink::feedPCMFrames(const uint8_t* data, size_t bytes) {
 
   size_t written = 0;
   while (written < bytes) {
-    written += ringBuffer.write(src + written, bytes - written);
+    const size_t count = ringBuffer.write(src + written, bytes - written);
+    if (count == 0) return;  // Sink closed while the producer was blocked.
+    written += count;
   }
 }
 

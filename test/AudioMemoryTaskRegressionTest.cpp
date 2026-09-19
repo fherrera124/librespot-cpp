@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "audio/CDNDataStream.h"
+#include "audio/RingBufferedAudioSink.h"
 #include "bell/http/Reader.h"
 #include "tracks/StreamPlayer.h"
 
@@ -247,4 +248,76 @@ TEST_CASE("Idle file provider can be destroyed without a queued request") {
     provider.reset();
     CHECK(std::chrono::steady_clock::now() - start < 500ms);
   }
+}
+
+TEST_CASE("CDN rejects missing or unusable lengths before reading the body") {
+  class Transport : public bell::http::Transport {
+   public:
+    std::istringstream input;
+    bell::Result<bell::HTTPResponse> execute(const bell::HTTPRequest&) override {
+      bell::HTTPReader reader(bell::http::Direction::Response, &input);
+      auto result = reader.readHeaders();
+      if (!result) return nonstd::make_unexpected(result.error());
+      return bell::HTTPResponse(std::move(reader));
+    }
+  };
+  std::string headers;
+  SUBCASE("missing") { headers = "HTTP/1.1 206 Partial Content\r\n"; }
+  SUBCASE("zero") {
+    headers = "HTTP/1.1 206 Partial Content\r\nContent-Length: 0\r\n";
+  }
+  SUBCASE("HTTP error") {
+    headers = "HTTP/1.1 503 Unavailable\r\nContent-Length: 16\r\n";
+  }
+  auto transport = std::make_unique<Transport>();
+  auto* observed = transport.get();
+  headers += "Content-Range: bytes 0-15/16\r\n\r\n";
+  observed->input.str(headers + std::string(16, 'x'));
+  cspot::CDNRangeFetcher fetcher(
+      std::make_shared<bell::HTTPClient>(std::move(transport)));
+  auto result = fetcher.fetch("https://example.invalid/audio", "bytes=0-15");
+  REQUIRE_FALSE(result);
+  CHECK(result.error() == std::errc::bad_message);
+  CHECK(observed->input.tellg() == static_cast<std::streamoff>(headers.size()));
+}
+
+TEST_CASE("Closing an audio buffer wakes readers and full-buffer producers") {
+  class Sink : public cspot::RingBufferedAudioSink {
+   public:
+    Sink() : RingBufferedAudioSink(16, false) {}
+    void close() { ringBuffer.close(); }
+    size_t read(std::byte* dst) { return ringBuffer.read(dst, 16); }
+    void fill() {
+      const uint8_t bytes[16]{};
+      feedPCMFrames(bytes, sizeof(bytes));
+    }
+  } sink;
+  bell::Semaphore entered;
+  bell::Semaphore finished;
+  bool writer = false;
+  SUBCASE("empty reader") {}
+  SUBCASE("full writer") { writer = true; sink.fill(); }
+  std::atomic<size_t> readCount{99};
+  std::thread worker([&] {
+    entered.give();
+    if (writer) {
+      sink.fill();
+    } else {
+      std::byte bytes[16];
+      readCount = sink.read(bytes);
+    }
+    finished.give();
+  });
+  entered.take();
+  CHECK_FALSE(finished.take(30));
+  sink.close();
+  CHECK(finished.take(1000));
+  worker.join();
+  if (!writer) CHECK(readCount == 0);
+  // Closing is permanent and idempotent, even after a flush.
+  sink.close();
+  sink.flush();
+  sink.fill();
+  std::byte bytes[16];
+  CHECK(sink.read(bytes) == 0);
 }

@@ -33,6 +33,7 @@ class AudioSinkI2S : public bell::Task, public RingBufferedAudioSink {
   i2s_chan_handle_t txChannel = nullptr;
 
   void taskLoop() override;
+  void wakeTask() override;
 };
 
 }  // namespace cspot

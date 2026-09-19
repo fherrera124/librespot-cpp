@@ -52,6 +52,12 @@ AudioSinkI2S::AudioSinkI2S(const Config& config)
 
 AudioSinkI2S::~AudioSinkI2S() {
   stopTask();
+  i2s_channel_disable(txChannel);
+  i2s_del_channel(txChannel);
+}
+
+void AudioSinkI2S::wakeTask() {
+  ringBuffer.close();
 }
 
 void AudioSinkI2S::taskLoop() {
@@ -73,16 +79,19 @@ void AudioSinkI2S::taskLoop() {
   }
 
   size_t written = 0;
-  while (written < available) {
+  while (taskRunning && written < available) {
     size_t chunkWritten = 0;
     esp_err_t err =
         i2s_channel_write(txChannel, chunk + written, available - written,
-                          &chunkWritten, portMAX_DELAY);
-    if (err != ESP_OK) {
+                          &chunkWritten, 100);
+    // A timeout may still have written a prefix. Retry only the remainder,
+    // and check shutdown between calls so a stalled peripheral cannot
+    // hold stopTask() indefinitely.
+    written += chunkWritten;
+    if (err != ESP_OK && err != ESP_ERR_TIMEOUT) {
       BELL_LOG(warn, LOG_TAG, "i2s_channel_write failed: {}",
                static_cast<int>(err));
       break;
     }
-    written += chunkWritten;
   }
 }
