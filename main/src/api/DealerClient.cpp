@@ -257,9 +257,11 @@ void DealerClient::onWSMessage(websocketpp::connection_hdl conn,
     std::string type = jsonMessage["type"].get_string();
 
     if (type == "message") {
-      eventLoop->post(EventLoop::EventType::DEALER_MESSAGE, jsonMessage);
+      eventLoop->post(EventLoop::EventType::DEALER_MESSAGE,
+                      std::move(jsonMessage));
     } else if (type == "request") {
-      eventLoop->post(EventLoop::EventType::DEALER_REQUEST, jsonMessage);
+      eventLoop->post(EventLoop::EventType::DEALER_REQUEST,
+                      std::move(jsonMessage));
     } else if (type == "pong") {
       lastPongTime = std::chrono::steady_clock::now();
       BELL_LOG(debug, LOG_TAG, "Received pong");

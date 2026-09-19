@@ -85,7 +85,7 @@ class StreamPlayer : public bell::Task {
 
   void registerHandlers();
   void handleQueueUpdate(const TrackQueueUpdate& queueUpdate);
-  void handleFileProvided(const ProvidedFile& providedFile);
+  void handleFileProvided(ProvidedFile&& providedFile);
   // Requests (or, if already pending, ignores) a prefetch for hint.trackId -
   // see NextTrackHint's own comment.
   void handleNextTrackHint(const NextTrackHint& hint);

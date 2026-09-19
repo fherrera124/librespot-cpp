@@ -101,7 +101,7 @@ void StreamPlayer::registerHandlers() {
       EventLoop::EventType::FILE_PROVIDED, [&](EventLoop::Event&& ev) {
         auto event = std::move(ev);
         auto& providedFile = std::get<ProvidedFile>(event.payload);
-        handleFileProvided(providedFile);
+        handleFileProvided(std::move(providedFile));
       });
 
   eventLoop->registerHandler(
@@ -186,7 +186,7 @@ void StreamPlayer::handleQueueUpdate(const TrackQueueUpdate& update) {
   handleFlushEvent();
 }
 
-void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
+void StreamPlayer::handleFileProvided(ProvidedFile&& providedFile) {
   std::scoped_lock lock(playbackMutex);
 
   bool isCurrentTrack = currentTrackId &&
@@ -215,17 +215,18 @@ void StreamPlayer::handleFileProvided(const ProvidedFile& providedFile) {
   }
 
   if (isCurrentTrack) {
-    currentFile = providedFile;
+    currentFile = std::move(providedFile);
 
     BELL_LOG(info, LOG_TAG, "Track {} is ready to play",
-             providedFile.itemId.uri);
+             currentFile->itemId.uri);
 
     // Still buffering here - the decoder hasn't been opened yet, let alone
     // produced any real audio. See announceState()'s doc comment.
     announceState(/*isBuffering=*/true);
   } else if (isPendingNextTrack) {
-    pendingNextFile = providedFile;
-    BELL_LOG(info, LOG_TAG, "Prefetched next track {}", providedFile.itemId.uri);
+    pendingNextFile = std::move(providedFile);
+    BELL_LOG(info, LOG_TAG, "Prefetched next track {}",
+             pendingNextFile->itemId.uri);
   } else {
     // Stale/cancelled request (superseded before it resolved) - ignore.
   }

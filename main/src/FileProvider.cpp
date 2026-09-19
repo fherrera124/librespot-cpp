@@ -172,7 +172,7 @@ void DefaultFileProvider::taskLoop() {
         BELL_LOG(error, LOG_TAG, "Could not fetch episode metadata, err={}",
                  metadataRes.error());
 
-        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
         return;
       }
 
@@ -190,7 +190,7 @@ void DefaultFileProvider::taskLoop() {
         BELL_LOG(error, LOG_TAG, "Could not fetch track metadata, err={}",
                  metadataRes.error());
 
-        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
         return;
       }
 
@@ -226,7 +226,7 @@ void DefaultFileProvider::taskLoop() {
                "{} {} is restricted in {} with no playable alternative",
                file->itemId.type == SpotifyIdType::Episode ? "Episode" : "Track",
                file->itemId.uri, countryCode);
-      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
       return;
     }
 
@@ -285,12 +285,12 @@ void DefaultFileProvider::taskLoop() {
         file->cdnUrl = episodeMeta->externalUrl;
         file->isExternalUrl = true;
         file->episodeMetadata = std::move(*episodeMeta);
-        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+        eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
         return;
       }
 
       file->isError = true;
-      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
       return;
     }
 
@@ -304,7 +304,7 @@ void DefaultFileProvider::taskLoop() {
       file->isError = true;
       BELL_LOG(error, LOG_TAG, "Could not request audio key, err={}",
                requestRes.error());
-      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
       return;
     }
 
@@ -314,7 +314,7 @@ void DefaultFileProvider::taskLoop() {
       file->isError = true;
       BELL_LOG(error, LOG_TAG, "Could not resolve cdn url, err={}",
                cdnUrlRes.error());
-      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
       return;
     }
 
@@ -347,7 +347,7 @@ void DefaultFileProvider::taskLoop() {
       file->isError = true;
       BELL_LOG(error, LOG_TAG, "Timed out waiting for audio key for track {}",
                file->itemId.uri);
-      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
       return;
     }
 
@@ -355,7 +355,7 @@ void DefaultFileProvider::taskLoop() {
       file->isError = true;
       BELL_LOG(error, LOG_TAG, "Audio key request denied for track {}",
                file->itemId.uri);
-      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+      eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
       return;
     }
 
@@ -372,7 +372,7 @@ void DefaultFileProvider::taskLoop() {
     BELL_LOG(info, LOG_TAG, "File ready for track {} (keyLen={})",
              file->itemId.uri, file->decryptionKey.size());
 
-    eventLoop->post(EventLoop::EventType::FILE_PROVIDED, *file);
+    eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
   }
 }
 
