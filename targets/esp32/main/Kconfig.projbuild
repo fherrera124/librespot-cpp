@@ -7,16 +7,17 @@ menu "CSPOT Configuration"
             Define the name of the cspot device (will be visible to the client).
 
     choice CSPOT_QUALITY
-        prompt "Audio Quality (BPS)"
+        prompt "Audio Quality (kbps)"
         default CSPOT_QUALITY_320
         help
-            Audio quality (not used currently)
+            Preferred Vorbis bitrate. Falls back to lower bitrates when
+            the selected quality is unavailable for a track.
         config CSPOT_QUALITY_320
-            bool "320 bps"
+            bool "320 kbps"
         config CSPOT_QUALITY_160
-            bool "160 bps"
+            bool "160 kbps"
         config CSPOT_QUALITY_96
-            bool "96 bps"
+            bool "96 kbps"
     endchoice
 
     config CSPOT_I2S_BCLK_GPIO

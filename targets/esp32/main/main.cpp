@@ -69,8 +69,16 @@ class CSpotTask : public bell::Task {
     auto audioSink = std::make_shared<cspot::AudioSinkI2S>(sinkConfig);
 
     cspot::AudioConfig audioConfig{
+#if defined(CONFIG_CSPOT_QUALITY_320)
+        .qualityPreference = {AudioFormat_OGG_VORBIS_320,
+                              AudioFormat_OGG_VORBIS_160,
+                              AudioFormat_OGG_VORBIS_96},
+#elif defined(CONFIG_CSPOT_QUALITY_160)
         .qualityPreference = {AudioFormat_OGG_VORBIS_160,
                               AudioFormat_OGG_VORBIS_96},
+#else
+        .qualityPreference = {AudioFormat_OGG_VORBIS_96},
+#endif
         .normalisationEnabled = kNormalisationEnabled,
     };
 
