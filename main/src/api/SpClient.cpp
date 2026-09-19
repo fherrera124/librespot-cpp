@@ -1,5 +1,6 @@
 #include "api/SpClient.h"
 
+#include <array>
 #include <iomanip>
 #include <memory>
 #include <sstream>
@@ -18,6 +19,21 @@
 using namespace cspot;
 
 namespace {
+// Consume discarded responses without retaining their bodies. Keep using the
+// HTTP reader so framing, truncation errors and connection reuse are preserved.
+bell::Result<> drainResponse(bell::HTTPResponse& response) {
+  std::array<std::byte, 512> scratch;
+  while (true) {
+    auto readRes = response.readBodyChunk(scratch.data(), scratch.size());
+    if (!readRes) {
+      return nonstd::make_unexpected(readRes.error());
+    }
+    if (*readRes == 0) {
+      return {};
+    }
+  }
+}
+
 class DefaultSpClient : public SpClient {
  public:
   DefaultSpClient(std::shared_ptr<bell::HTTPClient> httpClient,
@@ -142,7 +158,7 @@ bell::Result<> DefaultSpClient::putConnectStateRaw(
   // response's body has been fully read, success or error alike. Leaving
   // an error body unread means the next request on this same connection
   // reads that leftover body instead of its own response.
-  auto bodyRes = httpResponse->bytes();
+  auto bodyRes = drainResponse(*httpResponse);
   if (!bodyRes) {
     BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",
              bodyRes.error());
@@ -185,7 +201,7 @@ bell::Result<> DefaultSpClient::putInactive(const std::string& deviceId,
   // Drain unconditionally, before checking status - same pooled-connection
   // reuse hazard as putConnectState() above, and it applies on the error
   // path too, not just success.
-  auto bodyRes = httpResponse->bytes();
+  auto bodyRes = drainResponse(*httpResponse);
   if (!bodyRes) {
     BELL_LOG(error, LOG_TAG, "Error while draining response body: {}",
              bodyRes.error());
