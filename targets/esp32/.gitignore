@@ -1,6 +1,8 @@
 build/
+build.*/
 .vscode
 sdkconfig
 sdkconfig.old
+sdkconfig.*
+!sdkconfig.defaults
 managed_components/
-sdkconfig.defaults.local

@@ -1,16 +1,20 @@
 # ESP32 CSpot integration
 
-Integrates CSpot with esp32 platform. To configure WiFi SSID and password use idf.py menuconfig.
+CSpot requires an ESP32 board with PSRAM. It has been tested on the
+AI-Thinker ESP32 Audio Kit, ESP32-WROVER and LOLIN S2 Mini. Configure Wi-Fi
+credentials with `idf.py menuconfig` or an ignored `sdkconfig.defaults.local`.
 
+## LOLIN S2 Mini
 
-## Selecting your ESP32
+This profile targets the LOLIN S2 Mini with 4 MB flash, 2 MB PSRAM and a
+PCM5102A DAC connected to BCLK=10, WS=11 and DOUT=12. From this directory,
+with the ESP-IDF environment loaded, run:
 
-Cspot has been tested to be working on AI-Thinker ESP32 Audio kit board: https://www.aliexpress.com/wholesale?SearchText=esp32-a1s
+```sh
+idf.py -B build.lolin-s2 -DIDF_TARGET=esp32s2 \
+  -DSDKCONFIG=sdkconfig.lolin-s2 \
+  '-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;boards/lolin-s2-mini.defaults' build
+```
 
-If you want to use another board, notice that the typical ESP32 RAM size is 160-520kb, which is not enough to run CSpot.
-
-To run CSpot, select a ESP32 with PSRAM. ESP32-WROVER are confirmed to work.
-CSpot will not run on a ESP32-WROOM unless the board has external PSRAM.
-
-ref. https://products.espressif.com/#/product-selector
-
+The generated build directory and `sdkconfig.lolin-s2` are local files. Delete
+the latter when board defaults change and a fresh configuration is required.
