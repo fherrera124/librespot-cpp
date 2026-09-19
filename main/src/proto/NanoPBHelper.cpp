@@ -41,10 +41,11 @@ bool nanopb_helper::pbDecodeStringList(pb_istream_t* stream,
   auto& vec = *static_cast<std::vector<std::string>*>(*arg);
 
   std::string str;
-  bool result = pbDecodeString(stream, field, reinterpret_cast<void**>(&str));
+  void* stringPtr = &str;
+  bool result = pbDecodeString(stream, field, &stringPtr);
 
   if (result) {
-    vec.push_back(str);
+    vec.push_back(std::move(str));
   }
 
   return result;

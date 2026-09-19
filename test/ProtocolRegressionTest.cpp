@@ -133,3 +133,42 @@ TEST_CASE("Inactive PUT accepts an empty 204 response") {
   ClientFixture fixture(responseHeaders(204, 0));
   CHECK(fixture.client->putInactive("device", "session"));
 }
+
+TEST_CASE("Protobuf repeated strings preserve empty, long and binary values") {
+  cspot_proto::Suppressions input;
+  input.providers = {"test-provider", "", std::string(4096, 'x'),
+                     std::string("a\0b", 3), "last"};
+  std::vector<std::byte> encoded;
+  REQUIRE(nanopb_helper::encodeToVector(input, encoded));
+
+  cspot_proto::Suppressions output;
+  REQUIRE(nanopb_helper::decodeFromVector(output, encoded));
+  CHECK(output.providers == input.providers);
+}
+
+TEST_CASE("Protobuf repeated strings reject a truncated element") {
+  cspot_proto::Suppressions input;
+  input.providers = {"complete", std::string(64, 'x')};
+  std::vector<std::byte> encoded;
+  REQUIRE(nanopb_helper::encodeToVector(input, encoded));
+  encoded.pop_back();
+
+  cspot_proto::Suppressions output;
+  CHECK_FALSE(nanopb_helper::decodeFromVector(output, encoded));
+  REQUIRE(output.providers.size() == 1);
+  CHECK(output.providers.front() == "complete");
+}
+
+TEST_CASE("Protobuf repeated strings roundtrip inside a cluster update") {
+  cspot_proto::ClusterUpdate input{};
+  input.cluster.playerState.hasValue = true;
+  input.cluster.playerState.value.suppressions.providers = {"queue", "context"};
+  std::vector<std::byte> encoded;
+  REQUIRE(nanopb_helper::encodeToVector(input, encoded));
+
+  cspot_proto::ClusterUpdate output{};
+  REQUIRE(nanopb_helper::decodeFromVector(output, encoded));
+  REQUIRE(output.cluster.playerState.hasValue);
+  CHECK(output.cluster.playerState.value.suppressions.providers ==
+        input.cluster.playerState.value.suppressions.providers);
+}
