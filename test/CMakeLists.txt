@@ -26,3 +26,9 @@ target_compile_definitions(cspot-protocol-test PRIVATE DOCTEST_CONFIG_IMPLEMENT_
 target_compile_options(cspot-protocol-test PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
 target_link_libraries(cspot-protocol-test PRIVATE cspot doctest::doctest)
 doctest_discover_tests(cspot-protocol-test)
+
+add_executable(cspot-audio-task-test AudioMemoryTaskRegressionTest.cpp)
+target_compile_definitions(cspot-audio-task-test PRIVATE DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN)
+target_compile_options(cspot-audio-task-test PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
+target_link_libraries(cspot-audio-task-test PRIVATE cspot doctest::doctest)
+doctest_discover_tests(cspot-audio-task-test PROPERTIES TIMEOUT 30)

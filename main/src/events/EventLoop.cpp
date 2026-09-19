@@ -11,8 +11,11 @@ cspot::EventLoop::EventLoop() : bell::Task("cspot_event_loop", 32 * 1024) {
 }
 
 void EventLoop::taskLoop() {
-  // Process events with a timeout of 1000ms
-  processEvents(1000);
+  processEvents(0);
+}
+
+void EventLoop::wakeTask() {
+  eventSemaphore.give();
 }
 
 void EventLoop::processEvents(int timeoutMs) {

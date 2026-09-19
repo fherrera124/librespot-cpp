@@ -386,7 +386,12 @@ void StreamPlayer::announceState(bool isBuffering,
   playerStateAnnounceCallback(stateUpdate);
 }
 
+void StreamPlayer::wakeTask() {
+  queueUpdateSemaphore.give();
+}
+
 void StreamPlayer::taskLoop() {
+  bool shouldProcessPacket;
   {
     std::scoped_lock lock(playbackMutex);
     if (flushRequested) {
@@ -420,9 +425,10 @@ void StreamPlayer::taskLoop() {
         audioSink->flush();
       }
     }
+    shouldProcessPacket = isPlaying && audioDecoder->isOpen();
   }
 
-  if (isPlaying && audioDecoder->isOpen()) {
+  if (shouldProcessPacket) {
     // Outside playbackMutex: this can block on network/I2S, and holding
     // the lock would stall handleFlushEvent/handleQueueUpdate/
     // handlePlayEvent (EventLoop's own dispatch task).
@@ -448,7 +454,7 @@ void StreamPlayer::taskLoop() {
       eventLoop->post(EventLoop::EventType::TRACK_NEAR_END, std::monostate{});
     }
   } else {
-    queueUpdateSemaphore.take(100);
+    queueUpdateSemaphore.take();
   }
 }
 

@@ -82,6 +82,7 @@ class StreamPlayer : public bell::Task {
   std::unique_ptr<AudioDecoder> audioDecoder;
 
   void taskLoop() override;
+  void wakeTask() override;
 
   void registerHandlers();
   void handleQueueUpdate(const TrackQueueUpdate& queueUpdate);

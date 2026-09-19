@@ -88,6 +88,7 @@ class DefaultFileProvider : public FileProvider, bell::Task {
   std::optional<AudioKeyResponse> pendingAudioKeyResponse;
 
   void taskLoop() override;
+  void wakeTask() override;
 
   void handleAudioKeyResponse(const AudioKeyResponse& response);
 };
@@ -141,8 +142,16 @@ void DefaultFileProvider::cancel(const SpotifyId& trackId) {
   }
 }
 
+void DefaultFileProvider::wakeTask() {
+  providedFileSemaphore.give();
+  audioKeySemaphore.give();
+}
+
 void DefaultFileProvider::taskLoop() {
-  if (providedFileSemaphore.take(100)) {
+  if (providedFileSemaphore.take()) {
+    if (!taskRunning) {
+      return;
+    }
     std::optional<ProvidedFile> file = std::nullopt;
 
     {
@@ -298,6 +307,9 @@ void DefaultFileProvider::taskLoop() {
     // run concurrently. reset() clears any stale signal from an abandoned
     // previous wait.
     audioKeySemaphore.reset();
+    if (!taskRunning) {
+      return;
+    }
     auto requestRes =
         apClient->requestAudioKey(effectiveTrackId, selectedAudioFile->fileId);
     if (!requestRes) {
@@ -325,7 +337,7 @@ void DefaultFileProvider::taskLoop() {
     std::optional<AudioKeyResponse> audioKeyResponse;
     auto deadline = std::chrono::steady_clock::now() +
                     std::chrono::milliseconds(kAudioKeyTimeoutMs);
-    while (true) {
+    while (taskRunning) {
       auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                              deadline - std::chrono::steady_clock::now())
                              .count();
@@ -333,6 +345,9 @@ void DefaultFileProvider::taskLoop() {
       if (remainingMs <= 0 ||
           !audioKeySemaphore.take(static_cast<int>(remainingMs))) {
         break;  // timed out
+      }
+      if (!taskRunning) {
+        return;
       }
       std::scoped_lock lock(audioKeyMutex);
       if (pendingAudioKeyResponse &&
@@ -343,6 +358,9 @@ void DefaultFileProvider::taskLoop() {
       }
     }
 
+    if (!taskRunning) {
+      return;
+    }
     if (!audioKeyResponse) {
       file->isError = true;
       BELL_LOG(error, LOG_TAG, "Timed out waiting for audio key for track {}",

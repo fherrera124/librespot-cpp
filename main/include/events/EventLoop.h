@@ -112,5 +112,6 @@ class EventLoop : public bell::Task {
 
   // Bell task implementation
   void taskLoop() override;
+  void wakeTask() override;
 };
 }  // namespace cspot
