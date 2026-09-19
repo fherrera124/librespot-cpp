@@ -1212,10 +1212,10 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
     queueOffset -= offsetInQueue;  // Offset by one to not include current track
   }
 
-  size_t highestValidIndex = 0;
+  size_t validTrackCount = 0;
   for (size_t x = 0; x < nextTracksWindow.size(); x++) {
     if (x < queueOffset) {
-      highestValidIndex = x;
+      validTrackCount = x + 1;
       auto& queueTrack = queue[x + offsetInQueue];
       std::string resolvedUri = queueTrack.resolvedUri(contextIdType);
       if (nextTracksWindow[x].uri != resolvedUri) {
@@ -1259,13 +1259,14 @@ void DefaultTrackQueueHandler::updateTrackWindows(bool forceNotify) {
           nextTracksWindow[x].metadata.clear();
         }
 
-        highestValidIndex = x;
+        validTrackCount = x + 1;
       }
     }
   }
 
-  // Clear all tracks over highest valid index
-  for (size_t x = highestValidIndex + 1; x < nextTracksWindow.size(); x++) {
+  // With no upcoming tracks, clear slot zero too. An index initialized
+  // to zero cannot distinguish an empty window from one valid entry.
+  for (size_t x = validTrackCount; x < nextTracksWindow.size(); x++) {
     if (!nextTracksWindow[x].uri.empty()) {
       updated = true;
       nextTracksWindow[x] = {};
