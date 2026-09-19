@@ -144,8 +144,9 @@ class CDNDataStream : public bell::io::DataStream {
   // Raw original total size from server (may be non 16-aligned).
   size_t originalTotalSizeRaw = 0;
 
-  // Buffer to store the aligned fetched & decrypted data
-  std::vector<std::byte> lastReadChunk;
+  // Share immutable decrypted bytes with the cache. This reference also
+  // keeps the current block alive if the cache evicts it during prefetch.
+  std::shared_ptr<const std::vector<std::byte>> lastReadChunk;
   size_t bytesInLastReadChunk = 0;
 
   // Offset inside lastReadChunk where the next readable user-visible byte resides
@@ -176,7 +177,7 @@ class CDNDataStream : public bell::io::DataStream {
   // bookkeeping a synchronous fetch would have done. Returns false (never
   // touching any state) if the cached data's size doesn't match what the
   // plan expects, so the caller can fall back to a normal fetch.
-  bool adoptCachedChunk(const std::vector<std::byte>& data,
+  bool adoptCachedChunk(std::shared_ptr<const std::vector<std::byte>> data,
                        const RangeRequestPlan& plan);
 
   // After confirming chunk 'chunkIndex' (whether from cache or a fresh

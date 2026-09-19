@@ -53,6 +53,8 @@ bell::Result<> CDNDataStream::open(const std::string& cdnUrl,
   bytesInLastReadChunk = 0;
   chunkStartPosition = 0;
   currentPosition = 0;
+  lastReadChunk.reset();
+  bufferVisibleStart = bufferVisibleEnd = 0;
   resetPrefetchPhase();
 
   // Re-init (in case of reopen) - std::optional::emplace() destroys the
@@ -69,10 +71,6 @@ bell::Result<> CDNDataStream::open(const std::string& cdnUrl,
     BELL_LOG(error, LOG_TAG, "Failed to set AES key (prefetch cipher)");
     return bell::make_unexpected_errc<>(std::errc::bad_message);
   }
-
-  lastReadChunk.resize(chunkSize);
-  // Initialize reuse metadata
-  bufferVisibleStart = bufferVisibleEnd = 0;
 
   return {};
 }
@@ -156,6 +154,7 @@ bell::Result<> CDNDataStream::seek(size_t offset, SeekOrigin origin) {
   bytesInLastReadChunk = 0;
   chunkStartPosition = 0;
   currentPosition = targetPos;
+  lastReadChunk.reset();
   resetPrefetchPhase();
 
   return requestRange(currentPosition, chunkSize, SeekOrigin::Begin);
@@ -179,8 +178,8 @@ bell::Result<size_t> CDNDataStream::read(std::byte* outputBuffer,
 
     if (availableInChunk > 0) {
       size_t toCopy = std::min(toRead, availableInChunk);
-      std::copy(lastReadChunk.data() + chunkStartPosition,
-                lastReadChunk.data() + chunkStartPosition + toCopy,
+      std::copy(lastReadChunk->data() + chunkStartPosition,
+                lastReadChunk->data() + chunkStartPosition + toCopy,
                 outputBuffer + totalCopied);
 
       chunkStartPosition += toCopy;
@@ -227,8 +226,8 @@ bell::Result<std::vector<std::byte>> CDNDataStream::readRawHeaderBytes(
                          : 0;
   size_t toCopy = std::min(maxBytes, available);
   return std::vector<std::byte>(
-      lastReadChunk.begin() + chunkStartPosition,
-      lastReadChunk.begin() + chunkStartPosition + toCopy);
+      lastReadChunk->begin() + chunkStartPosition,
+      lastReadChunk->begin() + chunkStartPosition + toCopy);
 }
 
 void CDNDataStream::resetPrefetchPhase() {
@@ -251,13 +250,14 @@ std::optional<size_t> CDNDataStream::chunkIndexInPhase(
   return delta / chunkSize;
 }
 
-bool CDNDataStream::adoptCachedChunk(const std::vector<std::byte>& data,
-                                    const RangeRequestPlan& plan) {
-  if (data.size() != plan.requestSize) {
+bool CDNDataStream::adoptCachedChunk(
+    std::shared_ptr<const std::vector<std::byte>> data,
+    const RangeRequestPlan& plan) {
+  if (!data || data->size() != plan.requestSize) {
     return false;
   }
 
-  lastReadChunk = data;
+  lastReadChunk = std::move(data);
   chunkStartPosition = plan.skipPrefix;
   bytesInLastReadChunk = plan.requestSize - plan.skipSuffix;
   currentPosition = plan.desiredStart;
@@ -313,7 +313,7 @@ bool CDNDataStream::tryServeFromCache(size_t desiredStart, size_t desiredLen) {
 
   if (outcome == ChunkCache::ClaimOutcome::AlreadyReady) {
     if (auto cached = chunkCache->tryGet(*idx)) {
-      if (adoptCachedChunk(*cached, cachePlan)) {
+      if (adoptCachedChunk(std::move(cached), cachePlan)) {
         advancePrefetchWindow(*idx);
         return true;
       }
@@ -330,7 +330,7 @@ bool CDNDataStream::tryServeFromCache(size_t desiredStart, size_t desiredLen) {
     // round-trip.
     auto waitStart = std::chrono::steady_clock::now();
     if (auto data = chunkCache->waitFor(*idx, kInFlightWaitTimeoutMs)) {
-      if (adoptCachedChunk(*data, cachePlan)) {
+      if (adoptCachedChunk(std::move(data), cachePlan)) {
         BELL_LOG(debug, LOG_TAG,
                  "Waited {} ms for in-flight prefetch of chunk at offset "
                  "{} - avoided a duplicate fetch",
@@ -359,7 +359,7 @@ bool CDNDataStream::tryServeFromCache(size_t desiredStart, size_t desiredLen) {
     auto fetchRes = fetchDecryptAndPublishChunk(rangeFetcher, *aesCipher,
                                                *chunkCache, *cdnUrl, *idx,
                                                cachePlan);
-    if (fetchRes && adoptCachedChunk(*fetchRes->data, cachePlan)) {
+    if (fetchRes && adoptCachedChunk(std::move(fetchRes->data), cachePlan)) {
       // Same bookkeeping requestRange()'s general path does - needed here
       // too since this may be the stream's very first fetch (nothing
       // prefetched yet), so no earlier fetch is guaranteed to have set it.
@@ -440,7 +440,7 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
 
   size_t startVal = fetchRes->contentRangeStart;
   size_t totalRaw = fetchRes->contentRangeTotal;
-  lastReadChunk = std::move(fetchRes->data);
+  auto& data = fetchRes->data;
 
   // Update total size info
   originalTotalSizeRaw = totalRaw;
@@ -459,6 +459,7 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
     // We requested 'bytes=-provisionalAlignedTail', actual startVal may be 0 or (totalRaw - provisionalAlignedTail)
     // Need to ensure we have enough prefix for alignment
     if (startVal > plan.requestStart) {
+      std::vector<std::byte>().swap(data);
       // Not enough prefix fetched; re-issue with the now-known-correct
       // explicit aligned range (requestRange's own non-tail branch builds
       // the right Range header from plan.desiredStart/desiredLength).
@@ -473,16 +474,16 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
 
   // The server may have returned fewer bytes than the aligned range we
   // asked for (short read/early EOF) - indexing past what actually came
-  // back would be an out-of-bounds access on lastReadChunk.
-  if (alignedOffsetInBuffer + plan.requestSize > lastReadChunk.size()) {
+  // back would be an out-of-bounds access on the fetched data.
+  if (alignedOffsetInBuffer + plan.requestSize > data.size()) {
     BELL_LOG(error, LOG_TAG,
              "Short range response: got {} bytes, needed {} from offset {}",
-             lastReadChunk.size(), plan.requestSize, alignedOffsetInBuffer);
+             data.size(), plan.requestSize, alignedOffsetInBuffer);
     return bell::make_unexpected_errc<>(std::errc::io_error);
   }
 
   auto decryptRes =
-      aesCipher->decrypt(lastReadChunk.data() + alignedOffsetInBuffer,
+      aesCipher->decrypt(data.data() + alignedOffsetInBuffer,
                          plan.requestSize, plan.requestStart);
   if (!decryptRes) {
     BELL_LOG(error, LOG_TAG, "Failed to decrypt data: {}",
@@ -490,6 +491,9 @@ bell::Result<> CDNDataStream::requestRange(size_t offset, size_t length,
     return decryptRes;
   }
 
+  // Only expose a new block after validation and decryption succeed.
+  lastReadChunk =
+      std::make_shared<const std::vector<std::byte>>(std::move(data));
   chunkStartPosition = alignedOffsetInBuffer + plan.skipPrefix;
   bytesInLastReadChunk =
       alignedOffsetInBuffer + plan.requestSize - plan.skipSuffix;
