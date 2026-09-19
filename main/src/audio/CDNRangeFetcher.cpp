@@ -1,6 +1,7 @@
 #include "audio/CDNRangeFetcher.h"
 
 #include <new>
+#include <limits>
 
 #include "bell/Logger.h"
 #include "bell/http/Common.h"
@@ -30,6 +31,16 @@ bell::Result<RangeFetchResult> CDNRangeFetcher::fetch(
     // the failure with the range and their own context (chunk index,
     // elapsed time) once fetch() returns the propagated error.
     return nonstd::make_unexpected(response.error());
+  }
+
+  // A range response must have a usable length before allocating or
+  // dereferencing the optional. HTTP errors can have arbitrary bodies.
+  if (response->statusCode != 206 || !response->contentLength ||
+      *response->contentLength == 0 ||
+      *response->contentLength >
+          static_cast<size_t>(std::numeric_limits<std::streamsize>::max()) ||
+      *response->contentLength > std::vector<std::byte>().max_size()) {
+    return bell::make_unexpected_errc<RangeFetchResult>(std::errc::bad_message);
   }
 
   auto* stream = response->stream();
