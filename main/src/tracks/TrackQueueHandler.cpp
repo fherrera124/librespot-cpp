@@ -58,6 +58,10 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
       std::optional<uint32_t> currentTrackIndex,
       const std::vector<cspot_proto::ContextPage>& embeddedPages) override;
 
+  std::unique_ptr<TrackQueueHandler> createContextLoader() const override {
+    return createDefaultTrackQueueHandler(spClient, eventLoop);
+  }
+
   void setQueue(const std::vector<cspot_proto::ContextTrack>& queue) override;
 
   void setPlayingQueue(bool isPlayingQueue) override;

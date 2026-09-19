@@ -274,23 +274,30 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
   auto& command = payload.at("command");
   std::string endpoint = command.at("endpoint").get_string();
 
-  // Single critical section for the whole dispatch, not just the two
-  // fields below - every specific handler assumes putStateMutex is
-  // already held (see each xxxLocked()'s own declaration comment) rather
-  // than taking it itself, so this is the one place responsible for that
-  // for the player-command path (advanceToNextTrackLocked()'s other
-  // caller, the TRACK_ENDED handler, takes it independently).
-  std::scoped_lock lock(putStateMutex);
-  putStateRequestProto.lastCommandMessageId =
-      payload.at("message_id").get_unsigned();
-  putStateRequestProto.lastCommandSentByDeviceId =
-      payload.at("sent_by_device_id").get_string();
+  // Handlers own the state lock, except while preparing an independent
+  // context. The generation prevents that work from replacing newer state.
+  std::unique_lock lock(putStateMutex);
+  const auto generation = ++commandGeneration;
+  const auto messageId = payload.at("message_id").get_unsigned();
+  const auto sender = payload.at("sent_by_device_id").get_string();
+  // A context load may release the lock. Do not acknowledge it in PUTs
+  // describing the previous track, or overwrite a newer command's ack.
+  if (endpoint == "transfer" || endpoint == "play") {
+    auto result = endpoint == "transfer"
+        ? handleTransferCommandLocked(command.as<std::string_view>("data"),
+                                       command["options"], lock)
+        : handlePlayCommandLocked(command, lock);
+    if (result && generation == commandGeneration) {
+      putStateRequestProto.lastCommandMessageId = messageId;
+      putStateRequestProto.lastCommandSentByDeviceId = sender;
+      putStateRequestProto.device.playerState.playOrigin.deviceIdentifier = sender;
+    }
+    return result;
+  }
+  putStateRequestProto.lastCommandMessageId = messageId;
+  putStateRequestProto.lastCommandSentByDeviceId = sender;
 
-  if (endpoint == "transfer") {
-    BELL_LOG(info, LOG_TAG, "Received transfer command");
-    std::string_view payloadDataStr = command.as<std::string_view>("data");
-    return handleTransferCommandLocked(payloadDataStr, command["options"]);
-  } else if (endpoint == "skip_next") {
+  if (endpoint == "skip_next") {
     BELL_LOG(info, LOG_TAG, "Received skip_next command");
     return handleSkipNextCommandLocked(command);
   } else if (endpoint == "skip_prev") {
@@ -302,9 +309,6 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
   } else if (endpoint == "resume") {
     BELL_LOG(info, LOG_TAG, "Received resume command");
     return handlePauseCommandLocked(false);
-  } else if (endpoint == "play") {
-    BELL_LOG(info, LOG_TAG, "Received play command");
-    return handlePlayCommandLocked(command);
   } else if (endpoint == "seek_to") {
     BELL_LOG(info, LOG_TAG, "Received seek_to command");
     return handleSeekCommandLocked(command);
@@ -346,11 +350,13 @@ bell::Result<> ConnectStateHandler::handlePlayerCommand(
 
 bool ConnectStateHandler::requestPlayPause(bool play) {
   std::scoped_lock lock(putStateMutex);
+  ++commandGeneration;
   return bool(handlePauseCommandLocked(!play));
 }
 
 bool ConnectStateHandler::requestNext() {
   std::scoped_lock lock(putStateMutex);
+  ++commandGeneration;
   // No JSON to parse for a local button press - go straight to the
   // non-JSON half, same as requestSeek() bypasses handleSeekCommandLocked()
   // in favor of applySeekLocked().
@@ -359,16 +365,19 @@ bool ConnectStateHandler::requestNext() {
 
 bool ConnectStateHandler::requestPrevious() {
   std::scoped_lock lock(putStateMutex);
+  ++commandGeneration;
   return bool(handleSkipPrevCommandLocked());
 }
 
 bool ConnectStateHandler::requestSeek(uint32_t positionMs) {
   std::scoped_lock lock(putStateMutex);
+  ++commandGeneration;
   return bool(applySeekLocked(static_cast<int64_t>(positionMs)));
 }
 
 bool ConnectStateHandler::requestSetRepeatContext(bool enabled) {
   std::scoped_lock lock(putStateMutex);
+  ++commandGeneration;
   return bool(applyRepeatContextLocked(enabled));
 }
 
@@ -458,7 +467,6 @@ bool ConnectStateHandler::prepareAndEncodeLocked(
 
 void ConnectStateHandler::runTask() {
   std::scoped_lock runningLock(taskRunningMutex);
-  taskRunning = true;
 
   std::unique_lock<std::mutex> lock(putStateMutex);
   while (taskRunning) {
@@ -570,6 +578,7 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
            clusterUpdate.cluster.activeDeviceId);
 
   putStateRequestProto.isActive = false;
+  ++commandGeneration;
   eventLoop->post(EventLoop::EventType::PLAYER_PLAY, PlayPauseCommand{false});
 
   {
@@ -610,6 +619,10 @@ bell::Result<> ConnectStateHandler::handleClusterUpdate(
 }
 
 bell::Result<> ConnectStateHandler::putInactive() {
+  {
+    std::scoped_lock lock(putStateMutex);
+    ++commandGeneration;
+  }
   return spClient->putInactive(authInfo->deviceId, authInfo->sessionId);
 }
 
@@ -647,8 +660,40 @@ bell::Result<> ConnectStateHandler::handleSetVolume(
   return {};
 }
 
+bell::Result<> ConnectStateHandler::loadContextUnlocked(
+    std::unique_lock<std::mutex>& lock, const std::string& uri,
+    std::optional<std::string> trackUri, std::optional<std::string> trackUid,
+    std::optional<uint32_t> trackIndex,
+    const std::vector<cspot_proto::ContextPage>& pages) {
+  const auto generation = commandGeneration;
+  const bool shuffled = putStateRequestProto.device.playerState.options.shufflingContext;
+  auto prepared = trackQueueHandler->createContextLoader();
+  lock.unlock();
+  bell::Result<> result;
+  try {
+    result = prepared->loadContext(uri, trackUri, trackUid, trackIndex, pages);
+    if (result && shuffled) result = prepared->enableShuffle(true);
+    if (result) {
+      // currentTrack() can fetch continuation pages; do that before the
+      // state lock is reacquired as well.
+      (void)prepared->currentTrack();
+    }
+  } catch (...) {
+    lock.lock();
+    throw;
+  }
+  lock.lock();
+  if (generation != commandGeneration || !taskRunning) {
+    return bell::make_unexpected_errc(std::errc::operation_canceled);
+  }
+  if (!result) return result;
+  trackQueueHandler = std::move(prepared);
+  return {};
+}
+
 bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
-    std::string_view payloadDataStr, const tao::json::value& options) {
+    std::string_view payloadDataStr, const tao::json::value& options,
+    std::unique_lock<std::mutex>& lock) {
   auto decodedDataRes = base64Decode(payloadDataStr);
   if (!decodedDataRes) {
     BELL_LOG(error, LOG_TAG, "Failed to base64 decode transfer state");
@@ -664,6 +709,18 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   }
 
   BELL_LOG(info, LOG_TAG, "Transfer state decoded successfully");
+
+  const bool haveContext = !transferState.current_session.context.uri.empty();
+  if (haveContext) {
+    const auto type = SpotifyId::getTypeFromContext(
+        transferState.current_session.context.uri);
+    auto result = loadContextUnlocked(
+        lock, transferState.current_session.context.uri,
+        transferState.playback.currentTrack.resolvedUri(type),
+        transferState.current_session.currentUid, std::nullopt,
+        transferState.current_session.context.pages);
+    if (!result) return result;
+  }
 
   consecutiveUnplayableSkips = 0;
 
@@ -726,15 +783,9 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
   putStateRequestProto.startedPlayingAt = nowMs;
   currentTrackStartedAtMs = nowMs;
 
-  // Clears any context left over from an earlier transfer in this same
-  // session before deciding what this one actually needs - haveContext's
-  // own loadContext() call below re-populates it from scratch anyway, so
-  // this only changes behavior for the other three branches, which
-  // otherwise left a stale contextPages/contextIndex silently readable
-  // by currentTrack()/currentContextIndex().
-  // TODO: not yet confirmed whether a real transfer sequence actually hits
-  // this - revisit if it turns out not to be needed.
-  trackQueueHandler->clearContext();
+  // Context transfers already installed a prepared queue. Other transfers
+  // must remove the previous context before selecting their manual queue.
+  if (!haveContext) trackQueueHandler->clearContext();
 
   nextManualQueueId = 0;
   for (auto& track : transferState.queue.tracks) {
@@ -743,34 +794,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     }
   }
 
-  bool haveContext = !transferState.current_session.context.uri.empty();
-
   if (haveContext) {
-    SpotifyIdType trackType = SpotifyId::getTypeFromContext(
-        transferState.current_session.context.uri);
-    std::string currentTrackUri =
-        transferState.playback.currentTrack.resolvedUri(trackType);
-
-    // context.uri/currentUid are needed to resolve "the current track"
-    // before anything else here can use it.
-    //
-    // This network fetch runs with putStateMutex still held (by the
-    // caller) rather than released around it, so a half-updated transfer
-    // never gets flushed - but it blocks every other lock-taker for its
-    // duration: onPlayerStateUpdate() (audio thread, synchronous),
-    // runTask() (only delays its own flush, not a deadlock), and all six
-    // request*() local-control entry points, two of which (requestNext(),
-    // requestPrevious()) can independently reach the network the same way
-    // via TrackQueueHandler::ensureEnoughTracks().
-    auto loadRes = trackQueueHandler->loadContext(
-        transferState.current_session.context.uri, currentTrackUri,
-        transferState.current_session.currentUid, std::nullopt,
-        transferState.current_session.context.pages);
-    if (!loadRes) {
-      BELL_LOG(error, LOG_TAG, "Failed to load context: {}", loadRes.error());
-      return nonstd::make_unexpected(loadRes.error());
-    }
-
     // Only when there's an actual queue to restore - avoids clobbering
     // any pre-existing queue state with an empty one.
     if (!transferState.queue.tracks.empty()) {
@@ -828,7 +852,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
 }
 
 bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
-    const tao::json::value& command) {
+    const tao::json::value& command, std::unique_lock<std::mutex>& lock) {
   const tao::json::value& context = command.at("context");
   const tao::json::value& options = command.at("options");
   // skip_to isn't present on every play command (e.g. a plain "resume my
@@ -868,22 +892,16 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
-  consecutiveUnplayableSkips = 0;
-
-  // A bare "play" (no preceding transfer) is just as much "this device
-  // is now active" as a transfer is - without this, isActive stayed
-  // false even while genuinely playing audio.
-  putStateRequestProto.isActive = true;
-  putStateRequestProto.device.playerState.sessionId = generateSessionId();
-
-  // See handleTransferCommandLocked()'s own comment on this same network
-  // fetch running with putStateMutex still held.
-  auto loadRes = trackQueueHandler->loadContext(
-      *contextUri, skipToUri, skipToUid, skipToTrackIndex,
+  auto loadRes = loadContextUnlocked(
+      lock, *contextUri, skipToUri, skipToUid, skipToTrackIndex,
       parseEmbeddedContextPages(context));
   if (!loadRes) {
     return nonstd::make_unexpected(loadRes.error());
   }
+
+  consecutiveUnplayableSkips = 0;
+  putStateRequestProto.isActive = true;
+  putStateRequestProto.device.playerState.sessionId = generateSessionId();
 
   trackQueueHandler->updateTrackWindows();
 

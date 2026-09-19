@@ -22,6 +22,10 @@ class TrackQueueHandler {
  public:
   virtual ~TrackQueueHandler() = default;
 
+  // Independent context preparation using the same dependencies. Loading
+  // this instance must not mutate the active queue or publish events.
+  virtual std::unique_ptr<TrackQueueHandler> createContextLoader() const = 0;
+
   // embeddedPages: seeds the context from pages/tracks a play/transfer
   // command already carried, skipping a fetch. Left empty, fetches as
   // usual.

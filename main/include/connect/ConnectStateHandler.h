@@ -131,6 +131,16 @@ class ConnectStateHandler : public bell::Task {
   // number, incremented before every PUT (prepareAndEncodeLocked()).
   uint32_t nextMessageId = 0;
 
+  // State lock protects this generation. New commands cancel a pending
+  // context load; audio progress and scheduled PUTs do not.
+  uint64_t commandGeneration = 0;
+
+  bell::Result<> loadContextUnlocked(
+      std::unique_lock<std::mutex>& lock, const std::string& uri,
+      std::optional<std::string> trackUri, std::optional<std::string> trackUid,
+      std::optional<uint32_t> trackIndex,
+      const std::vector<cspot_proto::ContextPage>& pages);
+
   // Counts consecutive TRACK_UNPLAYABLE signals with no successful load in
   // between
   int consecutiveUnplayableSkips = 0;
@@ -168,7 +178,10 @@ class ConnectStateHandler : public bell::Task {
   // wakes runTask()'s otherwise-unbounded wait() so shutdown doesn't
   // depend on a pending PUT's own due time or a next notify_one() from
   // putStateLocked().
-  void wakeTask() override { putStateCv.notify_all(); }
+  void wakeTask() override {
+    std::scoped_lock lock(putStateMutex);
+    putStateCv.notify_all();
+  }
 
   void initialize();
 
@@ -190,13 +203,15 @@ class ConnectStateHandler : public bell::Task {
   // Assumes putStateMutex is ALREADY held by the caller.
   void announcePlaybackFlagsLocked(bool isPaused, bool isBuffering);
 
-  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand(),
-  // its sole dispatcher) - matches putStateLocked()'s own naming/contract.
+  // Entered and returned with the state lock held. Context preparation
+  // releases it temporarily; the shared state is committed only on success.
   bell::Result<> handleTransferCommandLocked(std::string_view payloadDataStr,
-                                             const tao::json::value& options);
+                                             const tao::json::value& options,
+                                             std::unique_lock<std::mutex>& lock);
 
-  // Assumes putStateMutex is ALREADY held by the caller (handlePlayerCommand()).
-  bell::Result<> handlePlayCommandLocked(const tao::json::value& options);
+  // Same lock/preparation contract as handleTransferCommandLocked().
+  bell::Result<> handlePlayCommandLocked(const tao::json::value& options,
+                                         std::unique_lock<std::mutex>& lock);
 
   // Assumes putStateMutex is ALREADY held by the caller
   // (handlePlayerCommand()). The JSON half: pulls an optional "track"

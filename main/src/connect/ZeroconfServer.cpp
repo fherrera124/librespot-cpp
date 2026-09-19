@@ -84,12 +84,14 @@ std::unique_ptr<bell::mdns::Advertiser> ZeroconfServer::start(uint16_t port) {
         cspot::logHeapStatus("Zeroconf", "POST /spotify_handler exit");
       });
 
+  cspot::logHeapStatus("Zeroconf", "before HTTP server start");
   auto listenRes = httpServer->listen(port);
   if (!listenRes) {
     BELL_LOG(error, "Zeroconf",
              "HTTP server failed to listen on port {}: {} - device won't be "
              "reachable even if mDNS discovery works",
              port, listenRes.error());
+    return nullptr;
   }
 
   auto service = bell::mdns::getDefaultManager()->advertise(

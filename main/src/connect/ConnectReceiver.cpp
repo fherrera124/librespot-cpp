@@ -3,6 +3,7 @@
 #include <atomic>
 #include <utility>
 
+#include "Utils.h"
 #include "bell/Logger.h"
 #include "bell/http/Server.h"
 #include "bell/utils/Semaphore.h"
@@ -26,7 +27,10 @@ void ConnectReceiver::run() {
   sessionStore.load(*authInfo);
   authInfo->logDeviceIdOrigin();
 
-  auto httpServer = std::make_shared<bell::http::Server>();
+  // Zeroconf handlers process requests in memory and wake this receiver;
+  // sessionStore's flash I/O stays on the receiver's internal-RAM stack.
+  auto httpServer = std::make_shared<bell::http::Server>(
+      /*maxConnections=*/5, /*espStackOnPsram=*/true);
   bell::Semaphore authSemaphore;
   std::atomic<bool> needsSessionRestart{false};
 
@@ -77,9 +81,11 @@ void ConnectReceiver::run() {
     // pointer's old value is released, leaving two Sessions briefly alive
     // at once - both driving the same shared config.audioSink.
     session.reset();
+    cspot::logHeapStatus("ConnectReceiver", "before session construction");
     session = std::make_shared<cspot::Session>(
         authInfo, config.audioSink, config.playbackNotificationCallback,
         config.audioConfig);
+    cspot::logHeapStatus("ConnectReceiver", "after session construction");
     {
       std::scoped_lock lock(activeSessionMutex);
       activeSession = session;

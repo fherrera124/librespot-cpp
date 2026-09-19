@@ -31,3 +31,7 @@ add_executable(cspot-audio-task-test main.cpp AudioMemoryTaskRegressionTest.cpp 
 target_compile_options(cspot-audio-task-test PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
 target_link_libraries(cspot-audio-task-test PRIVATE cspot doctest::doctest)
 doctest_discover_tests(cspot-audio-task-test PROPERTIES TIMEOUT 30)
+
+add_executable(cspot-context-test main.cpp ContextLoadRegressionTest.cpp)
+target_link_libraries(cspot-context-test PRIVATE cspot doctest::doctest)
+doctest_discover_tests(cspot-context-test PROPERTIES TIMEOUT 30)
