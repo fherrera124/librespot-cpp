@@ -144,6 +144,7 @@ class ConnectStateHandler : public bell::Task {
   // Counts consecutive TRACK_UNPLAYABLE signals with no successful load in
   // between
   int consecutiveUnplayableSkips = 0;
+  std::string unplayableStreakStartUid;
 
   // Synthetic uid counter for add_to_queue tracks that arrive without one.
   // Reset in handleTransferCommandLocked() from the transferred queue's

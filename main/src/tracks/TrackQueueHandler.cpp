@@ -342,7 +342,7 @@ bell::Result<> DefaultTrackQueueHandler::loadContext(
     }
 
     // Find page that does not have track ids
-    if (!page.entries.empty()) {
+    if (!page.entries.empty() || !page.url) {
       continue;
     }
 

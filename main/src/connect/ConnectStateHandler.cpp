@@ -719,7 +719,13 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
         transferState.playback.currentTrack.resolvedUri(type),
         transferState.current_session.currentUid, std::nullopt,
         transferState.current_session.context.pages);
-    if (!result) return result;
+    if (!result) {
+      if (result.error() == std::errc::no_such_file_or_directory) {
+        BELL_LOG(warn, LOG_TAG, "Transfer context is empty, accepting transfer anyway");
+      } else {
+        return result;
+      }
+    }
   }
 
   consecutiveUnplayableSkips = 0;
@@ -896,7 +902,11 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
       lock, *contextUri, skipToUri, skipToUid, skipToTrackIndex,
       parseEmbeddedContextPages(context));
   if (!loadRes) {
-    return nonstd::make_unexpected(loadRes.error());
+    if (loadRes.error() == std::errc::no_such_file_or_directory) {
+      BELL_LOG(warn, LOG_TAG, "Play context is empty, accepting play/transfer anyway");
+    } else {
+      return nonstd::make_unexpected(loadRes.error());
+    }
   }
 
   consecutiveUnplayableSkips = 0;
@@ -1097,24 +1107,37 @@ void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
 
   std::scoped_lock lock(putStateMutex);
 
+  auto giveUp = [this]() {
+    auto& playerState = putStateRequestProto.device.playerState;
+    playerState.isPaused = true;
+    playerState.isBuffering = false;
+    playerState.playbackSpeed = computePlaybackSpeed(
+        playerState.isPaused, playerState.isBuffering);
+    eventLoop->post(EventLoop::EventType::PLAYER_PLAY, PlayPauseCommand{false});
+    (void)putStateLocked();
+  };
+
   if (trigger == AdvanceTrigger::TrackUnplayable) {
+    if (consecutiveUnplayableSkips == 0) {
+      if (auto track = trackQueueHandler->currentTrack()) {
+        unplayableStreakStartUid = track->uid;
+      } else {
+        unplayableStreakStartUid.clear();
+      }
+    }
+
     if (++consecutiveUnplayableSkips > kMaxConsecutiveUnplayableSkips) {
       BELL_LOG(error, LOG_TAG,
                "Giving up after {} consecutive unplayable tracks",
                consecutiveUnplayableSkips - 1);
-      auto& playerState = putStateRequestProto.device.playerState;
-      playerState.isPaused = true;
-      playerState.isBuffering = false;
-      playerState.playbackSpeed = computePlaybackSpeed(
-          playerState.isPaused, playerState.isBuffering);
-      eventLoop->post(EventLoop::EventType::PLAYER_PLAY, PlayPauseCommand{false});
-      (void)putStateLocked();
+      giveUp();
       return;
     }
   } else {
     // Natural end of track proves the one that just finished WAS playable -
     // breaks any prior unplayable streak.
     consecutiveUnplayableSkips = 0;
+    unplayableStreakStartUid.clear();
   }
 
   auto res = advanceToNextTrackLocked(trigger);
@@ -1123,6 +1146,13 @@ void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
              trigger == AdvanceTrigger::TrackUnplayable ? "became unplayable"
                                                          : "ended",
              res.error());
+  } else if (trigger == AdvanceTrigger::TrackUnplayable) {
+    if (auto track = trackQueueHandler->currentTrack()) {
+      if (!track->uid.empty() && track->uid == unplayableStreakStartUid) {
+        BELL_LOG(error, LOG_TAG, "Wrapped around to the start of the unplayable streak (uid={}). Giving up.", track->uid);
+        giveUp();
+      }
+    }
   }
 }
 
