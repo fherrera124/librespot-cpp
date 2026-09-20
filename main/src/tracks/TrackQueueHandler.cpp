@@ -111,6 +111,9 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   struct FetchedContextPage {
     std::optional<std::string> url{};
     std::vector<ContextPageEntry> entries{};
+    // Set once its url has been fetched, so a page that really holds no
+    // tracks stops looking like one that has not been fetched yet.
+    bool fetched = false;
 
     bool operator==(const FetchedContextPage& other) const {
       if (url != other.url || entries.size() != other.entries.size()) {
@@ -180,11 +183,15 @@ class DefaultTrackQueueHandler : public TrackQueueHandler {
   void seedContextFromEmbeddedPages(
       const std::vector<cspot_proto::ContextPage>& pages);
 
-  std::optional<cspot_proto::ContextIndex> getOffsetIndex(int32_t offset) const;
+  // pageNotLoaded, when given, tells a nullopt caused by a page that is
+  // fetchable but not fetched yet from a genuine end of context.
+  std::optional<cspot_proto::ContextIndex> getOffsetIndex(
+      int32_t offset, bool* pageNotLoaded = nullptr) const;
 
   // Moves the cursor by `offset`, keeping shufflePos in sync when
-  // shuffled. Returns false (no-op) if offset runs past either end.
-  bool advanceContextBy(int32_t offset);
+  // shuffled. Returns false (no-op) if offset runs past either end, or
+  // reaches a page that is not loaded yet.
+  bool advanceContextBy(int32_t offset, bool* pageNotLoaded = nullptr);
 
   // Resets the cursor to the start of the sequence: shuffleOrder[0]
   // when shuffled, physical {0,0} otherwise.
@@ -486,7 +493,8 @@ bell::Result<> DefaultTrackQueueHandler::ensureEnoughTracks() {
   // Iterate over next pages until we have enough tracks or run out of pages
   while (contextPages.size() > (nextPageIndex) &&
          (nextTracksCount < trackFetchThreshold)) {
-    if (!contextPages[nextPageIndex].entries.empty()) {
+    if (!contextPages[nextPageIndex].entries.empty() ||
+        contextPages[nextPageIndex].fetched) {
       nextTracksCount += contextPages[nextPageIndex].entries.size();
       nextPageIndex++;
       continue;
@@ -613,7 +621,12 @@ bell::Result<> DefaultTrackQueueHandler::fetchContextPage(
     return nonstd::make_unexpected(res.error());
   }
 
-  return feedResponseToParser(*res);
+  auto feedRes = feedResponseToParser(*res);
+  // By index: parsing can resize contextPages, invalidating `page`.
+  if (feedRes && idx < contextPages.size()) {
+    contextPages[idx].fetched = true;
+  }
+  return feedRes;
 }
 
 bell::Result<> DefaultTrackQueueHandler::feedResponseToParser(
@@ -862,8 +875,18 @@ bell::Result<TrackAdvanceResult> DefaultTrackQueueHandler::skipToNextTrack(
       BELL_LOG(error, LOG_TAG, "Could not ensure tracks, err={}", res.error());
     }
 
-    if (advanceContextBy(1)) {
+    bool pageNotLoaded = false;
+    if (advanceContextBy(1, &pageNotLoaded)) {
       return TrackAdvanceResult::Advanced;
+    }
+
+    if (pageNotLoaded) {
+      // Not the end of the context, just a page ensureEnoughTracks() could
+      // not fetch. Wrapping here would restart the context instead.
+      BELL_LOG(error, LOG_TAG,
+               "Cannot advance: the next context page is not loaded");
+      return bell::make_unexpected_errc<TrackAdvanceResult>(
+          std::errc::resource_unavailable_try_again);
     }
 
     // End of context - wrap the cursor back to the start regardless;
@@ -954,9 +977,15 @@ bell::Result<> DefaultTrackQueueHandler::skipToPreviousTrack(
     return {};
   }
 
-  if (!advanceContextBy(-1)) {
-    BELL_LOG(debug, LOG_TAG,
-             "At beggining of context, cannot skip to prev track");
+  bool pageNotLoaded = false;
+  if (!advanceContextBy(-1, &pageNotLoaded)) {
+    if (pageNotLoaded) {
+      BELL_LOG(error, LOG_TAG,
+               "Cannot go back: the previous context page is not loaded");
+    } else {
+      BELL_LOG(debug, LOG_TAG,
+               "At beggining of context, cannot skip to prev track");
+    }
   }
 
   return {};
@@ -972,7 +1001,8 @@ bell::Result<> DefaultTrackQueueHandler::fetchAllContextPages() {
   // contextPages mid-loop, invalidating cached iterators.
   size_t pageIndex = 0;
   while (pageIndex < contextPages.size()) {
-    if (contextPages[pageIndex].entries.empty()) {
+    if (contextPages[pageIndex].entries.empty() &&
+        !contextPages[pageIndex].fetched) {
       auto res = fetchContextPage(contextPages[pageIndex]);
       if (!res) {
         BELL_LOG(error, LOG_TAG,
@@ -1051,8 +1081,9 @@ bell::Result<> DefaultTrackQueueHandler::enableShuffle(bool shuffle) {
   return {};
 }
 
-bool DefaultTrackQueueHandler::advanceContextBy(int32_t offset) {
-  auto next = getOffsetIndex(offset);
+bool DefaultTrackQueueHandler::advanceContextBy(int32_t offset,
+                                               bool* pageNotLoaded) {
+  auto next = getOffsetIndex(offset, pageNotLoaded);
   if (!next) {
     return false;
   }
@@ -1100,7 +1131,8 @@ void DefaultTrackQueueHandler::syncShufflePosToContextIndex() {
 }
 
 std::optional<cspot_proto::ContextIndex>
-DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
+DefaultTrackQueueHandler::getOffsetIndex(int32_t offset,
+                                        bool* pageNotLoaded) const {
   if (!contextIndex) {
     return std::nullopt;
   }
@@ -1136,6 +1168,16 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
       }
       page -= 1;
 
+      if (contextPages[page].entries.empty() && contextPages[page].url &&
+          !contextPages[page].fetched) {
+        // Its real length is unknown, so counting it as zero would land on
+        // the wrong track.
+        if (pageNotLoaded) {
+          *pageNotLoaded = true;
+        }
+        return std::nullopt;
+      }
+
       auto pageSize = static_cast<uint32_t>(contextPages[page].entries.size());
       if (remaining <= pageSize) {
         return cspot_proto::ContextIndex{page, pageSize - remaining};
@@ -1155,16 +1197,22 @@ DefaultTrackQueueHandler::getOffsetIndex(int32_t offset) const {
         static_cast<int32_t>(contextPages[contextIndex->page].entries.size());
 
     while (contextPages.size() > contextIndex->page + skipByPages) {
-      if (remainingOffset <
-          static_cast<int32_t>(contextPages[contextIndex->page + skipByPages]
-                                   .entries.size())) {
+      auto& page = contextPages[contextIndex->page + skipByPages];
+      if (page.entries.empty() && page.url && !page.fetched) {
+        // Its real length is unknown, so counting it as zero would skip
+        // past it onto the wrong track.
+        if (pageNotLoaded) {
+          *pageNotLoaded = true;
+        }
+        return std::nullopt;
+      }
+      if (remainingOffset < static_cast<int32_t>(page.entries.size())) {
         return cspot_proto::ContextIndex{
             static_cast<uint32_t>(contextIndex->page + skipByPages),
             static_cast<uint32_t>(remainingOffset),
         };
       }
-      remainingOffset -= static_cast<int32_t>(
-          contextPages[contextIndex->page + skipByPages].entries.size());
+      remainingOffset -= static_cast<int32_t>(page.entries.size());
       skipByPages++;
     }
     return std::nullopt;  // No next page available
