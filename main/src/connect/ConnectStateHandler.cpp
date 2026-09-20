@@ -1119,12 +1119,16 @@ void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
 
   std::scoped_lock lock(putStateMutex);
 
+  // Clears the streak too, so a later next/play gets a full budget again.
   auto giveUp = [this]() {
     auto& playerState = putStateRequestProto.device.playerState;
     playerState.isPaused = true;
     playerState.isBuffering = false;
     playerState.playbackSpeed = computePlaybackSpeed(
         playerState.isPaused, playerState.isBuffering);
+    consecutiveUnplayableSkips = 0;
+    unplayableStreakStartUid.clear();
+    unplayableStreakStartUri.clear();
     eventLoop->post(EventLoop::EventType::PLAYER_PLAY, PlayPauseCommand{false});
     (void)putStateLocked();
   };
@@ -1133,8 +1137,10 @@ void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
     if (consecutiveUnplayableSkips == 0) {
       if (auto track = trackQueueHandler->currentTrack()) {
         unplayableStreakStartUid = track->uid;
+        unplayableStreakStartUri = track->uri;
       } else {
         unplayableStreakStartUid.clear();
+        unplayableStreakStartUri.clear();
       }
     }
 
@@ -1150,6 +1156,7 @@ void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
     // breaks any prior unplayable streak.
     consecutiveUnplayableSkips = 0;
     unplayableStreakStartUid.clear();
+    unplayableStreakStartUri.clear();
   }
 
   auto res = advanceToNextTrackLocked(trigger);
@@ -1160,8 +1167,16 @@ void ConnectStateHandler::handleTrackAdvanceSignal(AdvanceTrigger trigger) {
              res.error());
   } else if (trigger == AdvanceTrigger::TrackUnplayable) {
     if (auto track = trackQueueHandler->currentTrack()) {
-      if (!track->uid.empty() && track->uid == unplayableStreakStartUid) {
-        BELL_LOG(error, LOG_TAG, "Wrapped around to the start of the unplayable streak (uid={}). Giving up.", track->uid);
+      // Both halves: uid-less queue entries all report "q0", and a
+      // context track repeated later shares its uri.
+      bool haveStart = !unplayableStreakStartUid.empty() ||
+                       !unplayableStreakStartUri.empty();
+      if (haveStart && track->uid == unplayableStreakStartUid &&
+          track->uri == unplayableStreakStartUri) {
+        BELL_LOG(error, LOG_TAG,
+                 "Wrapped around to where the unplayable streak started "
+                 "(uid={}, uri={}) - giving up",
+                 track->uid, track->uri);
         giveUp();
       }
     }
