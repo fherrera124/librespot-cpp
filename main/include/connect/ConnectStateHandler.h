@@ -135,11 +135,13 @@ class ConnectStateHandler : public bell::Task {
   // context load; audio progress and scheduled PUTs do not.
   uint64_t commandGeneration = 0;
 
+  // shuffled: the ordering the command asks for, applied while the lock is
+  // released. Commits options.shufflingContext to match what it achieved.
   bell::Result<> loadContextUnlocked(
       std::unique_lock<std::mutex>& lock, const std::string& uri,
       std::optional<std::string> trackUri, std::optional<std::string> trackUid,
       std::optional<uint32_t> trackIndex,
-      const std::vector<cspot_proto::ContextPage>& pages);
+      const std::vector<cspot_proto::ContextPage>& pages, bool shuffled);
 
   // Counts consecutive TRACK_UNPLAYABLE signals with no successful load in
   // between

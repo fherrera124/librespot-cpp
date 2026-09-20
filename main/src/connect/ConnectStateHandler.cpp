@@ -664,15 +664,24 @@ bell::Result<> ConnectStateHandler::loadContextUnlocked(
     std::unique_lock<std::mutex>& lock, const std::string& uri,
     std::optional<std::string> trackUri, std::optional<std::string> trackUid,
     std::optional<uint32_t> trackIndex,
-    const std::vector<cspot_proto::ContextPage>& pages) {
+    const std::vector<cspot_proto::ContextPage>& pages, bool shuffled) {
   const auto generation = commandGeneration;
-  const bool shuffled = putStateRequestProto.device.playerState.options.shufflingContext;
   auto prepared = trackQueueHandler->createContextLoader();
   lock.unlock();
   bell::Result<> result;
+  bool shuffleApplied = false;
   try {
     result = prepared->loadContext(uri, trackUri, trackUid, trackIndex, pages);
-    if (result && shuffled) result = prepared->enableShuffle(true);
+    if (result && shuffled) {
+      // Fetches every remaining context page, so it belongs out here. A
+      // failure (an oversized context) costs the shuffle, not the command.
+      auto shuffleRes = prepared->enableShuffle(true);
+      shuffleApplied = bool(shuffleRes);
+      if (!shuffleRes) {
+        BELL_LOG(error, LOG_TAG, "Could not shuffle the loaded context: {}",
+                 shuffleRes.error());
+      }
+    }
     if (result) {
       // currentTrack() can fetch continuation pages; do that before the
       // state lock is reacquired as well.
@@ -688,6 +697,10 @@ bell::Result<> ConnectStateHandler::loadContextUnlocked(
   }
   if (!result) return result;
   trackQueueHandler = std::move(prepared);
+  // The order the queue actually ended up in, which is not always the one
+  // that was asked for.
+  putStateRequestProto.device.playerState.options.shufflingContext =
+      shuffleApplied;
   return {};
 }
 
@@ -718,7 +731,8 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
         lock, transferState.current_session.context.uri,
         transferState.playback.currentTrack.resolvedUri(type),
         transferState.current_session.currentUid, std::nullopt,
-        transferState.current_session.context.pages);
+        transferState.current_session.context.pages,
+        transferState.options.shufflingContext);
     if (!result) {
       if (result.error() != std::errc::no_such_file_or_directory) {
         return result;
@@ -841,9 +855,14 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
     trackQueueHandler->setPlayingQueue(false);
   }
 
-  applyPlayerOptionsLocked(transferState.options.repeatingContext,
-                           transferState.options.repeatingTrack,
-                           transferState.options.shufflingContext);
+  // With a context, loadContextUnlocked() already ordered the queue. Without
+  // one nothing is loaded, and this is what records the setting.
+  applyPlayerOptionsLocked(
+      transferState.options.repeatingContext,
+      transferState.options.repeatingTrack,
+      haveContext
+          ? std::nullopt
+          : std::optional<bool>(transferState.options.shufflingContext));
 
   trackQueueHandler->updateTrackWindows();
   refreshTrackAndIndexLocked();
@@ -903,9 +922,17 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
   }
 
   bool haveContext = true;
+  // An override decides the ordering as the context loads; without one the
+  // current setting carries over.
+  bool wantShuffle =
+      putStateRequestProto.device.playerState.options.shufflingContext;
+  if (overrideJson) {
+    wantShuffle =
+        overrideJson->optional<bool>("shuffling_context").value_or(wantShuffle);
+  }
   auto loadRes = loadContextUnlocked(
       lock, *contextUri, skipToUri, skipToUid, skipToTrackIndex,
-      parseEmbeddedContextPages(context));
+      parseEmbeddedContextPages(context), wantShuffle);
   if (!loadRes) {
     if (loadRes.error() != std::errc::no_such_file_or_directory) {
       return nonstd::make_unexpected(loadRes.error());
@@ -935,9 +962,12 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
                               /*isBuffering=*/haveContext);
 
   if (overrideJson) {
-    applyPlayerOptionsLocked(overrideJson->optional<bool>("repeating_context"),
-                             overrideJson->optional<bool>("repeating_track"),
-                             overrideJson->optional<bool>("shuffling_context"));
+    // Same split as handleTransferCommandLocked().
+    applyPlayerOptionsLocked(
+        overrideJson->optional<bool>("repeating_context"),
+        overrideJson->optional<bool>("repeating_track"),
+        haveContext ? std::nullopt
+                    : overrideJson->optional<bool>("shuffling_context"));
   }
 
   refreshTrackAndIndexLocked();
