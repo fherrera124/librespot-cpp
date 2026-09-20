@@ -710,7 +710,7 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
 
   BELL_LOG(info, LOG_TAG, "Transfer state decoded successfully");
 
-  const bool haveContext = !transferState.current_session.context.uri.empty();
+  bool haveContext = !transferState.current_session.context.uri.empty();
   if (haveContext) {
     const auto type = SpotifyId::getTypeFromContext(
         transferState.current_session.context.uri);
@@ -720,11 +720,15 @@ bell::Result<> ConnectStateHandler::handleTransferCommandLocked(
         transferState.current_session.currentUid, std::nullopt,
         transferState.current_session.context.pages);
     if (!result) {
-      if (result.error() == std::errc::no_such_file_or_directory) {
-        BELL_LOG(warn, LOG_TAG, "Transfer context is empty, accepting transfer anyway");
-      } else {
+      if (result.error() != std::errc::no_such_file_or_directory) {
         return result;
       }
+      // loadContext() failed, so trackQueueHandler still holds the
+      // previous context - the context-less branches below clear it.
+      BELL_LOG(warn, LOG_TAG,
+               "Transfer context {} has no tracks - becoming active without it",
+               transferState.current_session.context.uri);
+      haveContext = false;
     }
   }
 
@@ -898,15 +902,22 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
     return bell::make_unexpected_errc(std::errc::bad_message);
   }
 
+  bool haveContext = true;
   auto loadRes = loadContextUnlocked(
       lock, *contextUri, skipToUri, skipToUid, skipToTrackIndex,
       parseEmbeddedContextPages(context));
   if (!loadRes) {
-    if (loadRes.error() == std::errc::no_such_file_or_directory) {
-      BELL_LOG(warn, LOG_TAG, "Play context is empty, accepting play/transfer anyway");
-    } else {
+    if (loadRes.error() != std::errc::no_such_file_or_directory) {
       return nonstd::make_unexpected(loadRes.error());
     }
+    // loadContext() left the previous context in place; resuming it would
+    // play that one under the new uri.
+    BELL_LOG(warn, LOG_TAG, "Play context {} has no tracks - becoming active without it",
+             *contextUri);
+    haveContext = false;
+    trackQueueHandler->clearContext();
+    trackQueueHandler->setQueue({});
+    trackQueueHandler->setPlayingQueue(false);
   }
 
   consecutiveUnplayableSkips = 0;
@@ -917,10 +928,11 @@ bell::Result<> ConnectStateHandler::handlePlayCommandLocked(
 
   eventLoop->post(EventLoop::EventType::PLAYER_FLUSH, std::monostate{});
   eventLoop->post(EventLoop::EventType::PLAYER_PLAY,
-                  PlayPauseCommand{!initiallyPaused});
+                  PlayPauseCommand{haveContext && !initiallyPaused});
 
   auto& playerState = putStateRequestProto.device.playerState;
-  announcePlaybackFlagsLocked(initiallyPaused, /*isBuffering=*/true);
+  announcePlaybackFlagsLocked(!haveContext || initiallyPaused,
+                              /*isBuffering=*/haveContext);
 
   if (overrideJson) {
     applyPlayerOptionsLocked(overrideJson->optional<bool>("repeating_context"),
