@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "run_id": "20260924-legacy-controls",
+  "status": "historical",
+  "summary": "Evidencia anterior y fixtures; negativos y controles con alcance limitado.",
+  "artifacts": [
+    {
+      "path": "research/playplay/data/cache-probe-candidates-148-2026-09-24.json",
+      "sha256": "596f4b48d3c7ca4bba24f0ad7c7d286abfb625393f615659806fb55fd854ef16",
+      "bytes": 236,
+      "role": "fixture"
+    },
+    {
+      "path": "research/playplay/data/cache-probe-captured-context-148-2026-09-24.json",
+      "sha256": "f2404795ad5fbcfb13cbf3f3338bc940c576704c31d2b68ca3745d9161898b8f",
+      "bytes": 145,
+      "role": "fixture"
+    },
+    {
+      "path": "research/playplay/data/ground-truth-vectors.json",
+      "sha256": "9c11d188e4443f4f42de8296230da5327eb329db68da151fc48a1b8dd91f9791",
+      "bytes": 3613,
+      "role": "fixture"
+    },
+    {
+      "path": "research/playplay/data/key-pipeline-controls-148-2026-09-24.json",
+      "sha256": "754ac9df825ab31930c7d46923ea68f6e9da3e456b3cd0f926cfaeafd91ead72",
+      "bytes": 4677,
+      "role": "fixture"
+    },
+    {
+      "path": "research/playplay/data/wrapped-key-controls-148-2026-09-24.json",
+      "sha256": "9518156bb58822dc52623eb0abb360887fbdee41b89c3dd264f6303ee1879617",
+      "bytes": 622,
+      "role": "fixture"
+    },
+    {
+      "path": "research/playplay/docs/cache-probe-148-2026-09-24.json",
+      "sha256": "51a0098b5bc7bf2c2ebc7a0159fd283c939788ae05d483acfdc722151677c65b",
+      "bytes": 560,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/cache-probe-context-148-2026-09-24.json",
+      "sha256": "1ff55a57f915708ff824fc6ebff023158d426b77499d326a8e3c9e090af475e8",
+      "bytes": 540,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/copy-anchor-148-2026-09-24.json",
+      "sha256": "6d99d564a6b63e18f58ff099ed8c5aa07bed75550fa6f4456b834dcdadd685d8",
+      "bytes": 308,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/key-pipeline-148-2026-09-24.json",
+      "sha256": "848e294b8621c08b7b0ebaa79f684cd9554d6ff6dfd3a439922a7ec5a0f11df0",
+      "bytes": 9555,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/key-pipeline-148-2026-09-24.log",
+      "sha256": "def0717ece85a9b571586779b37d965837baf8040a4cdaf91d6dd319dbd82f0d",
+      "bytes": 7586,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/key-pipeline-blocks-148-2026-09-24.json",
+      "sha256": "c542a0ff70368a822ba4fc4048bc2995becdf95a951ff5dd5a12f89fd4f26d59",
+      "bytes": 15054,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/key-pipeline-blocks-148-2026-09-24.log",
+      "sha256": "72da3720248afc97ecf06084918462d8c9a90b1a109b8a7b3e712d2247b993b3",
+      "bytes": 11733,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/lan-validation-148-2026-09-24.json",
+      "sha256": "79f8d8d8174985e3c9a202fd306d90598e10762978cc8b1802fb88ca5d486cf5",
+      "bytes": 622,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/lan-validation-2026-09-24.json",
+      "sha256": "13eb3402da06918a791f79f40a05c4b2aba3f06086a9646eb378e405690d9f61",
+      "bytes": 584,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/natural-stream-148-2026-09-24-retry.json",
+      "sha256": "3d276b35eaaa82349e9fb2b85950bd9fd278077459c810d6a370fe46a1929932",
+      "bytes": 2695,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/natural-stream-148-2026-09-24-retry.log",
+      "sha256": "135e0424cefcab3a5723b4d690cb77b88d44a7b4e4ebdd8842b6c029f781a7c7",
+      "bytes": 2054,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/natural-stream-148-2026-09-24.json",
+      "sha256": "b565f31af4738a1f3a688efc7b296b98f8372f7b9750306c556ad102398aa68e",
+      "bytes": 725,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/natural-stream-148-2026-09-24.log",
+      "sha256": "e973264f7a2e5d31f7e6c2a5fa786a274c4945b910a246ce9711c7dba3466488",
+      "bytes": 159,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/playplay-consumer-148-2026-09-24-retry.json",
+      "sha256": "9a2c85cbe80b1a86ef7767dfd93e3e49cbeb218bb38b34c0fdbebdfe9b7bcbf4",
+      "bytes": 1332,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/playplay-consumer-148-2026-09-24-retry.log",
+      "sha256": "09701fe340963f0b123d7c7d7cc90f11d06533e0bf0bbcc1494d9b2c9ecc79fa",
+      "bytes": 710,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/playplay-consumer-148-2026-09-24.log",
+      "sha256": "df8c47d3328e99283ccd4068c4e32285d234766d5af3fd6a64e5a829206c5db0",
+      "bytes": 1183,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/playplay-context-148-2026-09-24-retry.json",
+      "sha256": "442f11cb8adbe07e68e14b1f4ef3551d2a4fedd526bf5b008d97de724bc1faea",
+      "bytes": 1334,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/playplay-context-148-2026-09-24-retry.log",
+      "sha256": "66686c1b4880b615fc258bbe20fea5dddf2025ac7bdf14b3a3583200cefb44e7",
+      "bytes": 711,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/playplay-context-148-2026-09-24.json",
+      "sha256": "86ee13ba85c1dae6ef8789b422cbd04b67713291a192eebe6fc2f0fcb8dd38d3",
+      "bytes": 940,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/playplay-context-148-2026-09-24.log",
+      "sha256": "c6cd839ebd701298ffa9d7b2c285a717b4c2842ae3a979724ce6c4de9527bf86",
+      "bytes": 323,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/server148-2026-09-24.log",
+      "sha256": "325fcee776880e64284f9bd4b4c0105c9a8f2ef653a7bceb6e794eb4f1cf525e",
+      "bytes": 721,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/vm-consumers-148-2026-09-24.json",
+      "sha256": "3fb5e1c3e79b121e9cfe24fa93eddb9fc9d19cc597667498eb52ec81cf176457",
+      "bytes": 1070,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/vm-consumers-148-2026-09-24.log",
+      "sha256": "9b374e77b4ca1999c171c1ea169bceaac42b9fa87119cc4741fa57aea66c4f21",
+      "bytes": 408,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/vm-copy-all-sizes-148-2026-09-24.json",
+      "sha256": "b6d8366eca8722b4fafad6ccb0f2ecf3d11cf9547171b28b3f452ad2dbdd25d7",
+      "bytes": 3518416,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/vm-copy-all-sizes-148-2026-09-24.log",
+      "sha256": "c16ecf70ad1c45cad93d476fd10cf54e4282bffc847fc46caa26ca8b7bc14a32",
+      "bytes": 3117,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/vm-copy-trace-148-2026-09-24.json",
+      "sha256": "9bb3e51201b9929e1989769d9c2d20f199b6111fe6bd3e88be5d64cd3fe19f30",
+      "bytes": 8155,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/vm-copy-trace-148-2026-09-24.log",
+      "sha256": "80a3c7cbeb5e9c8bd9d35c99106b4dd7a7e4945c2481111b7d2a645c19cadc58",
+      "bytes": 2732,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/vm-copy-trace-worker-148-2026-09-24.json",
+      "sha256": "2c644506f6dbcf01755edef273e9b33892bdeaaf6130fc9046cdca115a013fce",
+      "bytes": 77270,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/vm-copy-trace-worker-148-2026-09-24.log",
+      "sha256": "9e89b5b137fa6252e5d30a0bcf4e59fd9ea4a561da437a133b46e7d15f79afaa",
+      "bytes": 2757,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/vm-inline-validation-148-2026-09-24.json",
+      "sha256": "9e01e722d5add321bd53c22393e15f80fbc186c862ce2024bcdf42221e1bc284",
+      "bytes": 1088,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/vm-inline-validation-148-2026-09-24.log",
+      "sha256": "1d250d32d988625e4471d14a135a85e4d9d74b83bb46dd6d637332cc0b767a17",
+      "bytes": 675,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/vm-prewrap-validation-148-2026-09-24.json",
+      "sha256": "5ec7ee1db2036217b24d608acfc2d1ec3dea6180e8934aa9a09c335edf2e64a2",
+      "bytes": 7175,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/vm-prewrap-validation-148-2026-09-24.log",
+      "sha256": "2f458476c8991e918a4474c3d0320d1c54753b09eaf9211760a8f3f3fd3b04c4",
+      "bytes": 5665,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/vm-propagate-assessment-148-2026-09-24.json",
+      "sha256": "f118611e3e7e4e1c13e91a7bc4c56f95a6388271cf728d7b38b463806258d30d",
+      "bytes": 5727,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/vm-propagate-validation-148-2026-09-24.json",
+      "sha256": "8ace66719b100a9e95b2ed53b6a6ec442edaae4cc829a66b245fde025650ceb0",
+      "bytes": 5745,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/vm-propagate-validation-148-2026-09-24.log",
+      "sha256": "2b229ac5fa0bfaee6dabdc5c95c65c33516575f82f2bc077c569eadf930e2158",
+      "bytes": 4514,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/windows-preflight-2026-09-24.json",
+      "sha256": "2c5f04ab4d9e2f29470f2b6caa0ba3325e721c6c9096b1b996709e1da001f8c7",
+      "bytes": 937,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/wrapped-keystream-148-2026-09-24.json",
+      "sha256": "be90b10f059672d3ebe88607f76a81790b6c0c7ff344416157d3a724639d6bac",
+      "bytes": 1663,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/wrapped-keystream-148-2026-09-24.log",
+      "sha256": "f5cda2e8655afa5750c2aacf407d58ea6f247e9912339b613e36dd53076a1a59",
+      "bytes": 962,
+      "role": "log"
+    }
+  ]
+}

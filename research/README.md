@@ -1,27 +1,21 @@
-# Investigación de audio keys para cspot
+# Investigación de cspot
 
-## Estado vigente (2026-09-24)
+| Área | Estado y entrada |
+|---|---|
+| PlayPlay | Investigación activa: [README](playplay/README.md), [STATUS](playplay/STATUS.md) |
+| Binarios | [dlls](dlls/); builds/hashes en [FACTS](playplay/docs/FACTS.md) |
+| Acceso Windows | [SSH documentado](acceso-ssh-pc-windows.md); PID/hash se verifican cada sesión |
+| eSDK/partner | [Antecedentes](esdk-emulation/README.md); vía cerrada para el objetivo actual |
+| research/tools | [Copias antiguas](tools/README.md); preferir el catálogo PlayPlay |
+| playplay-lan-deobfuscator | [Entrada histórica](playplay-lan-deobfuscator/GEMINI.md), sin implementación activa |
 
-La vía activa es [PlayPlay](playplay/README.md): el request E/v5 está documentado
-con HTTP 200 en hardware. Se ejecuta la VM dentro de Spotify Windows 1.2.92.148
-y se reprodujo un bloque de descifrado natural, pero **la extracción AES y el
-E2E PlayPlay todavía no están validados**. Empezar por ese README y su PLAN.
+Para agentes: [reglas comunes](../AGENTS.md) y [reglas PlayPlay](playplay/AGENTS.md).
+Los resultados experimentales vigentes se resumen exclusivamente en STATUS,
+con enlaces a evidencia. No repetir aquí otra cronología ni otro checklist.
 
-Los binarios están en [dlls/](dlls/); scripts e informes de esta sesión en
-[playplay/tools/](playplay/tools/README.md) y [playplay/docs/](playplay/docs/WINDOWS_WORK_SUMMARY.md).
-`playplay-lan-deobfuscator/` conserva instrucciones históricas, no la implementación.
-`tools/` contiene copias antiguas: revisar rutas antes de reutilizarlas.
-La carpeta tiene archivos staged y no debe tratarse como material automáticamente
-ignorado por Git.
+La vía eSDK quedó como antecedente: la indicación de reproducción del teléfono
+no acreditaba audio en la cuenta afectada. Los controles posteriores y sus límites
+están en su README. No retomar búsquedas de credenciales partner como siguiente paso.
 
-## Vía partner/eSDK — investigación previa cerrada para este objetivo
-
-La observación inicial de que el Sangean reproducía la cuenta afectada fue
-corregida: el teléfono mostraba reproducción, pero no salía audio. Las pruebas
-posteriores con el mismo eSDK/harness y cuentas distintas documentan audio para
-la cuenta habilitada y silencio para la afectada. No se continúa buscando una
-credencial partner como solución de cspot.
-
-El [README del eSDK](esdk-emulation/README.md) conserva harness, resultados y
-condiciones de ejecución. Son antecedentes; no se repitieron en esta sesión.
-Acceso remoto documentado en [acceso-ssh-pc-windows.md](acceso-ssh-pc-windows.md).
+Conservar cambios ajenos y el índice Git. `research/` no está automáticamente
+ignorado; comprobar el estado real antes de stagear o publicar material.

@@ -1,0 +1,282 @@
+{
+  "schema_version": 1,
+  "resources": [
+    {
+      "id": "current-state",
+      "status": "current",
+      "summary": "Estado, siguiente experimento e instrucciones comunes.",
+      "paths": [
+        "research/playplay/README.md",
+        "research/playplay/AGENTS.md",
+        "research/playplay/STATUS.md",
+        "research/playplay/PLAN.md",
+        "research/playplay/task.md"
+      ],
+      "environment": "documentation",
+      "notes": ""
+    },
+    {
+      "id": "workspace-check",
+      "status": "offline-verified",
+      "summary": "Verificar catalogo, enlaces y hashes sin ejecutar recursos.",
+      "paths": [
+        "research/playplay/tools/check_workspace.py",
+        "research/playplay/tools/test_check_workspace.py"
+      ],
+      "environment": "Python 3.10+ stdlib",
+      "notes": ""
+    },
+    {
+      "id": "token148-control",
+      "status": "content-verified",
+      "summary": "Repetir stream positivo token148; no es extractor AES16.",
+      "paths": [
+        "research/playplay/tools/check_fresh_license_148.js",
+        "research/playplay/tools/validate_windows_vm.py",
+        "research/playplay/data/token148-content-controls-20260924T164814Z.json",
+        "research/playplay/data/ground-truth-vectors.json",
+        "research/playplay/docs/TOKEN148_ONESHOT_2026-09-24.md"
+      ],
+      "environment": "Windows148 + Frida + psutil",
+      "notes": "Runner inyecta AES conocidas. Preflight obligatorio; salida2 del resumen generico no evalua estos eventos."
+    },
+    {
+      "id": "token148-request",
+      "status": "request-verified",
+      "summary": "Solicitar una licencia y opcionalmente prefijo CDN localmente.",
+      "paths": [
+        "research/playplay/tools/probe_token148_once.py"
+      ],
+      "environment": "Linux + requests + cryptography",
+      "notes": "Requiere sesion local. No copiar credenciales a Windows; escrituras exclusivas."
+    },
+    {
+      "id": "token148-offline-verification",
+      "status": "content-verified",
+      "summary": "Verificar stream, contenido Vorbis y CRC desde evidencia guardada.",
+      "paths": [
+        "research/playplay/tools/verify_token148_content.py",
+        "research/playplay/docs/token148-content-verification-20260924T164814Z.json"
+      ],
+      "environment": "Python + cryptography; sin red",
+      "notes": "Ver comando en CATALOG.md; usar informe nuevo."
+    },
+    {
+      "id": "known-reference-inputs",
+      "status": "fixture",
+      "summary": "Claves conocidas y entradas historicas; solo verificacion, no inyectar en capturador limpio.",
+      "paths": [
+        "research/playplay/data/ground-truth-vectors.json",
+        "research/playplay/data/key-pipeline-controls-148-2026-09-24.json",
+        "research/playplay/data/token148-fresh-controls-20260924T164814Z.json"
+      ],
+      "environment": "offline",
+      "notes": ""
+    },
+    {
+      "id": "baseline-e",
+      "status": "historical-control",
+      "summary": "Repetir control de ejecucion anterior de token E; no demuestra AES16.",
+      "paths": [
+        "research/playplay/tools/check_key_pipeline_148.js",
+        "research/playplay/tools/check_wrapped_keystream_148.js",
+        "research/playplay/tools/extract_vm_key_148.js",
+        "research/playplay/docs/VALIDATION_148_2026-09-24.md"
+      ],
+      "environment": "Windows148 + Frida",
+      "notes": "Negativos E no invalidan token148; referencias inyectadas."
+    },
+    {
+      "id": "native-tracing",
+      "status": "diagnostic",
+      "summary": "Capturar contexto, copias y bloques naturales; revisar contratos.",
+      "paths": [
+        "research/playplay/tools/capture_native_stream_148.js",
+        "research/playplay/tools/capture_playplay_context_148.js",
+        "research/playplay/tools/trace_key_consumers_148.js",
+        "research/playplay/tools/trace_playplay_consumer_148.js",
+        "research/playplay/tools/trace_vm_copies_148.js",
+        "research/playplay/tools/search_vm_aes_copies_148.js",
+        "research/playplay/tools/advance_spotify_track.js"
+      ],
+      "environment": "Windows148 + Frida",
+      "notes": "Eventos naturales necesitan reproduccion local Windows; algunos ensayos fueron inconclusos."
+    },
+    {
+      "id": "build-and-abi",
+      "status": "reference",
+      "summary": "Build/hash, RVAs y contratos antes de instrumentar.",
+      "paths": [
+        "research/playplay/docs/FACTS.md",
+        "research/playplay/docs/PLAYPLAY_ARCHITECTURE_NOTES.md",
+        "research/playplay/docs/RVA_DISCOVERY_PLAYBOOK.md",
+        "research/playplay/tools/find_copy_anchor.py",
+        "research/dlls",
+        "research/acceso-ssh-pc-windows.md"
+      ],
+      "environment": "documentation / offline binarios",
+      "notes": "No cargar DLLs ni usar PID historico para orientarse."
+    },
+    {
+      "id": "token-capture-external",
+      "status": "historical-capture",
+      "summary": "Captura externa agrupada, origen del token148; runners aun necesitan revision de PID.",
+      "paths": [
+        "research/playplay/tools/token_capture_148/README.md",
+        "research/playplay/docs/external/extraction_kPlayPlayToken_148.md",
+        "research/playplay/tools/token_capture_148/hook_wsasend.js",
+        "research/playplay/tools/token_capture_148/run_scan_loop.py",
+        "research/playplay/tools/token_capture_148/run_scan_proto2.py",
+        "research/playplay/tools/token_capture_148/run_wsasend.py",
+        "research/playplay/tools/token_capture_148/scan_playplay_loop.js",
+        "research/playplay/tools/token_capture_148/scan_proto2.js"
+      ],
+      "environment": "Windows + Frida + psutil",
+      "notes": "Python resuelve JS por __file__. No ejecutados en reorganizacion; adjuntan varios procesos."
+    },
+    {
+      "id": "lan-prototypes",
+      "status": "out-of-scope",
+      "summary": "Prototipos HTTP historicos y validador; servicio fuera del alcance actual.",
+      "paths": [
+        "research/playplay/resources/flask_frida_server_final.py",
+        "research/playplay/tools/validate_lan_service.py",
+        "research/playplay/tools/test_validate_lan_service.py",
+        "research/playplay/resources/mitm_setup_notes.md"
+      ],
+      "environment": "historical Windows/Linux",
+      "notes": "No desplegar: antiguo servidor dio HTTP500 y no extrae AES validada."
+    },
+    {
+      "id": "research-history",
+      "status": "historical",
+      "summary": "Decision log, antecedentes y argumentos corregidos.",
+      "paths": [
+        "research/playplay/docs/DECISIONS_148.md",
+        "research/playplay/docs/WINDOWS_WORK_SUMMARY.md",
+        "research/playplay/docs/BACKGROUND.md",
+        "research/playplay/docs/history/2026-09-24-aes256-hypothesis.md",
+        "research/playplay/docs/history/2026-09-24-checklist-before-tree.md",
+        "research/playplay/archive",
+        "research/playplay/resources/linux_local_scripts"
+      ],
+      "environment": "documentation",
+      "notes": "Historia no reemplaza STATUS ni autoriza experimentos."
+    },
+    {
+      "id": "legacy-duplicates",
+      "status": "historical",
+      "summary": "Copias anteriores fuera del directorio operativo. No borrar ni fusionar por nombre.",
+      "paths": [
+        "research/tools/README.md",
+        "research/tools"
+      ],
+      "environment": "historical",
+      "notes": ""
+    },
+    {
+      "id": "agent-workflow",
+      "status": "current",
+      "summary": "Asignacion de modelos, contexto minimo, escritor y operador unicos.",
+      "paths": [
+        "docs/AGENT_WORKFLOW.md",
+        ".codex/agents/project_inventory.toml",
+        ".codex/agents/project_worker.toml",
+        ".codex/agents/playplay_reviewer.toml",
+        "research/playplay/templates/EXPERIMENT.md",
+        "research/playplay/runs/README.md"
+      ],
+      "environment": "documentation/configuration",
+      "notes": "Perfiles TOML preparados; carga efectiva depende del cliente. Modelo efectivo debe registrarse."
+    },
+    {
+      "id": "legacy-toolbox",
+      "status": "historical-review-required",
+      "summary": "Herramientas restantes de analisis, emulacion y cache; paths/ABI no se presumen vigentes.",
+      "paths": [
+        "research/playplay/tools/analyze_calls_148.py",
+        "research/playplay/tools/analyze_calls_148_full.py",
+        "research/playplay/tools/disasm.py",
+        "research/playplay/tools/disasm_485.py",
+        "research/playplay/tools/dump_ctx.py",
+        "research/playplay/tools/dump_trigger.py",
+        "research/playplay/tools/exports.py",
+        "research/playplay/tools/extract_dll.py",
+        "research/playplay/tools/extract_patterns.py",
+        "research/playplay/tools/find_667.py",
+        "research/playplay/tools/find_context.py",
+        "research/playplay/tools/find_cxx.py",
+        "research/playplay/tools/find_hooks.py",
+        "research/playplay/tools/find_hooks_148.py",
+        "research/playplay/tools/find_hooks_667.py",
+        "research/playplay/tools/find_refs.py",
+        "research/playplay/tools/find_rip.py",
+        "research/playplay/tools/find_rip_667.py",
+        "research/playplay/tools/groundtruth.py",
+        "research/playplay/tools/pad_dll.py",
+        "research/playplay/tools/patch_485_test.py",
+        "research/playplay/tools/patch_sec.py",
+        "research/playplay/tools/pe_info.txt",
+        "research/playplay/tools/probe_cached_audio.py",
+        "research/playplay/tools/probe_tokenF.py",
+        "research/playplay/tools/run_vm_483.py",
+        "research/playplay/tools/run_vm_485.py",
+        "research/playplay/tools/sweep_versions.py",
+        "research/playplay/tools/test_483.ps1",
+        "research/playplay/tools/test_apiset.ps1",
+        "research/playplay/tools/test_arch.ps1",
+        "research/playplay/tools/test_derived.py",
+        "research/playplay/tools/test_dll.cpp",
+        "research/playplay/tools/test_dummy_ctx.py",
+        "research/playplay/tools/test_real_ctx.py",
+        "research/playplay/tools/trace_485.py",
+        "research/playplay/tools/trace_667.py",
+        "research/playplay/tools/trace_667_fix.py",
+        "research/playplay/tools/trace_667_init.py",
+        "research/playplay/tools/trace_ctx.py",
+        "research/playplay/tools/trace_dump.py",
+        "research/playplay/tools/vm_check.py"
+      ],
+      "environment": "mixed: inspect each source",
+      "notes": "Guia individual tools/README.md; no ejecutar como suite de tests."
+    }
+  ],
+  "evidence_manifests": [
+    "research/playplay/runs/20260924T164814Z-token148/manifest.json",
+    "research/playplay/runs/20260924-legacy-controls/manifest.json"
+  ],
+  "documentation": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md",
+    "docs/AGENT_WORKFLOW.md",
+    "research/README.md",
+    "research/playplay-lan-deobfuscator/GEMINI.md",
+    "research/playplay/AGENTS.md",
+    "research/playplay/CATALOG.md",
+    "research/playplay/GEMINI.md",
+    "research/playplay/PLAN.md",
+    "research/playplay/README.md",
+    "research/playplay/STATUS.md",
+    "research/playplay/docs/BACKGROUND.md",
+    "research/playplay/docs/DECISIONS_148.md",
+    "research/playplay/docs/FACTS.md",
+    "research/playplay/docs/MECANISMO_Y_EXTRACCION_AES.md",
+    "research/playplay/docs/PLAYPLAY_ARCHITECTURE_NOTES.md",
+    "research/playplay/docs/README.md",
+    "research/playplay/docs/RVA_DISCOVERY_PLAYBOOK.md",
+    "research/playplay/docs/SESSION_2026-09-24_LAN_VALIDATION.md",
+    "research/playplay/docs/TOKEN148_ONESHOT_2026-09-24.md",
+    "research/playplay/docs/VALIDATION_148_2026-09-24.md",
+    "research/playplay/docs/WINDOWS_WORK_SUMMARY.md",
+    "research/playplay/docs/external/extraction_kPlayPlayToken_148.md",
+    "research/playplay/docs/history/2026-09-24-aes256-hypothesis.md",
+    "research/playplay/docs/history/2026-09-24-checklist-before-tree.md",
+    "research/playplay/runs/README.md",
+    "research/playplay/task.md",
+    "research/playplay/templates/EXPERIMENT.md",
+    "research/playplay/tools/README.md",
+    "research/playplay/tools/token_capture_148/README.md",
+    "research/tools/README.md"
+  ]
+}

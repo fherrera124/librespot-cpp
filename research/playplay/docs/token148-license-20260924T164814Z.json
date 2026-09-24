@@ -1,0 +1,12 @@
+{
+  "started_at": "2026-09-24T16:51:11.934296+00:00",
+  "token": "02d29f82a8396930aab0a5885c81da7a",
+  "version": 5,
+  "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+  "reference_aes": "a503a84c1dc9271460cc13f142e0bae2",
+  "interactivity": 1,
+  "content_type": 1,
+  "error_type": "ValueError",
+  "error": "Invalid or duplicate protobuf field",
+  "finished_at": "2026-09-24T16:51:12.420946+00:00"
+}

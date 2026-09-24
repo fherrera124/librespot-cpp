@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "scope": "organizational moves; evidence paths unchanged",
+  "moves": [
+    {
+      "from": "research/playplay/hook_wsasend.js",
+      "to": "research/playplay/tools/token_capture_148/hook_wsasend.js",
+      "original_sha256": "4f5c962d45283db4fc7c9d1d4a5be3a7705073971185dbb80b3535dfcc3d63a5",
+      "change": "none",
+      "current_sha256": "4f5c962d45283db4fc7c9d1d4a5be3a7705073971185dbb80b3535dfcc3d63a5"
+    },
+    {
+      "from": "research/playplay/run_scan_loop.py",
+      "to": "research/playplay/tools/token_capture_148/run_scan_loop.py",
+      "original_sha256": "3cceed2e6ef5f5f5c6f64030a93eaf85a54a9984484271d7cda2140054afe87a",
+      "change": "JS path resolved from __file__",
+      "current_sha256": "47579cb353b45200eba645628158c5d1f03a86b78980dcc3da04903d814088fc"
+    },
+    {
+      "from": "research/playplay/run_scan_proto2.py",
+      "to": "research/playplay/tools/token_capture_148/run_scan_proto2.py",
+      "original_sha256": "f8f98189e7fab9a857374e8f1c2d12788430053e1dbb8fa5ff4a830ddc12b29f",
+      "change": "JS path resolved from __file__",
+      "current_sha256": "ff53c4178d3b558c5784b99d249e3ba326e4f869c08b585d63c726d1c70e6cc7"
+    },
+    {
+      "from": "research/playplay/run_wsasend.py",
+      "to": "research/playplay/tools/token_capture_148/run_wsasend.py",
+      "original_sha256": "54c7994394db14fb35480355342905a4b632b0d15eb818c1edf12fe9f02e23ec",
+      "change": "JS path resolved from __file__",
+      "current_sha256": "0bd5a2ab8c48fdd4f4d18cd38272b02e93d75645f87dcf7f4cbbed99bde2667a"
+    },
+    {
+      "from": "research/playplay/scan_playplay_loop.js",
+      "to": "research/playplay/tools/token_capture_148/scan_playplay_loop.js",
+      "original_sha256": "9abbbed48b94a38896dd425bdfa13f1724890d8a701ad742990386674b00c215",
+      "change": "none",
+      "current_sha256": "9abbbed48b94a38896dd425bdfa13f1724890d8a701ad742990386674b00c215"
+    },
+    {
+      "from": "research/playplay/scan_proto2.js",
+      "to": "research/playplay/tools/token_capture_148/scan_proto2.js",
+      "original_sha256": "1e996f03af8d6c4fbcbcf174f127532a385d69469ece68758be5211d1b89dbc3",
+      "change": "none",
+      "current_sha256": "1e996f03af8d6c4fbcbcf174f127532a385d69469ece68758be5211d1b89dbc3"
+    },
+    {
+      "from": "research/playplay/extraction_kPlayPlayToken_148.md",
+      "to": "research/playplay/docs/external/extraction_kPlayPlayToken_148.md",
+      "original_sha256": "1034171bc09f57b3a5f2cfc2169119bdab5d99be15d5dcf8f146851048ada9e5",
+      "change": "none",
+      "current_sha256": "1034171bc09f57b3a5f2cfc2169119bdab5d99be15d5dcf8f146851048ada9e5"
+    }
+  ]
+}

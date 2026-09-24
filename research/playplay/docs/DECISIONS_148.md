@@ -7,6 +7,14 @@ variantes posibles. [Evidencia y ensayos](VALIDATION_148_2026-09-24.md);
 
 ## Corregido o descartado con evidencia
 
+**Actualización posterior:** [token148/v5](TOKEN148_ONESHOT_2026-09-24.md)
+produce 4096 bytes exactamente iguales a AES-128-CTR por recurso (dos recursos),
+con contenido Ogg/Vorbis y CRC válidos. Se descarta la conclusión añadida a la
+bitácora de que este build necesariamente exige un cifrado incompatible con
+AES-128 y un oráculo continuo. La estructura interna sigue sin revertir y no
+se ha extraído AES16. No cambiar de build como siguiente paso. La prueba puntual
+por SSH, sin servicio, es el alcance elegido por el usuario.
+
 | Procedimiento / afirmación anterior | Qué ocurrió | Decisión para continuar |
 |---|---|---|
 | Servidor «final» entrega AES y pasó 11 vectores | No se encontró evidencia conservada de ese éxito histórico; el ensayo propio terminó HTTP 500 | Es un prototipo no validado. Exigir informe de 22 resultados HTTP y control independiente de AES |

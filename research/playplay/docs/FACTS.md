@@ -1,12 +1,23 @@
 # Hechos, parámetros y procedencia
 
+Síntesis actual: [STATUS](../STATUS.md). Las tablas de tokens A–F y preflights
+anteriores conservan su fecha; no sustituyen el control token148.
+
 Corte **2026-09-24**. Distinguir resultados históricos del backend de lo medido
 localmente en esta sesión. [Arquitectura](PLAYPLAY_ARCHITECTURE_NOTES.md) desarrolla
 los contratos inferidos; [validación](VALIDATION_148_2026-09-24.md) enlaza la evidencia.
 
 ## Build realmente ejecutado
 
-- Windows EXE/DLL: **1.2.92.148**, proceso principal PID 64216, sesión gráfica 2.
+**Actualización posterior:** [token148/v5](TOKEN148_ONESHOT_2026-09-24.md),
+`02d29f82a8396930aab0a5885c81da7a`, fue aceptado HTTP200 en dos recursos y su
+generador 148 coincide con AES-128-CTR durante 4096 bytes por recurso. Contenido
+Ogg/Vorbis y CRC válidos. PID reverificado 72132, mismo hash de disco. SpClient.cpp
+ya contiene ese token por el cambio externo; las menciones a E debajo son
+históricas. No se extrajo AES16 del candidato ni del descriptor.
+
+- Windows EXE/DLL: **1.2.92.148**. Preflight anterior: PID64216; ensayo token148:
+  PID72132. Ambos son datos históricos, sesión gráfica2; volver a verificar.
 - DLL en disco: `C:\Users\francisco.herrera\AppData\Roaming\Spotify\Spotify.dll`.
 - SHA256 en disco: `7b44456a90142daeb758e2736d8628ffe211d6ea523db8f1050b3c8b1addb68a`.
 - Base viva observada: `0x7ff975d20000` (ASLR; no reutilizar como constante).
@@ -87,7 +98,9 @@ Spotify. El significado del primer byte no está demostrado. Barrido histórico 
 | **E** | 403 | **200** | **200** | **200** | **200** | 403 | 400 | 400 |
 | A,B,C,D,F | 403 | 403 | 403 | 403 | 403 | 403 | 403 | 403 |
 
-cspot usa **token E + version 5**.
+El barrido anterior usaba **E/v5**. SpClient.cpp ahora contiene **token148/v5**:
+`02d29f82a8396930aab0a5885c81da7a`; HTTP200 y contenido comprobados en dos recursos
+mediante la prueba puntual Linux/Windows, no E2E de cspot.
 
 
 ## Request/response e integración
@@ -98,7 +111,9 @@ cspot usa **token E + version 5**.
   **no** es una credencial de cuenta ni la clave ofuscada de respuesta.
 - Respuesta según [schema](../../../protobuf/playplay.proto): campo 1
   `obfuscated_key`; campo 2 `b4_seq`. Las dos capturas completas de Windows
-  tienen 16 y 4 bytes respectivamente. No se capturó su token/version de request.
+  tienen 16 y 4 bytes respectivamente. En esos ensayos antiguos no se capturó el
+  request. La [nota externa](external/extraction_kPlayPlayToken_148.md) aporta
+  token148/v5 y el control posterior valida su relación funcional con build148.
 - El barrido histórico relacionó 403 con tokens rechazados; no prueba el orden
   de validaciones internas del backend. Una respuesta sin campo 1 no autoriza
   diagnosticar automáticamente «Widevine-only» sin analizarla.
@@ -111,7 +126,7 @@ Revisión del C++ existente (rutas desde la raíz del repositorio):
 
 | Archivo / símbolo | Estado observado |
 |---|---|
-| `main/src/api/SpClient.cpp`, `playPlayLicense` | E/v5, obtiene campo ofuscado, conserva volcado a `/tmp/creds.json` |
+| `main/src/api/SpClient.cpp`, `playPlayLicense` | token148/v5, obtiene campo ofuscado, conserva volcado a `/tmp/creds.json` |
 | `main/src/FileProvider.cpp` | RPC ya cableado, `FORCE PLAYPLAY`, parser manual `find`/`substr`, `PLAYPLAY_SERVICE_URL` |
 | `main/src/session/Session.cpp`, `connectDealer` | Hilo detached de prueba con track fijo |
 | `main/include/proto/PlayPlayPb.h` / `protobuf/playplay.proto` | Schema y código nanopb presentes |

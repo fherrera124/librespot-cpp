@@ -6,9 +6,16 @@ son descriptivos, no símbolos oficiales. RVAs relativos al módulo; hashes en
 
 ## Qué se transforma
 
+**Actualización posterior:** el [control token148/v5](TOKEN148_ONESHOT_2026-09-24.md)
+conecta ahora el generador con AES-128-CTR: 4096 bytes idénticos por recurso,
+dos recursos, dos variantes b4_seq, dos ejecuciones. El contenido CDN descifra
+con CRC Ogg/Vorbis válido. Las frases inferiores que mantienen abierto ese
+enlace corresponden a los ensayos anteriores con token E. Sigue abierta la
+representación interna y la extracción AES16; el candidato no coincide.
+
 Separar cuatro objetos:
 
-1. **Token PlayPlay**: constante del request, E en cspot. No es el bearer de cuenta.
+1. **Token PlayPlay**: constante del request; token148 en cspot, E en los ensayos anteriores. No es el bearer de cuenta.
 2. **`obfuscated_key`**: 16 bytes devueltos por la licencia; entran al VM.
 3. **Candidato interno**: 16 bytes en RDX al entrar a `0x49f854`. Es repetible;
    llamarlo «plaintext AES» no está justificado por nuestros controles.
@@ -32,8 +39,8 @@ flowchart TD
 ```
 
 Las ramas/calls están respaldadas por captura y desensamblado según la tabla de
-FACTS. No se trazó dinámicamente cada instrucción de la cadena. El enlace entre
-bloque nativo y AES estándar sigue pendiente.
+FACTS. No se trazó dinámicamente cada instrucción de la cadena. El control posterior token148 vincula el bloque nativo con AES-128-CTR durante
+4096 bytes por recurso. Sigue pendiente extraer la clave de esa representación.
 
 ## Ejecutar el VM con snapshot
 
@@ -115,7 +122,8 @@ Los scripts limitan respuesta a 256 bytes y no leen headers HTTP. Capturaron
 campo protobuf 1 de 16 bytes y campo 2 (`b4_seq`) de 4. El primero coincide con
 la entrada VM. El significado del campo 2 queda pendiente; los callbacks
 observados no consumen R8 antes de reutilizarlo, pero eso no prueba que otras
-rutas lo ignoren. No se capturó el **token/version del request Windows**.
+rutas lo ignoren. Esas capturas históricas no incluían el request. La nota externa posterior
+aporta token148/v5, validado después por contenido; ver [STATUS](../STATUS.md).
 
 Precarga: `0x63fda4 → 0x640844`, con log estático «Prefetch: Could not save key,
 backing off for 1 minute». El receptor se busca en `[self+0xc0]`, slot de vtable
@@ -149,7 +157,10 @@ snapshot de un bloque real de reproducción, el primer replay dio exactamente
 asoció a un `file_id` concreto; **no mezclarlo** con una de las licencias previas
 como si esa correspondencia estuviera comprobada.
 
-## Hipótesis abiertas y cómo discriminarlas
+## Hipótesis de la etapa token E y límites de sus negativos
+
+El siguiente experimento vigente está en [PLAN](../PLAN.md). La tabla siguiente
+conserva hipótesis de los ensayos E: token148 ya tiene control de contenido positivo.
 
 | Hipótesis | Motivo / límite | Prueba útil siguiente |
 |---|---|---|

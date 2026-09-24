@@ -11,6 +11,8 @@
 
 A Spotify Connect player written in CPP targeting, but not limited to embedded devices (ESP32).
 
+For agents and contributors: [workspace instructions](AGENTS.md). Research handoff: [PlayPlay](research/playplay/README.md).
+
 Currently in state of rapid development.
 
 *Only to be used with premium spotify accounts*

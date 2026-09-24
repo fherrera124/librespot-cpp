@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "run_id": "20260924T164814Z-token148",
+  "status": "content_verified_aes16_pending",
+  "summary": "Dos recursos, stream AES128CTR y CRC validos; AES16 no extraida.",
+  "artifacts": [
+    {
+      "path": "research/playplay/data/token148-content-controls-20260924T164814Z.json",
+      "sha256": "e612d1fdd25feff95c150d313d4f1ca9dd991af7f7bd1a239b1c93a332925db8",
+      "bytes": 1771,
+      "role": "fixture"
+    },
+    {
+      "path": "research/playplay/data/token148-fresh-controls-20260924T164814Z.json",
+      "sha256": "8ff7e0bf9b4d4ff307c7e22ffebb18f15cbfa8b17f98a2da34b4b7ab8a841249",
+      "bytes": 1023,
+      "role": "fixture"
+    },
+    {
+      "path": "research/playplay/data/token148-reference-20260924T164814Z.enc",
+      "sha256": "1cbbde6214e3fb957c70a218f13c672fd414691532987bec91a841b8ec1a9932",
+      "bytes": 4096,
+      "role": "encrypted_content"
+    },
+    {
+      "path": "research/playplay/data/token148-reference-second-20260924T164814Z.enc",
+      "sha256": "eb6e4ed9f6adbdf971a8d9ad5ec4a18cfac2f83221a9870fe90f161c4b94f7be",
+      "bytes": 4096,
+      "role": "encrypted_content"
+    },
+    {
+      "path": "research/playplay/docs/token148-baseline-20260924T164814Z.json",
+      "sha256": "9fa18460d14e088b6c6e959682e8abb42d1d7521711639955df3a9fa4d6f75d6",
+      "bytes": 15054,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/token148-baseline-20260924T164814Z.log",
+      "sha256": "7075525be99043cf5c97e0728e07d659712ad890301cabcc6047329fafb9b9ca",
+      "bytes": 11733,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/token148-content-verification-20260924T164814Z.json",
+      "sha256": "079d85dd5ee05e8a0768d9109804dea4a388ad34f5166014f3ee379f6fe41538",
+      "bytes": 2574,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/token148-content-vm-20260924T164814Z.json",
+      "sha256": "7c8ca29e50602b74dc4e9fbce3cdebaf9f9333fc710b08401a774940510d67d2",
+      "bytes": 97713,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/token148-content-vm-20260924T164814Z.log",
+      "sha256": "2504a023a5f2aa59d939bb361b39d9b17a9ccdafa7f377b5ef8295d9cb342cbf",
+      "bytes": 77854,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/token148-fresh-vm-20260924T164814Z.json",
+      "sha256": "46604bc80e3993ac7da87ba123a8257cbdc4b21a1959600ca9a7da185ebef9c8",
+      "bytes": 4511,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/token148-fresh-vm-20260924T164814Z.log",
+      "sha256": "4236fc153fc8ec6f4d459cfd2c30ad3b21f0fb32f2cce0e46f7e65fa26450564",
+      "bytes": 3266,
+      "role": "log"
+    },
+    {
+      "path": "research/playplay/docs/token148-license-20260924T164814Z-retry.json",
+      "sha256": "d0c47d841e937851face64ea61a751bc6d778a05732819928520a38d7bdd5299",
+      "bytes": 925,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/token148-license-20260924T164814Z.json",
+      "sha256": "37b6200db7e655d24c4fa59b9a11b38748acf474beb978d2a87df6809ced6e22",
+      "bytes": 406,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/token148-license-second-20260924T164814Z.json",
+      "sha256": "dd5d1e5d76663f987b6c8308412161a9619dec488102ea5263cd716d86c12bf7",
+      "bytes": 932,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/token148-postflight-20260924T164814Z.json",
+      "sha256": "ebced5ccb6a388e3a3081478375026e25aa5ed755cd714c83acadd22de43e282",
+      "bytes": 392,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/docs/token148-preflight-20260924T164814Z.json",
+      "sha256": "ec0c9efb06470bc5410d820e6be307d3c0d91035c2e15bc84d76aa96feb12f77",
+      "bytes": 322,
+      "role": "report"
+    },
+    {
+      "path": "research/playplay/runs/20260924T164814Z-token148/source/check_fresh_license_148.js",
+      "sha256": "b51af5e39d573d1facc4cda07afea41aa11da1b87423712ca803f67ff4b07284",
+      "bytes": 4821,
+      "role": "native_control_source_snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260924T164814Z-token148/source/validate_windows_vm.py",
+      "sha256": "35869a2d92a90cfff85d9cc0149da9045a802e63742b8fe0d04db8d7a03b9e73",
+      "bytes": 10563,
+      "role": "native_control_source_snapshot"
+    }
+  ]
+}

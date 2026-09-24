@@ -1,0 +1,23 @@
+{
+  "started_at": "2026-09-24T16:51:33.940077+00:00",
+  "token": "02d29f82a8396930aab0a5885c81da7a",
+  "version": 5,
+  "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+  "reference_aes": "a503a84c1dc9271460cc13f142e0bae2",
+  "interactivity": 1,
+  "content_type": 1,
+  "authenticated": true,
+  "host": "guc3-spclient.spotify.com:443",
+  "request_hex": "0805121002d29f82a8396930aab0a5885c81da7a200128013097aad5d506",
+  "http_status": 200,
+  "response_hex": "0a107a154493af30b49d753cd246d6e9e83a12043a034bf8",
+  "obfuscated_key": "7a154493af30b49d753cd246d6e9e83a",
+  "b4_seq": "3a034bf8",
+  "storage_status": 200,
+  "cdn_status": 206,
+  "content_file": "research/playplay/data/token148-reference-20260924T164814Z.enc",
+  "content_bytes": 4096,
+  "content_sha256": "1cbbde6214e3fb957c70a218f13c672fd414691532987bec91a841b8ec1a9932",
+  "reference_content_valid": true,
+  "finished_at": "2026-09-24T16:51:35.830455+00:00"
+}

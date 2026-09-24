@@ -1,0 +1,30 @@
+[
+  {
+    "label": "playplay-context-148-2026-09-24-retry",
+    "file_id": "a9f19af4bd235e28f4868870f6fc2487670cc3b5",
+    "obfuscated": "335b0a98168b640bc989bcd4470b9e7b",
+    "expected_candidate": "1281c34713e794e94bd53ae73a8331a4",
+    "aes": "1281c34713e794e94bd53ae73a8331a4",
+    "aes_known": false,
+    "expected_stream": "8422ed0c99cb7fd0a40659bdcde241cd",
+    "b4_seq": "00000000"
+  },
+  {
+    "label": "token148_v5_captured_b4",
+    "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+    "obfuscated": "7a154493af30b49d753cd246d6e9e83a",
+    "b4_seq": "3a034bf8",
+    "aes": "a503a84c1dc9271460cc13f142e0bae2",
+    "aes_known": true,
+    "expected_stream": "4c88e79abbed159b95944deee1919104"
+  },
+  {
+    "label": "token148_v5_zero_b4",
+    "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+    "obfuscated": "7a154493af30b49d753cd246d6e9e83a",
+    "b4_seq": "00000000",
+    "aes": "a503a84c1dc9271460cc13f142e0bae2",
+    "aes_known": true,
+    "expected_stream": "4c88e79abbed159b95944deee1919104"
+  }
+]

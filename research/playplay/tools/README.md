@@ -1,12 +1,33 @@
-# Catálogo de herramientas PlayPlay
+# Referencia detallada de herramientas PlayPlay
+
+Para elegir herramienta rápidamente: [CATALOG](../CATALOG.md) y
+[STATUS](../STATUS.md). Este documento conserva comandos y anchors históricos.
+La prueba token148 es el control positivo; los ensayos E siguientes son antecedentes.
+
+- [Comprobar el workspace](check_workspace.py): catálogo, enlaces y hashes, offline.
+- [Captura externa agrupada](token_capture_148/README.md): material histórico reubicado.
 
 Corte **2026-09-24**. Leer el código antes de ejecutar, como exige
-[../GEMINI.md](../GEMINI.md). Los scripts 148 usan RVAs del binario exacto de
+[AGENTS.md](../AGENTS.md). Los scripts 148 usan RVAs del binario exacto de
 [FACTS.md](../docs/FACTS.md). **Ninguno demuestra todavía extracción AES correcta.**
 Los scripts de esta sesión están documentados individualmente abajo; las
 herramientas anteriores se separan al final.
 
 ## Entornos y archivos
+
+**Actualización posterior:** tres herramientas nuevas validan el stream nativo
+token148/v5 y contenido, **sin servicio LAN**. No extraen AES16 todavía.
+Comandos, fixtures e informes en [TOKEN148_ONESHOT](../docs/TOKEN148_ONESHOT_2026-09-24.md).
+
+- `probe_token148_once.py`: Linux, requests/cryptography, login desde session.json,
+  una licencia nueva y opcionalmente prefijo CDN; no persiste tokens de cuenta.
+- `check_fresh_license_148.js`: Frida mediante el runner existente, b4_seq explícito,
+  de 1 a 256 bloques por ejecución y comparación de dos ejecuciones.
+- `verify_token148_content.py`: offline, cryptography; compara todos los bytes
+  contra AES-128-CTR, descifra el prefijo y comprueba Vorbis/CRC Ogg. Exit0=éxito.
+
+El runner histórico sigue devolviendo 2 para estos eventos alternativos aunque
+terminen correctamente. Usar el verificador offline como resultado del ensayo.
 
 | Entorno | Dependencias / uso |
 |---|---|
@@ -63,6 +84,10 @@ modo exclusivo. Al cerrar, verificar que el ensayo se desadjuntó. Al corte de
 esta sesión **no quedó un ensayo esperando ni servidor validado activo**.
 
 ## Prueba preferida sin cambiar de cancion
+
+**Control histórico E.** Para token148 usar la entrada token148-control del
+[catálogo](../CATALOG.md). Para extracción preparar el capturador limpio del PLAN.
+La expresión «preferida» de este anchor conserva compatibilidad con enlaces viejos.
 
 ```powershell
 & $ppPython .\validate_windows_vm.py @ppRun --script check_key_pipeline_148.js --script-data key-pipeline-controls-148-2026-09-24.json --report pipeline-nuevo.json

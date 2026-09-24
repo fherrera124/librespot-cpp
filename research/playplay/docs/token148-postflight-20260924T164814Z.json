@@ -1,0 +1,12 @@
+{
+  "ProcessId": 72132,
+  "Responding": true,
+  "Python": [
+    {
+      "ProcessId": 8068,
+      "CommandLine": "C:\\Users\\francisco.herrera\\AppData\\Local\\Programs\\Python\\Python312\\python.exe c:\\Users\\francisco.herrera\\.vscode\\extensions\\ms-python.isort-2026.6.0\\bundled\\tool\\lsp_server.py"
+    }
+  ],
+  "Listeners8080": [],
+  "checked_at": "2026-09-24T17:00:05.929267+00:00"
+}
