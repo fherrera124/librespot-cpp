@@ -1,0 +1,32 @@
+{"type": "attached", "module": "C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.dll", "base": "0x7ff975d20000", "transform_rva": "0x49eaa4", "copy_rva": "0x17780e0", "mode": "search_aes_all_copy_sizes"}
+Play a different song in Windows Spotify to trigger validation.
+{"type": "playback_trigger", "pid": 64216, "hwnd": "0x80f00", "posted": true}
+{"type": "captured", "input": "7f638bec268494a686cce0dd2456d87b", "init": "a33c929c31c3e0eefeedebdaa1e7ff7f", "stack": ["0x4a0422", "0x4a0629", "0x49b252", "0x14241ea", "0x142a4f5", "0x16eb0d4", "0x16eafed", "0x13501b0", "0x134fd88", "0x199f7d", "0x19a4bc", "0x134fa3c", "0x134f1ee", "0x173d80b", "0xd214259d", "0xd3a4af78"]}
+{"type": "copies", "label": "natural", "count": 2000, "dropped": 8629}
+{"type": "raw_output", "label": "natural", "raw": "3df2ae0c0394e2a247b802ac2d1da121f3c1356a6e990e5b"}
+{"type": "copies", "label": "control_replay", "count": 2000, "dropped": 8631}
+{"type": "raw_output", "label": "control_replay", "raw": "3c4b40fb5fcfc206d8e14992e1ee8d64d20a76f9fd984f05"}
+{"type": "copies", "label": "vector_0", "count": 2000, "dropped": 8620}
+{"type": "raw_output", "label": "vector_0", "raw": "d6fe235597b2c6bd0742dc84330cdd541de85dc59008e235"}
+{"type": "copies", "label": "vector_1", "count": 2000, "dropped": 8622}
+{"type": "raw_output", "label": "vector_1", "raw": "cf3d5b346c97f9d167aaf4caf60e00364db65f3991de90af"}
+{"type": "copies", "label": "vector_2", "count": 2000, "dropped": 8623}
+{"type": "raw_output", "label": "vector_2", "raw": "40aad11c22297de5c1d8e7126d4d001a458528e1ff37617b"}
+{"type": "copies", "label": "vector_3", "count": 2000, "dropped": 8644}
+{"type": "raw_output", "label": "vector_3", "raw": "a879f75cf5ebf013432c1deddccc6f3dc058a57e5458cdb9"}
+{"type": "copies", "label": "vector_4", "count": 2000, "dropped": 8600}
+{"type": "raw_output", "label": "vector_4", "raw": "17834329e71db0f59318649464e45eb5ece87cd958243737"}
+{"type": "copies", "label": "vector_5", "count": 2000, "dropped": 8627}
+{"type": "raw_output", "label": "vector_5", "raw": "86ddbab470445d7350993561844738f5ae837bc23edcedb7"}
+{"type": "copies", "label": "vector_6", "count": 2000, "dropped": 8668}
+{"type": "raw_output", "label": "vector_6", "raw": "d065a1a11d72a777e479b43ab5ac4a1df2d2e2adf7f1f550"}
+{"type": "copies", "label": "vector_7", "count": 2000, "dropped": 8594}
+{"type": "raw_output", "label": "vector_7", "raw": "02dbd75869d36651456cb1182691a8902f980cada7cfb328"}
+{"type": "copies", "label": "vector_8", "count": 2000, "dropped": 8621}
+{"type": "raw_output", "label": "vector_8", "raw": "7c421bacf7f6e7a7fbf3e8c2e2782ba2293a7f52f6ab22f5"}
+{"type": "copies", "label": "vector_9", "count": 2000, "dropped": 8630}
+{"type": "raw_output", "label": "vector_9", "raw": "210a3c1d6c6994f143afbb65fa8eb07c862295be9a9fbe37"}
+{"type": "copies", "label": "vector_10", "count": 2000, "dropped": 8615}
+{"type": "raw_output", "label": "vector_10", "raw": "a18774901841cdadd7830bbae3eb631e04bf066a1d86a0a7"}
+{"type": "done"}
+{"planned": 11, "completed": 0, "pass": 0, "mismatch": 0, "error": 0, "control_pass": false}

@@ -1,0 +1,42 @@
+{
+  "started_at": "2026-09-24T10:57:20.864923+00:00",
+  "pid": 64216,
+  "vectors_sha256": "9c11d188e4443f4f42de8296230da5327eb329db68da151fc48a1b8dd91f9791",
+  "mode": "alternative_script",
+  "script_file": "trace_playplay_consumer_148.js",
+  "exceptions": "steal",
+  "script_sha256": "05d1347f14b2a398edafcd0b5d834737837ff30808751cabd224e523ebe923ec",
+  "results": [],
+  "events": [
+    {
+      "type": "attached",
+      "handler_rva": "0x4a0494",
+      "mode": "trace_playplay_consumer"
+    },
+    {
+      "type": "playplay_context",
+      "thread": 16516,
+      "resource_kind": 0,
+      "resource_id": "418decc2a2938e4aeafcac42aea5bf53551ff9b8",
+      "response_protobuf": "0a10530540b95f393a0e5d5ea661e330a7781204d71aa35d",
+      "callback": "Spotify.dll+0xd8dfb8",
+      "input": "530540b95f393a0e5d5ea661e330a778",
+      "init": "a33c929c31c3e0eefeedebdaa1e7ff7f",
+      "candidate": "42c8982e762edfe1ffb0eec511003011",
+      "final_output": "91c050e17585653b0cc75c65ee2d1db6b2353eaf9622777401000000"
+    },
+    {
+      "type": "done"
+    }
+  ],
+  "summary": {
+    "planned": 11,
+    "completed": 0,
+    "pass": 0,
+    "mismatch": 0,
+    "error": 0,
+    "control_pass": false
+  },
+  "assessment": "inconclusive_execution_error",
+  "finished_at": "2026-09-24T10:57:44.989529+00:00"
+}

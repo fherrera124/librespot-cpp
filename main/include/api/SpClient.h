@@ -80,6 +80,16 @@ class SpClient {
       const std::vector<std::byte>& fileId, bool prefetch = false) = 0;
 
   /**
+   * @brief Requests a PlayPlay license for an audio file.
+   *
+   * @param fileId The audio file's id.
+   * @param isEpisode Selects AUDIO_EPISODE over AUDIO_TRACK.
+   * @return The obfuscated key. Deobfuscation is not implemented.
+   */
+  virtual bell::Result<std::vector<std::byte>> playPlayLicense(
+      const std::vector<std::byte>& fileId, bool isEpisode) = 0;
+
+  /**
    * @brief Fetches the AUDIO_FILES extended-metadata for a track URI.
    * Currently unused - kept for a possible reinstated fallback.
    */

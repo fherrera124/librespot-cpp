@@ -15,10 +15,27 @@
 #include "api/CredentialsResolver.h"
 #include "proto/ExtendedMetadataPb.h"
 #include "proto/MetadataPb.h"
+#include "proto/PlayPlayPb.h"
 
 using namespace cspot;
 
 namespace {
+// Identifies the client to PlayPlay. Matched pair with the request version
+// below - changing one means changing the other.
+constexpr std::array<uint8_t, 16> kPlayPlayToken = {
+    0x01, 0xF6, 0x2E, 0x56, 0xCD, 0x54, 0x35, 0xB9,
+    0x0D, 0xDE, 0x1A, 0x4F, 0xDF, 0x42, 0xAF, 0x2D};
+constexpr int32_t kPlayPlayVersion = 5;
+
+std::string toHexString(const std::vector<std::byte>& bytes) {
+  std::stringstream ss;
+  ss << std::hex << std::setfill('0');
+  for (const auto& byte : bytes) {
+    ss << std::setw(2) << static_cast<unsigned>(byte);
+  }
+  return ss.str();
+}
+
 // Consume discarded responses without retaining their bodies. Keep using the
 // HTTP reader so framing, truncation errors and connection reuse are preserved.
 bell::Result<> drainResponse(bell::HTTPResponse& response) {
@@ -66,6 +83,9 @@ class DefaultSpClient : public SpClient {
 
   bell::Result<std::string> resolveStorageInteractive(
       const std::vector<std::byte>& fileId, bool prefetch = false) override;
+
+  bell::Result<std::vector<std::byte>> playPlayLicense(
+      const std::vector<std::byte>& fileId, bool isEpisode) override;
 
   bell::Result<std::vector<cspot_proto::AudioFile>> resolveAudioFiles(
       const std::string& entityUri) override;
@@ -507,24 +527,18 @@ bell::Result<std::string> DefaultSpClient::resolveStorageInteractive(
     return nonstd::make_unexpected(credentialsRes.error());
   }
 
-  std::stringstream ss;
-  ss << std::hex << std::setfill('0');  // Set hex output and pad with '0'
-
-  for (const auto& byte : fileId) {
-    ss << std::setw(2)
-       << static_cast<unsigned>(byte);  // Convert byte to int for stream output
-  }
+  std::string fileIdHex = toHexString(fileId);
 
   std::string endpoint =
       prefetch
           ? fmt::format(
                 "https://{}/storage-resolve/files/audio/interactive_prefetch/"
                 "{}?alt=json&product=9",
-                spClientAddress, ss.str())
+                spClientAddress, fileIdHex)
           : fmt::format(
                 "https://{}/storage-resolve/files/audio/interactive/"
                 "{}?alt=json&product=9",
-                spClientAddress, ss.str());
+                spClientAddress, fileIdHex);
 
   auto response = httpClient->get(
       endpoint, {
@@ -553,6 +567,96 @@ bell::Result<std::string> DefaultSpClient::resolveStorageInteractive(
   }
 
   return bell::make_unexpected_errc<std::string>(std::errc::bad_message);
+}
+
+bell::Result<std::vector<std::byte>> DefaultSpClient::playPlayLicense(
+    const std::vector<std::byte>& fileId, bool isEpisode) {
+  auto credentialsRes = updateCredentials();
+  if (!credentialsRes) {
+    return nonstd::make_unexpected(credentialsRes.error());
+  }
+
+  
+  {
+      FILE* f = fopen("/tmp/creds.json", "w");
+      if (f) {
+          fprintf(f, "{\"Client-Token\": \"%s\", \"Authorization\": \"Bearer %s\", \"Address\": \"%s\"}", 
+                  clientToken.c_str(), accessToken.c_str(), spClientAddress.c_str());
+          fclose(f);
+      }
+  }
+  cspot_proto::PlayPlayLicenseRequest request;
+
+  request.version = kPlayPlayVersion;
+  request.token.reserve(kPlayPlayToken.size());
+  for (uint8_t byte : kPlayPlayToken) {
+    request.token.push_back(static_cast<std::byte>(byte));
+  }
+  request.interactivity = Interactivity_INTERACTIVE;
+  request.contentType =
+      isEpisode ? ContentType_AUDIO_EPISODE : ContentType_AUDIO_TRACK;
+  request.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+
+  std::vector<std::byte> requestBytes;
+  if (!nanopb_helper::encodeToVector(request, requestBytes)) {
+    BELL_LOG(error, LOG_TAG, "Failed to encode PlayPlayLicenseRequest");
+    return bell::make_unexpected_errc<std::vector<std::byte>>(
+        std::errc::bad_message);
+  }
+
+  const std::string url = fmt::format("https://{}/playplay/v1/key/{}",
+                                      spClientAddress, toHexString(fileId));
+
+  auto response = httpClient->post(
+      url,
+      {
+          {"Content-Type", "application/x-protobuf"},
+          {"Client-Token", clientToken},
+          {"Authorization", fmt::format("Bearer {}", accessToken)},
+      },
+      tcb::span(requestBytes.data(), requestBytes.size()));
+
+  if (!response) {
+    BELL_LOG(error, LOG_TAG, "Error while sending PlayPlay request: {}",
+             response.error());
+    return nonstd::make_unexpected(response.error());
+  }
+
+  // Drain unconditionally, before checking status - see putConnectState().
+  auto resultBytes = response->bytes();
+  if (!resultBytes) {
+    return bell::make_unexpected_errc<std::vector<std::byte>>(
+        std::errc::bad_message);
+  }
+
+  if (response->statusCode != 200) {
+    BELL_LOG(error, LOG_TAG, "PlayPlay license request failed: {}",
+             response->statusCode);
+    return bell::make_unexpected_errc<std::vector<std::byte>>(
+        std::errc::bad_message);
+  }
+
+  cspot_proto::PlayPlayLicenseResponse licenseResponse;
+  if (!nanopb_helper::decodeFromVector(licenseResponse, *resultBytes)) {
+    BELL_LOG(error, LOG_TAG, "Failed to decode PlayPlayLicenseResponse");
+    return bell::make_unexpected_errc<std::vector<std::byte>>(
+        std::errc::bad_message);
+  }
+
+  // A Widevine-only license comes back without an obfuscated key; this path
+  // cannot serve it.
+  if (licenseResponse.obfuscatedKey.empty()) {
+    BELL_LOG(error, LOG_TAG, "PlayPlay response carried no obfuscated key");
+    return bell::make_unexpected_errc<std::vector<std::byte>>(
+        std::errc::not_supported);
+  }
+
+  
+  BELL_LOG(info, LOG_TAG, "GOT OBFUSCATED KEY: %s", toHexString(licenseResponse.obfuscatedKey).c_str());
+  return std::move(licenseResponse.obfuscatedKey);
+
 }
 }  // namespace
 

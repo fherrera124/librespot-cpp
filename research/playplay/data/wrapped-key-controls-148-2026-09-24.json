@@ -1,0 +1,16 @@
+[
+  {
+    "source": "playplay-context-148-2026-09-24-retry",
+    "file_id": "a9f19af4bd235e28f4868870f6fc2487670cc3b5",
+    "candidate": "1281c34713e794e94bd53ae73a8331a4",
+    "wrapped": "b2dd67aa7e311892bd0b45fd5f49573a7907044c43aa230901000000",
+    "expected_stream": "8422ed0c99cb7fd0a40659bdcde241cd"
+  },
+  {
+    "source": "playplay-consumer-148-2026-09-24-retry",
+    "file_id": "418decc2a2938e4aeafcac42aea5bf53551ff9b8",
+    "candidate": "42c8982e762edfe1ffb0eec511003011",
+    "wrapped": "91c050e17585653b0cc75c65ee2d1db6b2353eaf9622777401000000",
+    "expected_stream": "9a66d9f70c57e7d84e877cbe00026cff"
+  }
+]

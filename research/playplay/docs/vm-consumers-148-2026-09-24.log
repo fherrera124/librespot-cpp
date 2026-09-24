@@ -1,0 +1,4 @@
+{"type": "attached", "crypto_exports": [{"module": "bcrypt.dll", "exports": ["BCryptDecrypt", "BCryptGenerateSymmetricKey", "BCryptImportKey", "BCryptImportKeyPair"]}]}
+Play a different song in Windows Spotify to trigger validation.
+{"type": "playback_trigger", "pid": 64216, "hwnd": "0x80f00", "posted": true}
+{"planned": 11, "completed": 0, "pass": 0, "mismatch": 0, "error": 0, "control_pass": false}

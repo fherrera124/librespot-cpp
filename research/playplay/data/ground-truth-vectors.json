@@ -1,0 +1,77 @@
+{
+  "description": "Vectores de verdad conocida para validar cualquier deobfuscador de PlayPlay offline (sin red, sin credenciales, sin hardware). Un VM candidato es correcto si mapea una obfuscated_key a la aes de su file_id.",
+  "how_to_use": "Para cada file_id: pasar la obfuscated_key de una version por el deobfuscador; la salida debe igualar 'aes'. La aes es la clave real del contenido (fija por archivo); la obfuscated_key cambia por (token, version).",
+  "token_E": "01f62e56cd5435b90dde1a4fdf42af2d",
+  "control_file_id": "f5eb2b3e7a3798b4a55369bd3cc840fceddebb94",
+  "control_obfuscated_token_E": {
+    "v2": "52c714004e70b11f8ee9336c7d9c373c",
+    "v5": "6465252c78c42764fac7b705ac93b7c7"
+  },
+  "vectors_token_E": [
+    {
+      "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+      "aes": "a503a84c1dc9271460cc13f142e0bae2",
+      "obfuscated": {
+        "v2": "628c9a976bedc0e3663bc9c4051f1708",
+        "v3": "1a50e35c5335f9f0b108e79b5dc98f8a",
+        "v4": "fa699aa7a870569bfc7bd818ed09bab5",
+        "v5": "611f9b976f284ecf77c202588b8c1d22"
+      }
+    },
+    {
+      "file_id": "1a8e5b04837957617162724232b0c96922222447",
+      "aes": "c3206271b4c70fff8e4ac3993c4dae8a",
+      "obfuscated": {
+        "v2": "79a7680e258598364d3215881ead3ced",
+        "v3": "1c94840189ef6e384f5aa185da8a4305",
+        "v4": "d247cd8e62215a995e5829b9c7e67f7c",
+        "v5": "9678cc71ae205966f814cb500bb7c7cf"
+      }
+    },
+    {
+      "file_id": "cf1bd197a6f5d613fc856bd689e43c0f4069b800",
+      "aes": "8d86fb522c00729f35b34d60b165b922",
+      "obfuscated": {
+        "v2": "f4c60dff695fb265104bc50546d6e48a",
+        "v3": "4c587f8f3b898b63f60ab0043c14a267",
+        "v4": "3dfba174e5779b38c5e97d2cb1b4cafc"
+      }
+    }
+  ],
+  "aes_only_no_obfuscated_captured": [
+    { "file_id": "71df45edb4748a8b1bd4126ded06063674745182", "aes": "0fd3998b706247b3474b2d3cf6d8e31f" },
+    { "file_id": "894813d0a3113c97ab601b0f65afb9543d96ec32", "aes": "4d442c155f9a95258f613a89be957be9" }
+  ],
+  "note_on_aes_only": "Estos dos file_id tienen AES conocida pero no capturamos su obfuscated_key del token E (corte por rate-limit 429). Se pueden re-pedir con tools/groundtruth.py y credencial fresca.",
+  "published_vectors_per_generation": {
+    "note": "Mismos 5 file_id, misma aes; la obfuscated_key difiere por build/token. De another-unplayplay tests/test_keyemu.py. Sirven para autovalidar que un VM reproduce SU propio build antes de probar el token E.",
+    "aes_order": [
+      "a503a84c1dc9271460cc13f142e0bae2",
+      "c3206271b4c70fff8e4ac3993c4dae8a",
+      "8d86fb522c00729f35b34d60b165b922",
+      "0fd3998b706247b3474b2d3cf6d8e31f",
+      "4d442c155f9a95258f613a89be957be9"
+    ],
+    "token_C_build_485_obfuscated": [
+      "eff09d518b4cad9a8feaf11b1a245870",
+      "e0934811ccbe830d3ea3330bc6a4bd8d",
+      "c62a616307aa090a8b718cd9d6a7cd33",
+      "558bda51efa8c558ad54e87dcea4234a",
+      "81f6c97072e83efe106d8f372216ed1b"
+    ],
+    "token_F_build_483_obfuscated": [
+      "0694259138997536f3ddcf2be2855c8a",
+      "92f454b10dfeef9789f90932d423c244",
+      "85d004ad2d1bc9ed12cf80e5db7cc41a",
+      "a42fbae85590b9a666e7ea6abfe49e1f",
+      "6143db25b8035a2cfe5ece34345176d9"
+    ]
+  },
+  "established_negative": "El algoritmo estatico gen-B (@spdl/unplayplay) da 0/11 contra token E y 0/5 contra token C. No reintentarlo.",
+  "cdn_verification": {
+    "note": "Verificacion end-to-end de una AES: descifrar un chunk del CDN con AES-128-CTR y buscar 'OggS' en el offset 167.",
+    "aes_cipher": "AES-128-CTR",
+    "iv_base": "72e067fbddcbcf77ebe8bc643f630d93",
+    "ogg_magic_offset": 167
+  }
+}

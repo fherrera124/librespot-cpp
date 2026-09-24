@@ -1,0 +1,6 @@
+{"type": "attached", "module": "C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.dll", "base": "0x7ff975d20000", "rva": "0x49EAA4"}
+Play a different song in Windows Spotify to trigger validation.
+{"type": "captured", "module": "C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.dll", "base": "0x7ff975d20000", "rva": "0x49EAA4"}
+{"file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da", "version": "v2", "obfuscated": "628c9a976bedc0e3663bc9c4051f1708", "expected": "a503a84c1dc9271460cc13f142e0bae2", "status": "error", "error": "Error: system error"}
+{"type": "done"}
+{"planned": 11, "completed": 1, "pass": 0, "mismatch": 0, "error": 1}

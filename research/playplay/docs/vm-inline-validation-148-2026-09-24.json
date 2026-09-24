@@ -1,0 +1,41 @@
+{
+  "started_at": "2026-09-24T03:48:48.009403+00:00",
+  "pid": 64216,
+  "vectors_sha256": "9c11d188e4443f4f42de8296230da5327eb329db68da151fc48a1b8dd91f9791",
+  "mode": "onEnter",
+  "results": [
+    {
+      "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+      "version": "v2",
+      "obfuscated": "628c9a976bedc0e3663bc9c4051f1708",
+      "expected": "a503a84c1dc9271460cc13f142e0bae2",
+      "status": "error",
+      "error": "Error: system error"
+    }
+  ],
+  "events": [
+    {
+      "type": "attached",
+      "module": "C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.dll",
+      "base": "0x7ff975d20000",
+      "rva": "0x49EAA4"
+    },
+    {
+      "type": "captured",
+      "module": "C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.dll",
+      "base": "0x7ff975d20000",
+      "rva": "0x49EAA4"
+    },
+    {
+      "type": "done"
+    }
+  ],
+  "summary": {
+    "planned": 11,
+    "completed": 1,
+    "pass": 0,
+    "mismatch": 0,
+    "error": 1
+  },
+  "finished_at": "2026-09-24T03:49:20.535051+00:00"
+}

@@ -316,6 +316,11 @@ void DefaultFileProvider::taskLoop() {
       file->isError = true;
       BELL_LOG(error, LOG_TAG, "Could not request audio key, err={}",
                requestRes.error());
+      
+      if (requestRes.error() == std::errc::operation_not_permitted) {
+          BELL_LOG(error, LOG_TAG, "AP connection is dead, sleeping to prevent spam loop...");
+          std::this_thread::sleep_for(std::chrono::seconds(5));
+      }
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
       return;
     }
@@ -369,10 +374,80 @@ void DefaultFileProvider::taskLoop() {
       return;
     }
 
-    if (!audioKeyResponse->success) {
+    if (true /* FORCE PLAYPLAY: !audioKeyResponse->success */) {
+      BELL_LOG(warn, LOG_TAG, "Audio key request forced to try PlayPlay for track {}", file->itemId.uri);
+
+      auto licenseRes = spClient->playPlayLicense(selectedAudioFile->fileId, episodeMeta.has_value());
+      if (licenseRes) {
+        BELL_LOG(info, LOG_TAG, "PlayPlay returned an obfuscated key ({} bytes) for track {}", licenseRes->size(), file->itemId.uri);
+                 
+        std::string obfHex;
+        for (std::byte byte : *licenseRes) {
+            obfHex += fmt::format("{:02x}", std::to_integer<uint8_t>(byte));
+        }
+        
+        auto httpClient = std::make_shared<bell::HTTPClient>();
+        httpClient->operationTimeoutMs = 30000;
+        std::string serviceUrl = "http://10.16.150.154:8080/deob";
+        if (const char* env_p = std::getenv("PLAYPLAY_SERVICE_URL")) {
+            serviceUrl = env_p;
+        }
+        
+        std::string jsonBody = fmt::format(R"({{"obfuscated_key":"{}"}})", obfHex);
+        bell::http::Headers headers = {
+            {"Content-Type", "application/json"},
+        };
+        
+        BELL_LOG(info, LOG_TAG, "Sending deobfuscation request to {} with key {}", serviceUrl, obfHex);
+        auto httpRes = httpClient->post(serviceUrl, headers, std::string_view(jsonBody));
+        if (httpRes) {
+            BELL_LOG(info, LOG_TAG, "Got response from service: status={}", httpRes->statusCode);
+        } else {
+            BELL_LOG(error, LOG_TAG, "HTTP request to service failed completely");
+        }
+
+        if (httpRes && httpRes->statusCode == 200) {
+            auto ptrRes = httpRes->bytesPtr();
+            auto lenRes = httpRes->bytesLength();
+            if (ptrRes && lenRes) {
+                std::string resBody(reinterpret_cast<const char*>(ptrRes.value()), lenRes.value());
+                size_t keyPos = resBody.find(R"("aes_key")");
+                if (keyPos != std::string::npos) {
+                    size_t valPos = resBody.find(':', keyPos);
+                    size_t startQuote = resBody.find('"', valPos);
+                    size_t endQuote = resBody.find('"', startQuote + 1);
+                    if (startQuote != std::string::npos && endQuote != std::string::npos) {
+                        std::string aesHex = resBody.substr(startQuote + 1, endQuote - startQuote - 1);
+                        if (aesHex.length() == 32) {
+                            std::vector<std::byte> aesKey;
+                            for (size_t i = 0; i < 32; i += 2) {
+                                aesKey.push_back(static_cast<std::byte>(std::stoi(aesHex.substr(i, 2), nullptr, 16)));
+                            }
+                            file->decryptionKey = aesKey;
+                            BELL_LOG(info, LOG_TAG, "Successfully deobfuscated PlayPlay key via LAN service");
+                            
+                            file->cdnUrl = *cdnUrlRes;
+                            file->fileId = selectedAudioFile->fileId;
+                            file->format = selectedAudioFile->format;
+                            if (episodeMeta) {
+                              file->episodeMetadata = std::move(*episodeMeta);
+                            } else {
+                              file->trackMetadata = std::move(*trackMeta);
+                            }
+                            
+                            eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        BELL_LOG(error, LOG_TAG, "Failed to deobfuscate PlayPlay key via LAN service, httpRes={}, status={}", (bool)httpRes, httpRes ? httpRes->statusCode : -1);
+      } else {
+        BELL_LOG(error, LOG_TAG, "PlayPlay license failed for track {}, err={}", file->itemId.uri, licenseRes.error());
+      }
+
       file->isError = true;
-      BELL_LOG(error, LOG_TAG, "Audio key request denied for track {}",
-               file->itemId.uri);
       eventLoop->post(EventLoop::EventType::FILE_PROVIDED, std::move(*file));
       return;
     }

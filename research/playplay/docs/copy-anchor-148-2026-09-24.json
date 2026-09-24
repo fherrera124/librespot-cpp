@@ -1,0 +1,9 @@
+{
+  "file": "/desarrollo/git/librespot-cpp/research/dlls/Spotify_1.2.92.148_dump.dll",
+  "layout": "raw_memory_dump",
+  "sha256": "275a9fd95b629f55bd6a170bbf41deb17f87ca59ff61056116d527611d89f2cc",
+  "pattern": "48 8b c1 4c 8d 15 ?? ?? ?? ?? 49 83 f8 0f 0f 87 ?? ?? ?? ??",
+  "rvas": [
+    "0x17780e0"
+  ]
+}

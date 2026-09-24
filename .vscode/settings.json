@@ -1,14 +1,19 @@
 {
-    "clangd.path": "clangd",
-    "cmake.sourceDirectory": "${workspaceFolder}/targets/cli",
-    "cmake.buildDirectory": "${workspaceFolder}/targets/cli/build",
-    "clangd.arguments": [
-        "-pretty",
-        "-background-index",
-        "--background-index",
-        "--compile-commands-dir=${workspaceFolder}/targets/cli/build"
-    ],
-    "editor.tabSize": 2,
-    "idf.pythonInstallPath": "/opt/homebrew/opt/python@3.12/Frameworks/Python.framework/Versions/3.12/bin/python3",
-    "idf.currentSetup": "/home/user/.espressif/v6.0.1/esp-idf"
+  "clangd.path": "/home/user/.espressif/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clangd",
+  "cmake.sourceDirectory": "${workspaceFolder}/targets/cli",
+  "cmake.buildDirectory": "${workspaceFolder}/targets/cli/build",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=/desarrollo/git/librespot-cpp/build"
+  ],
+  "editor.tabSize": 2,
+  "idf.pythonInstallPath": "/opt/homebrew/opt/python@3.12/Frameworks/Python.framework/Versions/3.12/bin/python3",
+  "idf.currentSetup": "/home/user/.espressif/v6.0.1/esp-idf",
+  "idf.openOcdConfigs": [
+    "interface/ftdi/esp_ftdi.cfg",
+    "target/esp32.cfg"
+  ],
+  "idf.customExtraVars": {},
+  "idf.port": "/dev/ttyS0"
 }

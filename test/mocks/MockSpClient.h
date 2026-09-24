@@ -36,6 +36,11 @@ class MockSpClient : public cspot::SpClient {
   MAKE_MOCK2(resolveStorageInteractive,
              bell::Result<std::string>(const std::vector<std::byte>&, bool),
              override);
+
+  MAKE_MOCK2(playPlayLicense,
+             bell::Result<std::vector<std::byte>>(
+                 const std::vector<std::byte>&, bool),
+             override);
 };
 
 // Helper function to create a valid bell::http::Response for tests.

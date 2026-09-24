@@ -1,0 +1,14 @@
+{
+  "cache_dir": "C:\\Users\\francisco.herrera\\AppData\\Local\\Spotify\\Data",
+  "tested_files": 116,
+  "matches": [],
+  "errors": [
+    {
+      "file": "C:\\Users\\francisco.herrera\\AppData\\Local\\Spotify\\Data\\e5\\e54fc6c03912046b520f30380ffe19b14f71be63.file",
+      "error": "[Errno 13] Permission denied: 'C:\\\\Users\\\\francisco.herrera\\\\AppData\\\\Local\\\\Spotify\\\\Data\\\\e5\\\\e54fc6c03912046b520f30380ffe19b14f71be63.file'"
+    }
+  ],
+  "key_labels": [
+    "a9f19af4bd235e28f4868870f6fc2487670cc3b5"
+  ]
+}

@@ -129,5 +129,5 @@ direct_dependencies:
 - espressif/ethernet_init
 - espressif/mdns
 manifest_hash: 35c583bc0fe78166daf822c601225d7be7fa2fbfe67d7ea6ed7673a6cc81b885
-target: esp32s3
+target: esp32
 version: 3.0.0

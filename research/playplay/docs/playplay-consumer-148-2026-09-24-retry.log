@@ -1,0 +1,5 @@
+{"type": "attached", "handler_rva": "0x4a0494", "mode": "trace_playplay_consumer"}
+Play a different song in Windows Spotify to trigger validation.
+{"type": "playplay_context", "thread": 16516, "resource_kind": 0, "resource_id": "418decc2a2938e4aeafcac42aea5bf53551ff9b8", "response_protobuf": "0a10530540b95f393a0e5d5ea661e330a7781204d71aa35d", "callback": "Spotify.dll+0xd8dfb8", "input": "530540b95f393a0e5d5ea661e330a778", "init": "a33c929c31c3e0eefeedebdaa1e7ff7f", "candidate": "42c8982e762edfe1ffb0eec511003011", "final_output": "91c050e17585653b0cc75c65ee2d1db6b2353eaf9622777401000000"}
+{"type": "done"}
+{"planned": 11, "completed": 0, "pass": 0, "mismatch": 0, "error": 0, "control_pass": false}

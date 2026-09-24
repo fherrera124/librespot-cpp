@@ -1,0 +1,6 @@
+{"type": "attached", "handler_rva": "0x4a0494", "mode": "trace_playplay_consumer"}
+Play a different song in Windows Spotify to trigger validation.
+{"type": "playback_trigger", "pid": 64216, "hwnd": "0x80f00", "posted": true}
+{"type": "playplay_context", "thread": 67332, "resource_kind": 0, "resource_id": "a797851c14fc773196c28d614721abf7e15eaeb9", "response_protobuf": "0a10cf4b928fe95a7ba9750a7ed06d41010e1204e92a5980", "callback": "Spotify.dll+0x63fda4", "input": "cf4b928fe95a7ba9750a7ed06d41010e", "init": "a33c929c31c3e0eefeedebdaa1e7ff7f", "candidate": "1e5046e47e272a424f232a2ce4c8e407", "final_output": "29ca2b42c75085f70fccfa60b126bf48f812144edf04fc4901000000", "consumer": "Spotify.dll+0x63a16c", "consumer_prefix": "4053555657415641574881ec98000000488b053d57f1014833c44889842480000000488b8424f8000000488bda488b94", "consumer_file_id": "a797851c14fc773196c28d614721abf7e15eaeb9", "dispatched_key": "29ca2b42c75085f70fccfa60b126bf48f812144edf04fc4901000000", "dispatched_file_id": "a797851c14fc773196c28d614721abf7e15eaeb9", "key_kind": 2, "key_flags": 1}
+{"type": "done"}
+{"planned": 11, "completed": 0, "pass": 0, "mismatch": 0, "error": 0, "control_pass": false}

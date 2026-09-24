@@ -1,0 +1,63 @@
+// Compare the native initial stream block with AES(candidate, standard audio IV).
+// Only freshly allocated context/output buffers and captured 28-byte blobs are used.
+const mod=Process.getModuleByName('Spotify.dll');
+function hex(buffer){return Array.from(new Uint8Array(buffer),b=>b.toString(16).padStart(2,'0')).join('');}
+function allocateHex(value){const p=Memory.alloc(value.length/2);p.writeByteArray(value.match(/../g).map(b=>parseInt(b,16)));return p;}
+const initAddress=mod.base.add(0xd9e2e4),streamAddress=mod.base.add(0xd9d0f0);
+if(hex(initAddress.readByteArray(16))!=='48895c240848896c2410488974241857' ||
+   hex(streamAddress.readByteArray(16))!=='405355565741544155415641574883ec')throw new Error('Stream function signature mismatch');
+const options={exceptions:'propagate',traps:'all'};
+const init=new NativeFunction(initAddress,'void',['pointer','pointer','pointer'],options);
+const stream=new NativeFunction(streamAddress,'void',['pointer','pointer'],options);
+function run(item){
+    const context=Memory.alloc(4096),wrapped=allocateHex(item.wrapped);
+    const auxiliary=Memory.alloc(4),output=Memory.alloc(32);
+    context.writeByteArray(new Uint8Array(4096));auxiliary.writeU32(0);
+    init(context,wrapped,auxiliary);
+    const blocks=[];
+    for(let i=0;i<4;i++){stream(context,output);blocks.push(hex(output.readByteArray(16)));}
+    return {block:blocks[0],blocks:blocks,auxiliary:auxiliary.readU32()};
+}
+
+const pipelineAddress=mod.base.add(0x4a0268);
+if(hex(pipelineAddress.readByteArray(16))!=='4055535657415441564157488dac24d0')throw new Error('Pipeline signature mismatch');
+const pipeline=new NativeFunction(pipelineAddress,'void',['pointer','pointer','pointer','pointer'],options);
+let thread=null,generated=null,candidate=null;
+Interceptor.attach(mod.base.add(0x49f854),{onEnter(args){
+    if(this.threadId===thread)candidate=hex(args[1].readByteArray(16));
+}});
+Interceptor.attach(mod.base.add(0x49eaa4),{
+    onEnter(args){if(this.threadId===thread){this.ours=true;this.output=args[2];}},
+    onLeave(){if(this.ours)generated=hex(this.output.readByteArray(28));}
+});
+function generate(item){
+    const request=Memory.alloc(256),input=allocateHex(item.obfuscated),auxiliary=Memory.alloc(4);
+    request.writeByteArray(new Uint8Array(256));
+    // The caller checks [request+0x70] before dereferencing its callback.
+    // Mark that callback disabled; no client request object or queue is used.
+    request.add(0x70).writeU8(1);auxiliary.writeU32(0);
+    generated=null;candidate=null;thread=Process.getCurrentThreadId();
+    try{pipeline(request,input,auxiliary,ptr(0));}finally{thread=null;}
+    if(generated===null || candidate===null)throw new Error('Missing pipeline output');
+    if(candidate!==item.expected_candidate)throw new Error('Fresh runtime differs from natural snapshot for '+item.label);
+    return generated;
+}
+send({type:'attached',mode:'fresh_key_pipeline_control',pipeline_rva:'0x4a0268'});
+setImmediate(function(){
+    try{
+        for(const item of diagnosticData){
+            const wrapped=generate(item);
+            const first=run({wrapped:wrapped});
+            const wrappedRepeat=generate(item);
+            const second=run({wrapped:wrappedRepeat});
+            send({type:'pipeline_control',label:item.label,file_id:item.file_id,
+                candidate:candidate,wrapped:wrapped,wrapped_repeat:wrappedRepeat,
+                expected:item.expected_stream,actual:first.block,repeat:second.block,
+                blocks:first.blocks,repeat_blocks:second.blocks,
+                auxiliary:first.auxiliary,repeat_auxiliary:second.auxiliary,
+                aes_known:item.aes_known,match:first.block===item.expected_stream,
+                deterministic:first.block===second.block});
+        }
+    }catch(e){send({type:'fatal',error:e.toString()});}
+    finally{send({type:'done'});}
+});

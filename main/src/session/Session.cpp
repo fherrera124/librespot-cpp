@@ -209,8 +209,38 @@ bell::Result<> cspot::Session::connectDealer() {
     return dealerConnectRes;
   }
 
+  
+
+
+  std::thread([this]() {
+      sleep(5);
+      BELL_LOG(info, "Session", "Resolving track 4cOdK2wGLETKBW3PvgPWqT");
+      auto filesRes = spClient->resolveAudioFiles("spotify:track:4cOdK2wGLETKBW3PvgPWqT");
+      if (filesRes && !filesRes->empty()) {
+          auto fileId = (*filesRes)[0].fileId;
+          std::string hexId = "";
+          for (auto b : fileId) {
+              char buf[3];
+              sprintf(buf, "%02x", (unsigned char)b);
+              hexId += buf;
+          }
+          BELL_LOG(info, "Session", "Got fileId: {}, fetching license", hexId.c_str());
+          auto r = spClient->playPlayLicense(fileId, false);
+          if (r) {
+              BELL_LOG(info, "Session", "Fetched license OK!");
+          } else {
+              BELL_LOG(info, "Session", "Fetched license FAILED!");
+          }
+      } else {
+          BELL_LOG(info, "Session", "Resolve failed!");
+      }
+  }).detach();
+
+
+
   return {};
 }
+
 
 bell::Result<> cspot::Session::connectAp() {
   auto apAddressRes = credentialsResolver->getApAddress(

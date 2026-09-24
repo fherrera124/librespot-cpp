@@ -1,0 +1,6 @@
+{"type": "attached", "mode": "native_keystream_control", "init_rva": "0xd9e2e4", "stream_rva": "0xd9d0f0"}
+Play a different song in Windows Spotify to trigger validation.
+{"type": "keystream_control", "file_id": "a9f19af4bd235e28f4868870f6fc2487670cc3b5", "candidate": "1281c34713e794e94bd53ae73a8331a4", "expected": "8422ed0c99cb7fd0a40659bdcde241cd", "actual": "9fcfe73d867f7186f8b81001afba1002", "repeat": "9fcfe73d867f7186f8b81001afba1002", "auxiliary": 867562208, "match": false, "deterministic": true}
+{"type": "keystream_control", "file_id": "418decc2a2938e4aeafcac42aea5bf53551ff9b8", "candidate": "42c8982e762edfe1ffb0eec511003011", "expected": "9a66d9f70c57e7d84e877cbe00026cff", "actual": "dac7526500ec4f22ce7abffb375932c7", "repeat": "dac7526500ec4f22ce7abffb375932c7", "auxiliary": 3254079834, "match": false, "deterministic": true}
+{"type": "done"}
+{"planned": 11, "completed": 0, "pass": 0, "mismatch": 0, "error": 0, "control_pass": false}

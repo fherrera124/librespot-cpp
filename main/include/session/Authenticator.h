@@ -39,7 +39,7 @@ class Authenticator {
   const char* LOG_TAG = "Authenticator";
 
   // Used for SHA1 computations
-  bell::utils::DigestCrypto sha1Context{MBEDTLS_MD_SHA1};
+  bell::utils::DigestCrypto sha1Context{MBEDTLS_MD_SHA1, true};
 
   // Used for Diffie-Hellman key exchange
   DH dhPair;

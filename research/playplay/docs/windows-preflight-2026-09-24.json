@@ -1,0 +1,26 @@
+{
+  "service": {
+    "ProcessId": 49428,
+    "CommandLine": "C:\\Users\\francisco.herrera\\AppData\\Local\\Programs\\Python\\Python312\\python.exe  -u C:\\Users\\francisco.herrera\\flask_frida_667.py "
+  },
+  "listeners": [
+    {
+      "LocalAddress": "0.0.0.0",
+      "LocalPort": 8080,
+      "OwningProcess": 49428
+    }
+  ],
+  "dllSha256": "7B44456A90142DAEB758E2736D8628FFE211D6EA523DB8F1050B3C8B1ADDB68A",
+  "dllPath": "C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.dll",
+  "serviceSha256": "562C94D850D1DE91B98CE9C3258A984A7B3E7C641761A078A9152CE6992D0CC9",
+  "dllVersion": "1.2.92.148",
+  "main": [
+    {
+      "ProcessId": 64216,
+      "SessionId": 2,
+      "ExecutablePath": "C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.exe",
+      "CommandLine": "\"C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.exe\" "
+    }
+  ],
+  "recorded_at": "2026-09-24T03:44:15.583341+00:00"
+}

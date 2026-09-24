@@ -1,0 +1,307 @@
+{
+  "started_at": "2026-09-24T04:00:36.091349+00:00",
+  "pid": 64216,
+  "vectors_sha256": "9c11d188e4443f4f42de8296230da5327eb329db68da151fc48a1b8dd91f9791",
+  "mode": "onEnter",
+  "exceptions": "propagate",
+  "script_sha256": "95a621d78d75da211b5fe082b0e492eca0ed30a495f7b3a3e8c0b62fabf4581b",
+  "results": [],
+  "events": [
+    {
+      "type": "attached",
+      "module": "C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.dll",
+      "base": "0x7ff975d20000",
+      "transform_rva": "0x49eaa4",
+      "copy_rva": "0x17780e0",
+      "mode": "trace_copies"
+    },
+    {
+      "type": "captured",
+      "input": "65fde93c4272c87fe331144e894200c6",
+      "init": "a33c929c31c3e0eefeedebdaa1e7ff7f"
+    },
+    {
+      "type": "copies",
+      "label": "control_replay",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "control_replay",
+      "raw": "d8ce155019380fe28636385fdf2b4e15a602be3b89079170"
+    },
+    {
+      "type": "copies",
+      "label": "vector_0",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_0",
+      "raw": "5bd0c387d488d052e866c1eef5d0036bd26f55d3c4262281"
+    },
+    {
+      "type": "copies",
+      "label": "vector_1",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_1",
+      "raw": "6cb7d554f6702a89bb5785cf5644883814c5c78505dfe45a"
+    },
+    {
+      "type": "copies",
+      "label": "vector_2",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_2",
+      "raw": "60a51f76d470db050440e39c5e994d627c1201a99c8e5bfa"
+    },
+    {
+      "type": "copies",
+      "label": "vector_3",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_3",
+      "raw": "68182b5ce8cf1c770043c2c81432065a9bc4fbb12811f139"
+    },
+    {
+      "type": "copies",
+      "label": "vector_4",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_4",
+      "raw": "f10242f74196141c7453763430723cf3ec5d83f0130f6e90"
+    },
+    {
+      "type": "copies",
+      "label": "vector_5",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_5",
+      "raw": "d2d780365bb852c648084db22b4ce38e0388885ea34fa659"
+    },
+    {
+      "type": "copies",
+      "label": "vector_6",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_6",
+      "raw": "e7e38388741a7c553fe7ef8684b8b96c134763c905faead5"
+    },
+    {
+      "type": "copies",
+      "label": "vector_7",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_7",
+      "raw": "027abb2605e44356feefef314deb7b7fe04a7cd449566aa4"
+    },
+    {
+      "type": "copies",
+      "label": "vector_8",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_8",
+      "raw": "09de3cceb8b72386fc911cf7f1ee54e47320916ac01493e8"
+    },
+    {
+      "type": "copies",
+      "label": "vector_9",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_9",
+      "raw": "55fe06b22d97032ea550392632fc3339d3a35df538549748"
+    },
+    {
+      "type": "copies",
+      "label": "vector_10",
+      "copies": [],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "vector_10",
+      "raw": "2f032564982146420b806eed977d91331690207c802bc052"
+    },
+    {
+      "type": "copies",
+      "label": "natural",
+      "copies": [
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff448",
+          "hex": "2622a111317a39005c5bfe672ffce454"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff458",
+          "hex": "317a3900a42012d033fffe544cac2d09"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff2e0",
+          "dest": "0xbcf36ff478",
+          "hex": "466b2eaac37907fb74ea0f134d704358"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff488",
+          "hex": "466b2eaa3314df508985c5b2cb195c31"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff488",
+          "hex": "466b2eaacf34373e2beb74a06aab4621"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff488",
+          "hex": "466b2eaa7061a5cb46244f8aa5650052"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff498",
+          "hex": "7061a5cbf5ce3a474b6484b4e14683f0"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff498",
+          "hex": "7061a5cb8b067dc723bb49890de5ae7c"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff498",
+          "hex": "7061a5cb2cbe9b21e2e5c111d361c5e1"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff2e0",
+          "dest": "0xbcf36ff4a8",
+          "hex": "2cbe9b21a0901f78ea914f43bea4b1ea"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff2e0",
+          "dest": "0xbcf36ff4a8",
+          "hex": "2cbe9b2163016c202ddf1763ff8b606c"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff2e0",
+          "dest": "0xbcf36ff4a8",
+          "hex": "2cbe9b212c59fecae134e23f611f96d6"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff2e0",
+          "dest": "0xbcf36ff4a8",
+          "hex": "2cbe9b210a4125c2ee5d280d7e221129"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff2e0",
+          "dest": "0xbcf36ff4a8",
+          "hex": "2cbe9b218c02d0d64ba881cc45663354"
+        },
+        {
+          "return_rva": "0x49e357",
+          "source": "0xbcf36fe1d0",
+          "dest": "0x22341425390",
+          "hex": "51077a91c947be35a3454039eac33685"
+        },
+        {
+          "return_rva": "0x49e3ba",
+          "source": "0x223414253a0",
+          "dest": "0xbcf36fe1e0",
+          "hex": "0e563db1281a7a40cad4f90c5fe376b1"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff418",
+          "hex": "519a9ded9678e8b5a6f929406de595d3"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff428",
+          "hex": "2fd95d8b584f0916819ec7956f1c33db"
+        },
+        {
+          "return_rva": "0x172ff7e",
+          "source": "0xbcf36ff300",
+          "dest": "0xbcf36ff438",
+          "hex": "21c54865f2ebead9c16336e640c56e50"
+        },
+        {
+          "return_rva": "0x49f909",
+          "source": "0xbcf36ff520",
+          "dest": "0x223414247a0",
+          "hex": "21c54865f2ebead9c16336e640c56e50"
+        },
+        {
+          "return_rva": "0x49f92a",
+          "source": "0x2233ef0c6b0",
+          "dest": "0x22341424774",
+          "hex": "a33c929c31c3e0eefeedebdaa1e7ff7f"
+        }
+      ],
+      "dropped": 0
+    },
+    {
+      "type": "raw_output",
+      "label": "natural",
+      "raw": "a847ed2187aee0127dc888e2e92a6f5e60fc07761d2d4910"
+    },
+    {
+      "type": "done"
+    }
+  ],
+  "summary": {
+    "planned": 11,
+    "completed": 0,
+    "pass": 0,
+    "mismatch": 0,
+    "error": 0,
+    "control_pass": false
+  },
+  "assessment": "inconclusive_execution_error",
+  "finished_at": "2026-09-24T04:00:53.785598+00:00"
+}

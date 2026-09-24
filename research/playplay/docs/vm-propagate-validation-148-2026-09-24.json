@@ -1,0 +1,158 @@
+{
+  "started_at": "2026-09-24T03:51:38.232156+00:00",
+  "pid": 64216,
+  "vectors_sha256": "9c11d188e4443f4f42de8296230da5327eb329db68da151fc48a1b8dd91f9791",
+  "mode": "onEnter",
+  "exceptions": "propagate",
+  "results": [
+    {
+      "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+      "version": "v2",
+      "obfuscated": "628c9a976bedc0e3663bc9c4051f1708",
+      "expected": "a503a84c1dc9271460cc13f142e0bae2",
+      "actual": "3794a1603f10960e6ef42ca9cb756d8a",
+      "status": "mismatch",
+      "raw": "3794a1603f10960e6ef42ca9cb756d8a8ef104205af9e3ae",
+      "format": "inline16_candidate"
+    },
+    {
+      "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+      "version": "v3",
+      "obfuscated": "1a50e35c5335f9f0b108e79b5dc98f8a",
+      "expected": "a503a84c1dc9271460cc13f142e0bae2",
+      "actual": "f5fa9a2cabe75a3972de3c970de4dd04",
+      "status": "mismatch",
+      "raw": "f5fa9a2cabe75a3972de3c970de4dd045e1f76f5384b92b6",
+      "format": "inline16_candidate"
+    },
+    {
+      "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+      "version": "v4",
+      "obfuscated": "fa699aa7a870569bfc7bd818ed09bab5",
+      "expected": "a503a84c1dc9271460cc13f142e0bae2",
+      "actual": "54cec945b9f648c79747ca3ec9fc80a4",
+      "status": "mismatch",
+      "raw": "54cec945b9f648c79747ca3ec9fc80a48794bb4d31be612f",
+      "format": "inline16_candidate"
+    },
+    {
+      "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+      "version": "v5",
+      "obfuscated": "611f9b976f284ecf77c202588b8c1d22",
+      "expected": "a503a84c1dc9271460cc13f142e0bae2",
+      "actual": "a2442a450221ccdb9adbe393a3425ef4",
+      "status": "mismatch",
+      "raw": "a2442a450221ccdb9adbe393a3425ef4b98b7a3e31f67be8",
+      "format": "inline16_candidate"
+    },
+    {
+      "file_id": "1a8e5b04837957617162724232b0c96922222447",
+      "version": "v2",
+      "obfuscated": "79a7680e258598364d3215881ead3ced",
+      "expected": "c3206271b4c70fff8e4ac3993c4dae8a",
+      "actual": "d11465a8e50a1cc8f377e22b69fea044",
+      "status": "mismatch",
+      "raw": "d11465a8e50a1cc8f377e22b69fea0445252554b05dcbe52",
+      "format": "inline16_candidate"
+    },
+    {
+      "file_id": "1a8e5b04837957617162724232b0c96922222447",
+      "version": "v3",
+      "obfuscated": "1c94840189ef6e384f5aa185da8a4305",
+      "expected": "c3206271b4c70fff8e4ac3993c4dae8a",
+      "actual": "5e895b75209c8deea6d517355c97c96d",
+      "status": "mismatch",
+      "raw": "5e895b75209c8deea6d517355c97c96d149cb5e98f267f98",
+      "format": "inline16_candidate"
+    },
+    {
+      "file_id": "1a8e5b04837957617162724232b0c96922222447",
+      "version": "v4",
+      "obfuscated": "d247cd8e62215a995e5829b9c7e67f7c",
+      "expected": "c3206271b4c70fff8e4ac3993c4dae8a",
+      "actual": "30b7f215d56ef5ac40852f6239ccd556",
+      "status": "mismatch",
+      "raw": "30b7f215d56ef5ac40852f6239ccd556d712659edb26bab3",
+      "format": "inline16_candidate"
+    },
+    {
+      "file_id": "1a8e5b04837957617162724232b0c96922222447",
+      "version": "v5",
+      "obfuscated": "9678cc71ae205966f814cb500bb7c7cf",
+      "expected": "c3206271b4c70fff8e4ac3993c4dae8a",
+      "actual": "06883f6f91758d4a84c7337992252c33",
+      "status": "mismatch",
+      "raw": "06883f6f91758d4a84c7337992252c33f8c8fa2137a3ce40",
+      "format": "inline16_candidate"
+    },
+    {
+      "file_id": "cf1bd197a6f5d613fc856bd689e43c0f4069b800",
+      "version": "v2",
+      "obfuscated": "f4c60dff695fb265104bc50546d6e48a",
+      "expected": "8d86fb522c00729f35b34d60b165b922",
+      "actual": "603658b2263c81c216d1423944b4fa0f",
+      "status": "mismatch",
+      "raw": "603658b2263c81c216d1423944b4fa0f9dbbd677794fce76",
+      "format": "inline16_candidate"
+    },
+    {
+      "file_id": "cf1bd197a6f5d613fc856bd689e43c0f4069b800",
+      "version": "v3",
+      "obfuscated": "4c587f8f3b898b63f60ab0043c14a267",
+      "expected": "8d86fb522c00729f35b34d60b165b922",
+      "actual": "688d0896946aab06b970e8e2463f5470",
+      "status": "mismatch",
+      "raw": "688d0896946aab06b970e8e2463f54703453096208870304",
+      "format": "inline16_candidate"
+    },
+    {
+      "file_id": "cf1bd197a6f5d613fc856bd689e43c0f4069b800",
+      "version": "v4",
+      "obfuscated": "3dfba174e5779b38c5e97d2cb1b4cafc",
+      "expected": "8d86fb522c00729f35b34d60b165b922",
+      "actual": "4e3b5aba28cf5d536e11d3b9791b33ea",
+      "status": "mismatch",
+      "raw": "4e3b5aba28cf5d536e11d3b9791b33ea0d2e873f2c1980b2",
+      "format": "inline16_candidate"
+    }
+  ],
+  "events": [
+    {
+      "type": "attached",
+      "module": "C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.dll",
+      "base": "0x7ff975d20000",
+      "rva": "0x49EAA4"
+    },
+    {
+      "type": "captured",
+      "module": "C:\\Users\\francisco.herrera\\AppData\\Roaming\\Spotify\\Spotify.dll",
+      "base": "0x7ff975d20000",
+      "rva": "0x49EAA4",
+      "input": "81ac0080eb1415266ce4c3968e345c4c",
+      "init": "a33c929c31c3e0eefeedebdaa1e7ff7f"
+    },
+    {
+      "type": "control_replay",
+      "raw": "7974203a77525b17e048fbe9be34337a976aba4e354604cb",
+      "format": "inline16_candidate",
+      "actual": "7974203a77525b17e048fbe9be34337a"
+    },
+    {
+      "type": "natural_output",
+      "raw": "aa001444b9932a1391ccadc9f86cf1fea99cf422355e1315",
+      "format": "inline16_candidate",
+      "actual": "aa001444b9932a1391ccadc9f86cf1fe"
+    },
+    {
+      "type": "done"
+    }
+  ],
+  "summary": {
+    "planned": 11,
+    "completed": 11,
+    "pass": 0,
+    "mismatch": 11,
+    "error": 0
+  },
+  "finished_at": "2026-09-24T03:52:09.813114+00:00"
+}
