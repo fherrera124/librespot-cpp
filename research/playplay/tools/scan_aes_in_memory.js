@@ -1,0 +1,82 @@
+const mod = Process.getModuleByName('Spotify.dll');
+
+function hex(buffer) {
+    if (!buffer) return null;
+    return Array.from(new Uint8Array(buffer), b => b.toString(16).padStart(2, '0')).join('');
+}
+function allocateHex(value){
+    const p=Memory.alloc(value.length/2);
+    p.writeByteArray(value.match(/../g).map(b=>parseInt(b,16)));
+    return p;
+}
+
+const pipelineAddress=mod.base.add(0x4a0268);
+const initAddress=mod.base.add(0xd9e2e4);
+const options={exceptions:'propagate',traps:'all'};
+const pipeline=new NativeFunction(pipelineAddress,'void',['pointer','pointer','pointer','pointer'],options);
+const init=new NativeFunction(initAddress,'void',['pointer','pointer','pointer'],options);
+
+let activeThread = null;
+
+function searchMemory(pattern) {
+    const ranges = Process.enumerateRanges('r--');
+    let results = [];
+    for (const range of ranges) {
+        try {
+            const matches = Memory.scanSync(range.base, range.size, pattern);
+            for (const match of matches) {
+                results.push({ address: match.address.toString(), size: match.size });
+            }
+        } catch (e) {}
+    }
+    return results;
+}
+
+setImmediate(() => {
+    try {
+        const obfuscated = '7a154493af30b49d753cd246d6e9e83a';
+        const b4_seq = '3a034bf8';
+        const targetAesHex = 'a503a84c1dc9271460cc13f142e0bae2';
+        const targetPattern = targetAesHex.match(/../g).join(' ');
+
+        // Clean up before searching
+        gc();
+
+        // 1. Run Pipeline
+        const request=Memory.alloc(256),input=allocateHex(obfuscated),auxiliary=Memory.alloc(4);
+        request.writeByteArray(new Uint8Array(256));
+        request.add(0x70).writeU8(1); 
+        auxiliary.writeByteArray(b4_seq.match(/../g).map(b=>parseInt(b,16)));
+        
+        let generated28 = null;
+        let ours = false;
+        const hook = Interceptor.attach(mod.base.add(0x49eaa4), {
+            onEnter(args) { this.ours = true; this.output = args[2]; },
+            onLeave() { if (this.ours) generated28 = this.output.readByteArray(28); }
+        });
+
+        pipeline(request, input, auxiliary, ptr(0));
+        hook.detach();
+
+        // 2. Scan memory after pipeline but before init
+        const matchesAfterPipeline = searchMemory(targetPattern);
+        
+        // 3. Init
+        const context = Memory.alloc(4096);
+        const wrapped = Memory.alloc(28);
+        wrapped.writeByteArray(generated28);
+        init(context, wrapped, auxiliary);
+
+        // 4. Scan memory after init
+        const matchesAfterInit = searchMemory(targetPattern);
+
+        send({
+            type: 'scan_results',
+            matchesAfterPipeline: matchesAfterPipeline,
+            matchesAfterInit: matchesAfterInit
+        });
+
+    } catch(e) {
+        send({type: 'error', stack: e.toString()});
+    }
+});

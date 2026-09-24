@@ -24,7 +24,10 @@ históricas. No se extrajo AES16 del candidato ni del descriptor.
 - Dump local crudo: `research/dlls/Spotify_1.2.92.148_dump.dll`, SHA256
   `275a9fd95b629f55bd6a170bbf41deb17f87ca59ff61056116d527611d89f2cc`.
 - El dump usa **offset de archivo = RVA**. Un PE de instalador requiere mapeo
-  de secciones. El ImageBase nominal `0x180000000` no es la base viva.
+  de secciones. La inspección del header de este dump da ImageBase
+  `0x7ff9b7da0000`; conserva referencias relocalizadas de su captura. No mapearlo
+  a `0x180000000` sin resolver esas referencias. Tampoco reutilizar su base como
+  base viva de otra sesión. [Ensayo Unicorn](UNICORN_FEASIBILITY_148.md).
 - Preflight conservado en [windows-preflight-2026-09-24.json](windows-preflight-2026-09-24.json).
 
 ## Mapa de RVAs 148
@@ -153,7 +156,7 @@ de versión. No se localizaron RVAs validados para nuestro 667 en esta sesión.
 | `Spotify_1.2.88.483_g8aa8628e.dll` | 483 | `f88968879e3ce8be8ec87c45cc37843d8f175cfdd8b11fbe4e0e00f5b88b45f3` | `0x180000000` |
 | `Spotify_1.2.88.485_g1012a6e0.dll` | 485 | `c2a0c44d087ba6de9cb6b0c6628eab3a22d45b1ed3d7c204ec5d9dbc52fbec71` | `0x180000000` |
 | `Spotify_1.2.93.667_g7b5cc0ce.dll` | **667** | `3e2e6fa93a6fc2b2f23a5716d3b20274fcdf381dcb21c64147e0e092c9ee8bac` | `0x180000000` |
-| `Spotify_1.2.92.148_dump.dll` | 148 | `275a9fd95b629f55bd6a170bbf41deb17f87ca59ff61056116d527611d89f2cc` | `0x180000000` |
+| `Spotify_1.2.92.148_dump.dll` | 148 | `275a9fd95b629f55bd6a170bbf41deb17f87ca59ff61056116d527611d89f2cc` | `0x7ff9b7da0000` (header del dump) |
 
 
 El 667 proviene de un instalador full extraído con PE/overlay LZMA1. Los

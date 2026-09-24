@@ -1,0 +1,157 @@
+{
+  "capture_sha256": "139689b374b9838c7207dbec3cd8bb3f7093e36e98c567dbef83ea4f74caea56",
+  "cases": [
+    {
+      "run": "test_2f43127d_b4",
+      "correct": "4c88e79abbed159b95944deee1919104",
+      "faults": [
+        {
+          "offset": "0xa0",
+          "ct": "4c88a59abbf2159bea944deee19191d0"
+        },
+        {
+          "offset": "0xa1",
+          "ct": "4ce3e79a8ded159b95944d26e1916d04"
+        },
+        {
+          "offset": "0xa2",
+          "ct": "ee88e79abbed1592959425eee1b59104"
+        },
+        {
+          "offset": "0xa3",
+          "ct": "4c88e7e8bbedef9b95ea4dee02919104"
+        },
+        {
+          "offset": "0xa4",
+          "ct": "6d88e79abbed15509594f5eee1979104"
+        },
+        {
+          "offset": "0xa5",
+          "ct": "4c88e716bbed849b95264deef8919104"
+        },
+        {
+          "offset": "0xa6",
+          "ct": "4c88f39abb75159b1f944deee1919119"
+        },
+        {
+          "offset": "0xa7",
+          "ct": "4c1be79a0ded159b95944d2ce191e404"
+        },
+        {
+          "offset": "0xa8",
+          "ct": "4488e79abbed157b95940feee1059104"
+        },
+        {
+          "offset": "0xa9",
+          "ct": "4c88e72dbbed399b95764dee0a919104"
+        },
+        {
+          "offset": "0xaa",
+          "ct": "4c88269abb22159ba1944deee19191fe"
+        },
+        {
+          "offset": "0xab",
+          "ct": "4c48e79ab3ed159b95944d5ce191a304"
+        },
+        {
+          "offset": "0xac",
+          "ct": "3c88e79abbed15dd95940beee1519104"
+        },
+        {
+          "offset": "0xad",
+          "ct": "4c88e714bbed3d9b956c4deec6919104"
+        },
+        {
+          "offset": "0xae",
+          "ct": "4c88199abb32159bdb944deee19191d4"
+        },
+        {
+          "offset": "0xaf",
+          "ct": "4c91e79ad1ed159b95944d59e1914904"
+        }
+      ],
+      "minimal_teb_init": {
+        "status": "failed",
+        "error": "Invalid instruction (UC_ERR_INSN_INVALID)",
+        "rip": "0x7ff9b951825d",
+        "rva": "0x177825d"
+      }
+    },
+    {
+      "run": "test_1a8e5b04_b4",
+      "correct": "606c64ab52c14dbe34cc355e088da8bb",
+      "faults": [
+        {
+          "offset": "0xa0",
+          "ct": "606c67ab52824dbe98cc355e088da837"
+        },
+        {
+          "offset": "0xa1",
+          "ct": "603064ab10c14dbe34cc3591088d4fbb"
+        },
+        {
+          "offset": "0xa2",
+          "ct": "116c64ab52c14dbd34cc0a5e0890a8bb"
+        },
+        {
+          "offset": "0xa3",
+          "ct": "606c64e252c10abe3430355e568da8bb"
+        },
+        {
+          "offset": "0xa4",
+          "ct": "226c64ab52c14dfb34cc615e0872a8bb"
+        },
+        {
+          "offset": "0xa5",
+          "ct": "606c642d52c120be3463355eb48da8bb"
+        },
+        {
+          "offset": "0xa6",
+          "ct": "606c5bab520a4dbed8cc355e088da89f"
+        },
+        {
+          "offset": "0xa7",
+          "ct": "603b64ab4ec14dbe34cc35ea088da2bb"
+        },
+        {
+          "offset": "0xa8",
+          "ct": "bb6c64ab52c14d4734ccde5e0845a8bb"
+        },
+        {
+          "offset": "0xa9",
+          "ct": "606c64a552c190be3417355e328da8bb"
+        },
+        {
+          "offset": "0xaa",
+          "ct": "606cd2ab527f4dbedfcc355e088da8af"
+        },
+        {
+          "offset": "0xab",
+          "ct": "602364aba9c14dbe34cc3507088d5cbb"
+        },
+        {
+          "offset": "0xac",
+          "ct": "d16c64ab52c14d2c34ccab5e08a7a8bb"
+        },
+        {
+          "offset": "0xad",
+          "ct": "606c644152c1a0be3471355e2a8da8bb"
+        },
+        {
+          "offset": "0xae",
+          "ct": "606cbaab52354dbec0cc355e088da8a9"
+        },
+        {
+          "offset": "0xaf",
+          "ct": "607e64ab9dc14dbe34cc354e088d45bb"
+        }
+      ],
+      "minimal_teb_init": {
+        "status": "failed",
+        "error": "Invalid instruction (UC_ERR_INSN_INVALID)",
+        "rip": "0x7ff9b951825d",
+        "rva": "0x177825d"
+      }
+    }
+  ]
+}

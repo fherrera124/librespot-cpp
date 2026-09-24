@@ -1,0 +1,24 @@
+{
+  "faults_sha256": "f4bc3da60cc39749a1c24c3b8e9ea652ddd7373c050eb6f6d1507876fd20b3e9",
+  "extractor_sha256": "c4dcf5525819c359f2639360a8b33b3fb5c3a0fad6af806c5b64345bae18f415",
+  "cases": [
+    {
+      "run": "test_2f43127d_b4",
+      "recovered_aes": "a503a84c1dc9271460cc13f142e0bae2",
+      "k10": "398cc5af7975a2ed0c547d6a005902e1",
+      "correct_block": true,
+      "matches_reference": true,
+      "content_bytes": 4096,
+      "ogg_vorbis_crc_valid": true
+    },
+    {
+      "run": "test_1a8e5b04_b4",
+      "recovered_aes": "c3206271b4c70fff8e4ac3993c4dae8a",
+      "k10": "0966860b7226db38272cade4cfeb5b0d",
+      "correct_block": true,
+      "matches_reference": true,
+      "content_bytes": 4096,
+      "ogg_vorbis_crc_valid": true
+    }
+  ]
+}

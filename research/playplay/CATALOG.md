@@ -14,6 +14,9 @@
 | Encontrar fixtures conocidos | known-reference-inputs | [data](data/) |
 | Revisar controles anteriores E | baseline-e | [Validación histórica](docs/VALIDATION_148_2026-09-24.md) |
 | Capturar eventos nativos | native-tracing | [Catálogo detallado](tools/README.md) |
+| Repetir captura limpia con control de build | clean-capture-148 | [Uso y procedencia](docs/CLEAN_CAPTURE_148.md) |
+| Reconstruir contextos y portar RVAs | build-and-abi | [Secuencia y evidencia](docs/RVA_DISCOVERY_PLAYBOOK.md) |
+| Evaluar DLL sin Spotify vivo | unicorn-feasibility-148 | [Resultados y límites](docs/UNICORN_FEASIBILITY_148.md) |
 | Verificar binario y ABI | build-and-abi | [FACTS](docs/FACTS.md), [arquitectura](docs/PLAYPLAY_ARCHITECTURE_NOTES.md) |
 | Reutilizar captura externa token | token-capture-external | [Grupo y límites](tools/token_capture_148/README.md) |
 | Entender HTTP anterior | lan-prototypes | [Decisiones](docs/DECISIONS_148.md), fuera de alcance actual |

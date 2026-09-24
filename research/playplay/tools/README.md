@@ -9,11 +9,18 @@ La prueba token148 es el control positivo; los ensayos E siguientes son antecede
 
 Corte **2026-09-24**. Leer el código antes de ejecutar, como exige
 [AGENTS.md](../AGENTS.md). Los scripts 148 usan RVAs del binario exacto de
-[FACTS.md](../docs/FACTS.md). **Ninguno demuestra todavía extracción AES correcta.**
+[FACTS.md](../docs/FACTS.md). Los controles históricos descritos aquí preceden
+al caso DFA recuperado; ver [estado actual](../STATUS.md).
 Los scripts de esta sesión están documentados individualmente abajo; las
 herramientas anteriores se separan al final.
 
 ## Entornos y archivos
+
+**Capturas recuperadas y protegidas:** [guía CLEAN_CAPTURE_148](../docs/CLEAN_CAPTURE_148.md).
+`run_clean_capture.py` + `playplay_148_preflight.py` verifican versión/hash y
+firmas antes de ejecutar `capture_clean_148.js` o `capture_context_148.js`.
+Los originales con hash histórico están archivados en runs. Los cambios actuales
+se comprueban offline con `test_clean_capture.py`; integración Windows pendiente.
 
 **Actualización posterior:** tres herramientas nuevas validan el stream nativo
 token148/v5 y contenido, **sin servicio LAN**. No extraen AES16 todavía.

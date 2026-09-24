@@ -239,11 +239,43 @@
       ],
       "environment": "mixed: inspect each source",
       "notes": "Guia individual tools/README.md; no ejecutar como suite de tests."
+    },
+    {
+      "id": "clean-capture-148",
+      "status": "offline-tested-live-validation-pending",
+      "summary": "Captura limpia con verificacion de version/hash/firmas, fuentes historicas preservadas y pruebas offline.",
+      "paths": [
+        "research/playplay/docs/CLEAN_CAPTURE_148.md",
+        "research/playplay/tools/run_clean_capture.py",
+        "research/playplay/tools/playplay_148_preflight.py",
+        "research/playplay/tools/capture_clean_148.js",
+        "research/playplay/tools/capture_context_148.js",
+        "research/playplay/tools/test_clean_capture.py"
+      ],
+      "environment": "Windows148 + Python3.11+ + Frida/psutil; tests offline Python, quickjs opcional",
+      "notes": "No es extractor DFA. Requiere corrida Windows de la revision protegida; pruebas JS requieren quickjs."
+    },
+    {
+      "id": "unicorn-feasibility-148",
+      "status": "offline-partial-success",
+      "summary": "Evaluacion del harness externo: stream y DFA offline desde snapshots; construccion desde nueva licencia no resuelta.",
+      "paths": [
+        "research/playplay/docs/UNICORN_FEASIBILITY_148.md",
+        "research/playplay/runs/20260924-unicorn-feasibility/manifest.json",
+        "research/playplay/runs/20260924-unicorn-feasibility/source/probe.py",
+        "research/playplay/runs/20260924-unicorn-feasibility/source/context_faults.py",
+        "research/playplay/runs/20260924-unicorn-feasibility/source/evaluate_faults.py",
+        "research/playplay/runs/20260924-unicorn-feasibility/source/init_copy_probe.py"
+      ],
+      "environment": "Linux/offline: ppvenv Unicorn2.1.4, pefile, capstone; evaluador Python+cryptography",
+      "notes": "No Windows. Escritores exclusivos: copiar source a nueva corrida/raw para repetir. Snapshots por recurso no equivalen a arranque desde DLL original."
     }
   ],
   "evidence_manifests": [
     "research/playplay/runs/20260924T164814Z-token148/manifest.json",
-    "research/playplay/runs/20260924-legacy-controls/manifest.json"
+    "research/playplay/runs/20260924-legacy-controls/manifest.json",
+    "research/playplay/runs/20260924-clean-capture-recovery/manifest.json",
+    "research/playplay/runs/20260924-unicorn-feasibility/manifest.json"
   ],
   "documentation": [
     "AGENTS.md",
@@ -277,6 +309,8 @@
     "research/playplay/templates/EXPERIMENT.md",
     "research/playplay/tools/README.md",
     "research/playplay/tools/token_capture_148/README.md",
-    "research/tools/README.md"
+    "research/tools/README.md",
+    "research/playplay/docs/CLEAN_CAPTURE_148.md",
+    "research/playplay/docs/UNICORN_FEASIBILITY_148.md"
   ]
 }

@@ -1,0 +1,676 @@
+{
+  "dump": "research/dlls/Spotify_1.2.92.148_dump.dll",
+  "dump_sha256": "275a9fd95b629f55bd6a170bbf41deb17f87ca59ff61056116d527611d89f2cc",
+  "header_image_base": "0x7ff9b7da0000",
+  "unicorn_version": "2.1.4",
+  "cases": [
+    {
+      "rva": "0xd9d0f0",
+      "status": "returned",
+      "seconds": 0.01015,
+      "instructions": 993,
+      "rip": "0x4000000",
+      "faults": [],
+      "tail": [
+        {
+          "rva": "0xd9e1c5",
+          "instruction": "test dx, dx"
+        },
+        {
+          "rva": "0xd9e1c8",
+          "instruction": "jne 0x180d9e2d0"
+        },
+        {
+          "rva": "0xd9e2d0",
+          "instruction": "add rsp, 0x28"
+        },
+        {
+          "rva": "0xd9e2d4",
+          "instruction": "pop r15"
+        },
+        {
+          "rva": "0xd9e2d6",
+          "instruction": "pop r14"
+        },
+        {
+          "rva": "0xd9e2d8",
+          "instruction": "pop r13"
+        },
+        {
+          "rva": "0xd9e2da",
+          "instruction": "pop r12"
+        },
+        {
+          "rva": "0xd9e2dc",
+          "instruction": "pop rdi"
+        },
+        {
+          "rva": "0xd9e2dd",
+          "instruction": "pop rsi"
+        },
+        {
+          "rva": "0xd9e2de",
+          "instruction": "pop rbp"
+        },
+        {
+          "rva": "0xd9e2df",
+          "instruction": "pop rbx"
+        },
+        {
+          "rva": "0xd9e2e0",
+          "instruction": "ret "
+        }
+      ],
+      "case": "stream-from-saved-context",
+      "run": "test_2f43127d_b4",
+      "base": "0x180000000",
+      "output": "4c88e79abbed159b95944deee1919104",
+      "expected": "4c88e79abbed159b95944deee1919104",
+      "match": true
+    },
+    {
+      "rva": "0xd9e2e4",
+      "status": "failed",
+      "error": "Invalid memory read (UC_ERR_READ_UNMAPPED)",
+      "seconds": 0.00849,
+      "instructions": 571,
+      "rip": "0x1820f261c",
+      "faults": [
+        {
+          "access": 19,
+          "address": "0x30",
+          "size": 8,
+          "rip": "0x1820f261c"
+        }
+      ],
+      "tail": [
+        {
+          "rva": "0x20f25e4",
+          "instruction": "mov r13d, 0x37ff098c"
+        },
+        {
+          "rva": "0x20f25ea",
+          "instruction": "mov eax, 0x5c00f370"
+        },
+        {
+          "rva": "0x20f25ef",
+          "instruction": "xor eax, r13d"
+        },
+        {
+          "rva": "0x20f25f2",
+          "instruction": "pop r13"
+        },
+        {
+          "rva": "0x20f25f4",
+          "instruction": "xor eax, 0x1462e466"
+        },
+        {
+          "rva": "0x20f25f9",
+          "instruction": "not eax"
+        },
+        {
+          "rva": "0x20f25fb",
+          "instruction": "dec eax"
+        },
+        {
+          "rva": "0x20f25fd",
+          "instruction": "not eax"
+        },
+        {
+          "rva": "0x20f25ff",
+          "instruction": "add eax, 0x8062e165"
+        },
+        {
+          "rva": "0x20f2604",
+          "instruction": "test eax, eax"
+        },
+        {
+          "rva": "0x20f2606",
+          "instruction": "je 0x1820f261c"
+        },
+        {
+          "rva": "0x20f261c",
+          "instruction": "movabs rax, qword ptr gs:[0x30]"
+        }
+      ],
+      "case": "init-from-saved-descriptor",
+      "run": "test_2f43127d_b4",
+      "base": "0x180000000"
+    },
+    {
+      "rva": "0xd9d0f0",
+      "status": "returned",
+      "seconds": 0.01555,
+      "instructions": 993,
+      "rip": "0x4000000",
+      "faults": [],
+      "tail": [
+        {
+          "rva": "0xd9e1c5",
+          "instruction": "test dx, dx"
+        },
+        {
+          "rva": "0xd9e1c8",
+          "instruction": "jne 0x180d9e2d0"
+        },
+        {
+          "rva": "0xd9e2d0",
+          "instruction": "add rsp, 0x28"
+        },
+        {
+          "rva": "0xd9e2d4",
+          "instruction": "pop r15"
+        },
+        {
+          "rva": "0xd9e2d6",
+          "instruction": "pop r14"
+        },
+        {
+          "rva": "0xd9e2d8",
+          "instruction": "pop r13"
+        },
+        {
+          "rva": "0xd9e2da",
+          "instruction": "pop r12"
+        },
+        {
+          "rva": "0xd9e2dc",
+          "instruction": "pop rdi"
+        },
+        {
+          "rva": "0xd9e2dd",
+          "instruction": "pop rsi"
+        },
+        {
+          "rva": "0xd9e2de",
+          "instruction": "pop rbp"
+        },
+        {
+          "rva": "0xd9e2df",
+          "instruction": "pop rbx"
+        },
+        {
+          "rva": "0xd9e2e0",
+          "instruction": "ret "
+        }
+      ],
+      "case": "stream-from-saved-context",
+      "run": "test_1a8e5b04_b4",
+      "base": "0x180000000",
+      "output": "606c64ab52c14dbe34cc355e088da8bb",
+      "expected": "606c64ab52c14dbe34cc355e088da8bb",
+      "match": true
+    },
+    {
+      "rva": "0xd9e2e4",
+      "status": "failed",
+      "error": "Invalid memory read (UC_ERR_READ_UNMAPPED)",
+      "seconds": 0.00811,
+      "instructions": 571,
+      "rip": "0x1820f261c",
+      "faults": [
+        {
+          "access": 19,
+          "address": "0x30",
+          "size": 8,
+          "rip": "0x1820f261c"
+        }
+      ],
+      "tail": [
+        {
+          "rva": "0x20f25e4",
+          "instruction": "mov r13d, 0x37ff098c"
+        },
+        {
+          "rva": "0x20f25ea",
+          "instruction": "mov eax, 0x5c00f370"
+        },
+        {
+          "rva": "0x20f25ef",
+          "instruction": "xor eax, r13d"
+        },
+        {
+          "rva": "0x20f25f2",
+          "instruction": "pop r13"
+        },
+        {
+          "rva": "0x20f25f4",
+          "instruction": "xor eax, 0x1462e466"
+        },
+        {
+          "rva": "0x20f25f9",
+          "instruction": "not eax"
+        },
+        {
+          "rva": "0x20f25fb",
+          "instruction": "dec eax"
+        },
+        {
+          "rva": "0x20f25fd",
+          "instruction": "not eax"
+        },
+        {
+          "rva": "0x20f25ff",
+          "instruction": "add eax, 0x8062e165"
+        },
+        {
+          "rva": "0x20f2604",
+          "instruction": "test eax, eax"
+        },
+        {
+          "rva": "0x20f2606",
+          "instruction": "je 0x1820f261c"
+        },
+        {
+          "rva": "0x20f261c",
+          "instruction": "movabs rax, qword ptr gs:[0x30]"
+        }
+      ],
+      "case": "init-from-saved-descriptor",
+      "run": "test_1a8e5b04_b4",
+      "base": "0x180000000"
+    },
+    {
+      "rva": "0x4a0268",
+      "status": "failed",
+      "error": "Invalid memory read (UC_ERR_READ_UNMAPPED)",
+      "seconds": 0.00112,
+      "instructions": 47,
+      "rip": "0x1815ac0f7",
+      "faults": [
+        {
+          "access": 19,
+          "address": "0x7ff9b96130e9",
+          "size": 1,
+          "rip": "0x1815ac0f7"
+        }
+      ],
+      "tail": [
+        {
+          "rva": "0x15ac0d0",
+          "instruction": "mov r8d, eax"
+        },
+        {
+          "rva": "0x15ac0d3",
+          "instruction": "shr r8d, 0xb"
+        },
+        {
+          "rva": "0x15ac0d7",
+          "instruction": "xor r8d, eax"
+        },
+        {
+          "rva": "0x15ac0da",
+          "instruction": "mov eax, r8d"
+        },
+        {
+          "rva": "0x15ac0dd",
+          "instruction": "shl eax, 5"
+        },
+        {
+          "rva": "0x15ac0e0",
+          "instruction": "xor eax, r8d"
+        },
+        {
+          "rva": "0x15ac0e3",
+          "instruction": "mov ebp, eax"
+        },
+        {
+          "rva": "0x15ac0e5",
+          "instruction": "shr ebp, 0xe"
+        },
+        {
+          "rva": "0x15ac0e8",
+          "instruction": "xor ebp, eax"
+        },
+        {
+          "rva": "0x15ac0ea",
+          "instruction": "sub ebp, 0x44d70a5f"
+        },
+        {
+          "rva": "0x15ac0f0",
+          "instruction": "lea r14d, [rbp - 0x44d7b177]"
+        },
+        {
+          "rva": "0x15ac0f7",
+          "instruction": "movsx rcx, byte ptr [rdx + 1]"
+        }
+      ],
+      "case": "pipeline-correct-contract",
+      "base": "0x180000000"
+    },
+    {
+      "rva": "0xd9d0f0",
+      "status": "returned",
+      "seconds": 0.01328,
+      "instructions": 993,
+      "rip": "0x4000000",
+      "faults": [],
+      "tail": [
+        {
+          "rva": "0xd9e1c5",
+          "instruction": "test dx, dx"
+        },
+        {
+          "rva": "0xd9e1c8",
+          "instruction": "jne 0x7ff9b8b3e2d0"
+        },
+        {
+          "rva": "0xd9e2d0",
+          "instruction": "add rsp, 0x28"
+        },
+        {
+          "rva": "0xd9e2d4",
+          "instruction": "pop r15"
+        },
+        {
+          "rva": "0xd9e2d6",
+          "instruction": "pop r14"
+        },
+        {
+          "rva": "0xd9e2d8",
+          "instruction": "pop r13"
+        },
+        {
+          "rva": "0xd9e2da",
+          "instruction": "pop r12"
+        },
+        {
+          "rva": "0xd9e2dc",
+          "instruction": "pop rdi"
+        },
+        {
+          "rva": "0xd9e2dd",
+          "instruction": "pop rsi"
+        },
+        {
+          "rva": "0xd9e2de",
+          "instruction": "pop rbp"
+        },
+        {
+          "rva": "0xd9e2df",
+          "instruction": "pop rbx"
+        },
+        {
+          "rva": "0xd9e2e0",
+          "instruction": "ret "
+        }
+      ],
+      "case": "stream-from-saved-context",
+      "run": "test_2f43127d_b4",
+      "base": "0x7ff9b7da0000",
+      "output": "4c88e79abbed159b95944deee1919104",
+      "expected": "4c88e79abbed159b95944deee1919104",
+      "match": true
+    },
+    {
+      "rva": "0xd9e2e4",
+      "status": "failed",
+      "error": "Invalid memory read (UC_ERR_READ_UNMAPPED)",
+      "seconds": 0.00938,
+      "instructions": 571,
+      "rip": "0x7ff9b9e9261c",
+      "faults": [
+        {
+          "access": 19,
+          "address": "0x30",
+          "size": 8,
+          "rip": "0x7ff9b9e9261c"
+        }
+      ],
+      "tail": [
+        {
+          "rva": "0x20f25e4",
+          "instruction": "mov r13d, 0x37ff098c"
+        },
+        {
+          "rva": "0x20f25ea",
+          "instruction": "mov eax, 0x5c00f370"
+        },
+        {
+          "rva": "0x20f25ef",
+          "instruction": "xor eax, r13d"
+        },
+        {
+          "rva": "0x20f25f2",
+          "instruction": "pop r13"
+        },
+        {
+          "rva": "0x20f25f4",
+          "instruction": "xor eax, 0x1462e466"
+        },
+        {
+          "rva": "0x20f25f9",
+          "instruction": "not eax"
+        },
+        {
+          "rva": "0x20f25fb",
+          "instruction": "dec eax"
+        },
+        {
+          "rva": "0x20f25fd",
+          "instruction": "not eax"
+        },
+        {
+          "rva": "0x20f25ff",
+          "instruction": "add eax, 0x8062e165"
+        },
+        {
+          "rva": "0x20f2604",
+          "instruction": "test eax, eax"
+        },
+        {
+          "rva": "0x20f2606",
+          "instruction": "je 0x7ff9b9e9261c"
+        },
+        {
+          "rva": "0x20f261c",
+          "instruction": "movabs rax, qword ptr gs:[0x30]"
+        }
+      ],
+      "case": "init-from-saved-descriptor",
+      "run": "test_2f43127d_b4",
+      "base": "0x7ff9b7da0000"
+    },
+    {
+      "rva": "0xd9d0f0",
+      "status": "returned",
+      "seconds": 0.01367,
+      "instructions": 993,
+      "rip": "0x4000000",
+      "faults": [],
+      "tail": [
+        {
+          "rva": "0xd9e1c5",
+          "instruction": "test dx, dx"
+        },
+        {
+          "rva": "0xd9e1c8",
+          "instruction": "jne 0x7ff9b8b3e2d0"
+        },
+        {
+          "rva": "0xd9e2d0",
+          "instruction": "add rsp, 0x28"
+        },
+        {
+          "rva": "0xd9e2d4",
+          "instruction": "pop r15"
+        },
+        {
+          "rva": "0xd9e2d6",
+          "instruction": "pop r14"
+        },
+        {
+          "rva": "0xd9e2d8",
+          "instruction": "pop r13"
+        },
+        {
+          "rva": "0xd9e2da",
+          "instruction": "pop r12"
+        },
+        {
+          "rva": "0xd9e2dc",
+          "instruction": "pop rdi"
+        },
+        {
+          "rva": "0xd9e2dd",
+          "instruction": "pop rsi"
+        },
+        {
+          "rva": "0xd9e2de",
+          "instruction": "pop rbp"
+        },
+        {
+          "rva": "0xd9e2df",
+          "instruction": "pop rbx"
+        },
+        {
+          "rva": "0xd9e2e0",
+          "instruction": "ret "
+        }
+      ],
+      "case": "stream-from-saved-context",
+      "run": "test_1a8e5b04_b4",
+      "base": "0x7ff9b7da0000",
+      "output": "606c64ab52c14dbe34cc355e088da8bb",
+      "expected": "606c64ab52c14dbe34cc355e088da8bb",
+      "match": true
+    },
+    {
+      "rva": "0xd9e2e4",
+      "status": "failed",
+      "error": "Invalid memory read (UC_ERR_READ_UNMAPPED)",
+      "seconds": 0.00776,
+      "instructions": 571,
+      "rip": "0x7ff9b9e9261c",
+      "faults": [
+        {
+          "access": 19,
+          "address": "0x30",
+          "size": 8,
+          "rip": "0x7ff9b9e9261c"
+        }
+      ],
+      "tail": [
+        {
+          "rva": "0x20f25e4",
+          "instruction": "mov r13d, 0x37ff098c"
+        },
+        {
+          "rva": "0x20f25ea",
+          "instruction": "mov eax, 0x5c00f370"
+        },
+        {
+          "rva": "0x20f25ef",
+          "instruction": "xor eax, r13d"
+        },
+        {
+          "rva": "0x20f25f2",
+          "instruction": "pop r13"
+        },
+        {
+          "rva": "0x20f25f4",
+          "instruction": "xor eax, 0x1462e466"
+        },
+        {
+          "rva": "0x20f25f9",
+          "instruction": "not eax"
+        },
+        {
+          "rva": "0x20f25fb",
+          "instruction": "dec eax"
+        },
+        {
+          "rva": "0x20f25fd",
+          "instruction": "not eax"
+        },
+        {
+          "rva": "0x20f25ff",
+          "instruction": "add eax, 0x8062e165"
+        },
+        {
+          "rva": "0x20f2604",
+          "instruction": "test eax, eax"
+        },
+        {
+          "rva": "0x20f2606",
+          "instruction": "je 0x7ff9b9e9261c"
+        },
+        {
+          "rva": "0x20f261c",
+          "instruction": "movabs rax, qword ptr gs:[0x30]"
+        }
+      ],
+      "case": "init-from-saved-descriptor",
+      "run": "test_1a8e5b04_b4",
+      "base": "0x7ff9b7da0000"
+    },
+    {
+      "rva": "0x4a0268",
+      "status": "failed",
+      "error": "Invalid memory fetch (UC_ERR_FETCH_UNMAPPED)",
+      "seconds": 0.00244,
+      "instructions": 120,
+      "rip": "0x7ffa4974cb40",
+      "faults": [
+        {
+          "access": 21,
+          "address": "0x7ffa4974cb40",
+          "size": 1,
+          "rip": "0x7ffa4974cb40"
+        }
+      ],
+      "tail": [
+        {
+          "rva": "0x175f2b2",
+          "instruction": "sub rsp, 0x20"
+        },
+        {
+          "rva": "0x175f2b6",
+          "instruction": "mov rbx, rcx"
+        },
+        {
+          "rva": "0x175f2b9",
+          "instruction": "cmp rcx, -0x20"
+        },
+        {
+          "rva": "0x175f2bd",
+          "instruction": "ja 0x7ff9b94ff2fb"
+        },
+        {
+          "rva": "0x175f2bf",
+          "instruction": "test rcx, rcx"
+        },
+        {
+          "rva": "0x175f2c2",
+          "instruction": "mov eax, 1"
+        },
+        {
+          "rva": "0x175f2c7",
+          "instruction": "cmove rbx, rax"
+        },
+        {
+          "rva": "0x175f2cb",
+          "instruction": "jmp 0x7ff9b94ff2e2"
+        },
+        {
+          "rva": "0x175f2e2",
+          "instruction": "mov rcx, qword ptr [rip + 0xef82bf]"
+        },
+        {
+          "rva": "0x175f2e9",
+          "instruction": "mov r8, rbx"
+        },
+        {
+          "rva": "0x175f2ec",
+          "instruction": "xor edx, edx"
+        },
+        {
+          "rva": "0x175f2ee",
+          "instruction": "call qword ptr [rip + 0xafef4]"
+        }
+      ],
+      "case": "pipeline-correct-contract",
+      "base": "0x7ff9b7da0000"
+    }
+  ]
+}

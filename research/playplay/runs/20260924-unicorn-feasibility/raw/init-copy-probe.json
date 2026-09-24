@@ -1,0 +1,92 @@
+{
+  "cases": [
+    {
+      "run": "test_2f43127d_b4",
+      "copy_calls": [
+        {
+          "dst": "0x11fee50",
+          "src": "0x2003008",
+          "size": 16
+        },
+        {
+          "dst": "0x11fed90",
+          "src": "0x11fee40",
+          "size": 8
+        },
+        {
+          "dst": "0x11fed98",
+          "src": "0x11fee48",
+          "size": 8
+        },
+        {
+          "dst": "0x11fee40",
+          "src": "0x11fed90",
+          "size": 8
+        },
+        {
+          "dst": "0x11fee48",
+          "src": "0x11fed98",
+          "size": 8
+        },
+        {
+          "dst": "0x2000000",
+          "src": "0x11fee6c",
+          "size": 224
+        },
+        {
+          "dst": "0x20002e2",
+          "src": "0x200000b",
+          "size": 5
+        }
+      ],
+      "status": "failed",
+      "error": "execution limit reached",
+      "rip": "0x7ff9b9d0a51e",
+      "rva": "0x1f6a51e"
+    },
+    {
+      "run": "test_1a8e5b04_b4",
+      "copy_calls": [
+        {
+          "dst": "0x11fee50",
+          "src": "0x2003008",
+          "size": 16
+        },
+        {
+          "dst": "0x11fed90",
+          "src": "0x11fee40",
+          "size": 8
+        },
+        {
+          "dst": "0x11fed98",
+          "src": "0x11fee48",
+          "size": 8
+        },
+        {
+          "dst": "0x11fee40",
+          "src": "0x11fed90",
+          "size": 8
+        },
+        {
+          "dst": "0x11fee48",
+          "src": "0x11fed98",
+          "size": 8
+        },
+        {
+          "dst": "0x2000000",
+          "src": "0x11fee84",
+          "size": 224
+        },
+        {
+          "dst": "0x20002e2",
+          "src": "0x200000b",
+          "size": 5
+        }
+      ],
+      "status": "failed",
+      "error": "execution limit reached",
+      "rip": "0x7ff9b9d0a51e",
+      "rva": "0x1f6a51e"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "started_at": "2026-09-24T17:34:36.079258+00:00",
+  "pid": 72132,
+  "mode": "clean_capture",
+  "script_file": "capture_clean_148.js",
+  "script_sha256": "fa372ebdf73d71d20e4dd27c67d9f04ef3ed457b271c94e38f675f4058773f93",
+  "events": [
+    {
+      "type": "attached",
+      "mode": "clean_capture",
+      "base": "0x7ff991ba0000"
+    },
+    {
+      "type": "clean_capture",
+      "event": "transform_enter",
+      "run": "test_2f43127d_b4",
+      "rva": "0x49eaa4",
+      "input": "7a154493af30b49d753cd246d6e9e83a",
+      "init_arg": "a33c929c31c3e0eefeedebdaa1e7ff7f",
+      "vm_snapshot": "68564293f97f000000314193f97f0000d062983e00000000483e4193f97f00004025983e00000000603f4193f97f00003d0000000000000038544293f97f00003e0000000000000090414193f97f0000d0e70fb000000000a8424193f97f00003d00000000000000c0434193f97f0000ffffffff00000000d8444193f97f00008006c0340000000050554293f97f0000"
+    },
+    {
+      "type": "clean_capture",
+      "event": "candidate_received",
+      "run": "test_2f43127d_b4",
+      "rva": "0x49f854",
+      "candidate": "abc61eade6602e7c2f97b7bea3ca3272"
+    },
+    {
+      "type": "clean_capture",
+      "event": "transform_leave",
+      "run": "test_2f43127d_b4",
+      "rva": "0x49eaa4",
+      "output28": "464292c2bf47ac636281c8a5f2c66d89057cafd6c16e911e01000000"
+    },
+    {
+      "type": "clean_capture",
+      "event": "transform_enter",
+      "run": "test_1a8e5b04_b4",
+      "rva": "0x49eaa4",
+      "input": "3169b37896f5f0a05685df1c09dce0e8",
+      "init_arg": "a33c929c31c3e0eefeedebdaa1e7ff7f",
+      "vm_snapshot": "68564293f97f000000314193f97f0000a01d7e3b00000000483e4193f97f0000a071983e00000000603f4193f97f00003d0000000000000038544293f97f00003e0000000000000090414193f97f0000d0e70fb000000000a8424193f97f00003d00000000000000c0434193f97f0000c066433b00000000d8444193f97f000008e90fb00000000050554293f97f0000"
+    },
+    {
+      "type": "clean_capture",
+      "event": "candidate_received",
+      "run": "test_1a8e5b04_b4",
+      "rva": "0x49f854",
+      "candidate": "50d3d9b8d4d3328507169b5ffba0de17"
+    },
+    {
+      "type": "clean_capture",
+      "event": "transform_leave",
+      "run": "test_1a8e5b04_b4",
+      "rva": "0x49eaa4",
+      "output28": "d4e6f885492f23b4d8655dca33aa5b077cffc3f5cba4fe8f01000000"
+    },
+    {
+      "type": "clean_capture_done"
+    }
+  ],
+  "finished_at": "2026-09-24T17:34:36.261367+00:00"
+}

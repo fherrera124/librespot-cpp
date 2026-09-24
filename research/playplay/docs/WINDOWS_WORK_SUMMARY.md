@@ -124,3 +124,99 @@ stream ya realizada: la llamada nativa no recibe las AES de referencia.
 Se contrastaron conceptos con FIPS197, SP800-38A y el trabajo original de DCA
 de Bos y colaboradores; enlaces en el documento. Esta continuación modifica
 solo documentación. No se ejecutaron nuevos experimentos ni se accedió a Windows.
+
+## Organización del workspace para agentes — 2026-09-24
+
+Se unificaron instrucciones en AGENTS raíz/PlayPlay y entradas Gemini/Claude.
+STATUS es la síntesis vigente; README, PLAN y task quedan acotados. La hipótesis
+AES256 rechazada y el checklist anterior se archivaron con etiquetas explícitas.
+Los seis scripts externos de captura se agruparon en tools/token_capture_148;
+los Python resuelven JS por __file__. Nota externa movida a docs/external sin
+alterar bytes; registro de movimientos en runs/tree-migration-20260924.json.
+
+Catálogo:15 grupos de recursos,32 documentos mantenidos,2 manifiestos con62
+artefactos (60 existentes intactos y2 snapshots de fuente del control nativo).
+El checker offline verifica rutas, enlaces, tamaños y SHA256. Sus cuatro pruebas
+pasaron y la receta offline de contenido volvió a pasar4/4 casos. Sintaxis de
+runners reubicados y TOML de perfiles comprobadas; git diff --check limpio.
+SpClient.cpp y el índice Git coinciden con el inicio de esta reorganización.
+No se ejecutaron capturas nuevas ni se accedió a Windows.
+
+Modelos efectivos: gpt-6-luna/medium hizo inventario de solo lectura;
+gpt-6-sol/medium auditó el handoff e implementó el checker con pruebas. El
+coordinador integró y validó. La segunda revisión delegada a Sol no terminó
+por límite de uso; el coordinador realizó la revisión final. No se atribuye
+esa revisión al agente ni se afirma ahorro medido de tokens/costo.
+
+Perfiles persistentes preparados en .codex/agents: inventario Luna, implementación
+Sol y revisión difícil Astra. TOML válido; carga efectiva depende del cliente.
+Reglas y contratos en docs/AGENT_WORKFLOW.md. El siguiente trabajo experimental
+sigue siendo el capturador limpio de PLAN; esta organización no extrae AES16.
+
+En el último chequeo apareció un cambio concurrente en tools/test_dll.cpp
+con whitespace en línea28, ajeno a esta reorganización. Se conservó; el diff
+del resto del workspace pasó la comprobación.
+
+## Capturadores recuperados y procedencia de RVA — 2026-09-24
+
+Se verificaron los dos JS recuperados: añadir exactamente un LF final reproduce
+los hashes de clean_capture_report y context_dump históricos. Antes de editarlos
+se preservaron esas fuentes en
+[manifiesto de recuperación](../runs/20260924-clean-capture-recovery/manifest.json).
+Los informes originales permanecen intactos. Los dos primeros bloques del
+informe de contexto coinciden con AES independiente; la revisión anterior también
+reprodujo offline el caso DFA y descifró el prefijo4096 con CRC Ogg válido.
+
+Las herramientas actuales usan un helper de preflight: ruta del módulo vivo,
+Windows x64, versión fija, hash de disco y firmas de cinco entradas antes de hooks.
+El capturador de contexto libera su hook en finally; el runner trata errores de
+payload, timeouts e interrupciones como fallos y libera script/sesión. Se preserva
+la distinción entre hash de disco, firmas en memoria y control criptográfico.
+
+Ocho tests offline pasaron, incluidos tres de comportamiento JS con quickjs.
+Comando: `PYTHONPATH=/tmp/playplay-js-audit-20260924 python3 research/playplay/tools/test_clean_capture.py -v`.
+QuickJS se instaló para validación en esa carpeta temporal, sin incorporarlo como
+dependencia del capturador. El checker de catálogo/enlaces/hashes pasó. El check
+global de whitespace sigue señalando el cambio ajeno de test_dll.cpp; no se editó.
+No se accedió a Windows ni se modificó el índice; falta corrida de integración
+de esta revisión protegida. No quedaron procesos de ensayo remotos propios.
+
+Se amplió [RVA_DISCOVERY_PLAYBOOK](RVA_DISCOVERY_PLAYBOOK.md) con reconstrucción
+histórica, separación VM/generador, evidencia disponible y procedimiento para
+otras versiones. No se inventó el origen ausente de49cb88/49eaa4 ni una función
+dedicada de reparación. La guía oficial OpenAI Docs sobre AGENTS.md se usó para
+la organización entre agentes, no como fuente de hechos de Spotify.
+gpt-6-luna/medium hizo una lectura independiente y acotada de procedencia;
+el coordinador implementó y comprobó los cambios. Uso y límites en
+[CLEAN_CAPTURE_148](CLEAN_CAPTURE_148.md).
+
+## Evaluación local de unicorn_harness — 2026-09-24
+
+Se preservó el prototipo externo intacto y se hicieron pruebas acotadas con
+Unicorn2.1.4, sin APIs genéricas exitosas ni páginas inventadas. Stream desde los
+dos contextos guardados:4/4 bloques correctos al ensayar dos bases. DFA con16
+fallos por recurso:2/2 AES recuperadas; prefijos4096 descifrados y CRC Ogg válido.
+Esto elimina la necesidad de proceso vivo para esa etapa, pero conserva como
+entrada un snapshot por recurso. No demuestra construcción desde licencia nueva.
+
+Las pruebas de init/constructor registraron dependencias de GS/TEB, ruta AVX de
+copia, direcciones externas y límites de ejecución; no hubo cadena completa.
+Se confirmó error de ABI en el prototipo y discrepancia de base: el header del
+dump exacto contiene0x7ff9b7da0000. Se corrigió la tabla FACTS. No se reutilizaron
+constantes de485 ni se ejecutó el `LoadLibrary` C++ externo.
+
+Evidencia, fuentes e inputs con hashes en
+[manifiesto](../runs/20260924-unicorn-feasibility/manifest.json);
+[dictamen y propuestas](UNICORN_FEASIBILITY_148.md). Auditoría estática acotada:
+gpt-6-luna/medium. Pruebas y revisión: coordinador. No se accedió a Windows,
+Spotify ni credenciales; sin procesos remotos creados ni cambios al índice Git.
+
+## Pausa solicitada y cierre — 2026-09-24
+
+El usuario solicita commitear la investigación y los avances y detener el trabajo
+por el momento. Se conservan resultados, fuentes, manifiestos y pendientes. El
+alcance validado es recuperación DFA y control de contenido para casos guardados;
+la extracción autónoma desde una licencia nueva en Unicorn sigue pendiente.
+STATUS, PLAN y task señalan la pausa. No se iniciaron nuevos experimentos para
+este cierre. Los prototipos externos ya staged se conservan como investigación;
+su inclusión en el commit no acredita madurez de producción ni resultados nuevos.

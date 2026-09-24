@@ -9,6 +9,9 @@ Usar [CATALOG](CATALOG.md) para encontrar entradas concretas. No leer todas las
 bitácoras o informes para orientarse. Antes de instrumentación/ABI, leer también
 [arquitectura](docs/PLAYPLAY_ARCHITECTURE_NOTES.md), [FACTS](docs/FACTS.md) y las
 [decisiones](docs/DECISIONS_148.md) pertinentes.
+Para portar RVAs o reconstruir contextos, seguir el
+[playbook de descubrimiento](docs/RVA_DISCOVERY_PLAYBOOK.md): distinguir evidencia
+histórica, candidatos y contratos validados; no trasladar constantes entre builds.
 
 Autoridad: instrucciones del usuario → estas reglas → evidencia primaria para
 los hechos → STATUS (síntesis actual) → PLAN (siguiente paso) → task (checklist).

@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "run_id": "20260924-unicorn-feasibility",
+  "status": "offline-partial-success",
+  "summary": "Unicorn stream y DFA positivos desde dos contextos capturados, con CRC Ogg. Construcción sin snapshot pendiente; sin Windows/red/credenciales.",
+  "artifacts": [
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/raw/context-faults.json",
+      "role": "raw-result",
+      "bytes": 3930,
+      "sha256": "f4bc3da60cc39749a1c24c3b8e9ea652ddd7373c050eb6f6d1507876fd20b3e9"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/raw/dfa-verification.json",
+      "role": "raw-result",
+      "bytes": 757,
+      "sha256": "4132ac1264d2513b2ce66006696074c48328a56c643672717ca19a2f387684d6"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/raw/init-copy-probe.json",
+      "role": "raw-result",
+      "bytes": 1840,
+      "sha256": "23f4598a9c72b91dd1663af2a7018a84f9660bd5ae669557c1872f8725f05360"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/raw/strict-probe.json",
+      "role": "raw-result",
+      "bytes": 15744,
+      "sha256": "194131d5ec3e312651fd5efe99497a93966329ee0856957a76bef0492a1e1fd8"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/source/context_faults.py",
+      "role": "experiment-source",
+      "bytes": 3366,
+      "sha256": "d25848dc84fded7d64031078c8d73e2c5e620e13d8b33787eb6571be9c7ffff7"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/source/evaluate_faults.py",
+      "role": "experiment-source",
+      "bytes": 2316,
+      "sha256": "68cff370e229c1fa8aa17129b0b22176af9301471a17274786f08badd8a3e701"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/source/init_copy_probe.py",
+      "role": "experiment-source",
+      "bytes": 2495,
+      "sha256": "585e9d54cdb2712ca12707225776d59a3a90355e5c589afd6c7027a9d50dd1d1"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/source/original_unicorn_harness.py",
+      "role": "experiment-source",
+      "bytes": 7509,
+      "sha256": "5316b5523bc406625cb5109a5bd84a7499a9b61d1061f94af1b20104de47a94e"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/source/probe.py",
+      "role": "experiment-source",
+      "bytes": 5254,
+      "sha256": "f0f0e4395fff7c3ffcc04b61202e7f050a7f73fed8bdec1f35c15d005c184438"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/source/reference/extractor.py",
+      "role": "experiment-source",
+      "bytes": 11129,
+      "sha256": "c4dcf5525819c359f2639360a8b33b3fb5c3a0fad6af806c5b64345bae18f415"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/source/reference/reverse_key_schedule.py",
+      "role": "experiment-source",
+      "bytes": 2691,
+      "sha256": "d9baf1ae5370a1275e35f1786d919ed285b68e5f30449a9eb33a972fd7761a0a"
+    },
+    {
+      "path": "research/playplay/runs/20260924-unicorn-feasibility/source/reference/verify_token148_content.py",
+      "role": "experiment-source",
+      "bytes": 4461,
+      "sha256": "c161211c3cfed50c8dda375480010b2319fc2497d09b479843da8f5727f3ba63"
+    },
+    {
+      "path": "research/playplay/docs/context_dump_2026-09-24.json",
+      "role": "historical-input",
+      "bytes": 7173,
+      "sha256": "139689b374b9838c7207dbec3cd8bb3f7093e36e98c567dbef83ea4f74caea56"
+    },
+    {
+      "path": "research/playplay/docs/token148-license-20260924T164814Z-retry.json",
+      "role": "historical-input",
+      "bytes": 925,
+      "sha256": "d0c47d841e937851face64ea61a751bc6d778a05732819928520a38d7bdd5299"
+    },
+    {
+      "path": "research/playplay/data/token148-reference-20260924T164814Z.enc",
+      "role": "encrypted-content-fixture",
+      "bytes": 4096,
+      "sha256": "1cbbde6214e3fb957c70a218f13c672fd414691532987bec91a841b8ec1a9932"
+    },
+    {
+      "path": "research/playplay/docs/token148-license-second-20260924T164814Z.json",
+      "role": "historical-input",
+      "bytes": 932,
+      "sha256": "dd5d1e5d76663f987b6c8308412161a9619dec488102ea5263cd716d86c12bf7"
+    },
+    {
+      "path": "research/playplay/data/token148-reference-second-20260924T164814Z.enc",
+      "role": "encrypted-content-fixture",
+      "bytes": 4096,
+      "sha256": "eb6e4ed9f6adbdf971a8d9ad5ec4a18cfac2f83221a9870fe90f161c4b94f7be"
+    },
+    {
+      "path": "research/dlls/Spotify_1.2.92.148_dump.dll",
+      "role": "raw-memory-dump-input",
+      "bytes": 41897984,
+      "sha256": "275a9fd95b629f55bd6a170bbf41deb17f87ca59ff61056116d527611d89f2cc"
+    }
+  ]
+}

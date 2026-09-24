@@ -5,6 +5,10 @@ y SHA256. Se verifica con `python3 research/playplay/tools/check_workspace.py`.
 
 - [token148 positivo](20260924T164814Z-token148/manifest.json): evidencia de la prueba puntual.
 - [Controles previos](20260924-legacy-controls/manifest.json): fixtures e informes anteriores.
+- [Fuentes de captura recuperadas](20260924-clean-capture-recovery/manifest.json):
+  copias que coinciden con hashes históricos; recuperación offline, no corrida nueva.
+- [Viabilidad Unicorn](20260924-unicorn-feasibility/manifest.json): pruebas offline
+  de stream/DFA desde snapshots, con bloqueos registrados para la construcción.
 
 Los artefactos anteriores a esta organización mantienen sus rutas docs/data y
 sus bytes. Los manifiestos los indexan sin duplicarlos ni reescribir campos

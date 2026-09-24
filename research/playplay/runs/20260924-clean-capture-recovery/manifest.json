@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "run_id": "20260924-clean-capture-recovery",
+  "status": "historical-source-recovered",
+  "summary": "Fuentes recuperadas + un LF final: hash idéntico a cada informe histórico. Recuperación offline, no nueva ejecución Windows.",
+  "artifacts": [
+    {
+      "path": "research/playplay/runs/20260924-clean-capture-recovery/source/capture_clean_148.js",
+      "bytes": 4267,
+      "sha256": "fa372ebdf73d71d20e4dd27c67d9f04ef3ed457b271c94e38f675f4058773f93",
+      "role": "recovered-source-matching-historical-report"
+    },
+    {
+      "path": "research/playplay/docs/clean_capture_report_2026-09-24.json",
+      "bytes": 2428,
+      "sha256": "0f63d33e190ee457adfcd686da7ff327590aa25e71d66d0f878b7d68dcc9f97f",
+      "role": "historical-raw-report"
+    },
+    {
+      "path": "research/playplay/runs/20260924-clean-capture-recovery/source/capture_context_148.js",
+      "bytes": 3334,
+      "sha256": "c7b0b4fddbe464d094eec1ad7134572f497f004812b6f5bf6c53b435387987db",
+      "role": "recovered-source-matching-historical-report"
+    },
+    {
+      "path": "research/playplay/docs/context_dump_2026-09-24.json",
+      "bytes": 7173,
+      "sha256": "139689b374b9838c7207dbec3cd8bb3f7093e36e98c567dbef83ea4f74caea56",
+      "role": "historical-raw-report"
+    }
+  ]
+}
