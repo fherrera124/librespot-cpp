@@ -15,6 +15,13 @@
 [Operación](docs/HTTP_DFA_SERVICE.md), [corrida](runs/20260925-http-dfa-service/EXPERIMENT.md).
 Las fases siguientes conservan el historial anterior a esta integración.
 
+## Búsqueda directa en 148
+
+[Cerrada con negativo acotado](docs/DIRECT_AES_SEARCH_148.md): dos licencias,
+2/2 bloques nativos válidos y ninguna K0..K10 completa o en mitades en los
+buffers examinados. DFA sigue siendo la vía operativa. No hay otro ensayo
+directo programado.
+
 ## Meta Principal (Lograda)
 Obtener la AES de 16 bytes a partir del ejecutable de Spotify sin proporcionarla como entrada, quebrando efectivamente el DRM White-Box de PlayPlay.
 

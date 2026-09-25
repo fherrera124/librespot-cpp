@@ -3,11 +3,15 @@
   "resources": [
     {
       "id": "direct-aes-search-148",
-      "status": "proposed-not-executed",
-      "summary": "Evaluación de another-unplayplay, preguntas y plan de extracción directa para 148.",
-      "paths": ["research/playplay/docs/DIRECT_AES_SEARCH_148.md"],
-      "environment": "documentation",
-      "notes": "Revisión estática upstream 24d3223; sin nueva captura ni extracción directa demostrada."
+      "status": "closed-limited-negative",
+      "summary": "Dos licencias: bloques nativos 2/2 válidos y ninguna K0..K10 completa o en mitades en los buffers examinados.",
+      "paths": [
+        "research/playplay/docs/DIRECT_AES_SEARCH_148.md",
+        "research/playplay/docs/DIRECT_AES_148_DATA.json",
+        "research/playplay/tools/check_direct_aes_148.py"
+      ],
+      "environment": "Capturas Windows Spotify148/Frida; comprobación offline Linux",
+      "notes": "Negativo acotado; la captura del objeto VM usó guard de bytes, sin verificación nueva de hash de disco. DFA sigue operativo."
     },
     {
       "id": "http-dfa-service",

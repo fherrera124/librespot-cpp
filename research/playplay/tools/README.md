@@ -11,6 +11,7 @@ contra licencias y contenido desde Linux. El servidor antiguo en resources
 y `validate_lan_service.py` (vectores E sin b4_seq) no implementan este contrato.
 
 - [Comprobar el workspace](check_workspace.py): catálogo, enlaces y hashes, offline.
+- [Comprobar el cierre de búsqueda directa](check_direct_aes_148.py): anexo crudo y AES, offline.
 - [Captura externa agrupada](token_capture_148/README.md): material histórico reubicado.
 
 Corte **2026-09-24**. Leer el código antes de ejecutar, como exige
