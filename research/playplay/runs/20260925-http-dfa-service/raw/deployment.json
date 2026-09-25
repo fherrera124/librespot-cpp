@@ -1,0 +1,197 @@
+{
+  "recorded_at": "2026-09-25T09:59:05.240462+00:00",
+  "files": [
+    {
+      "file": "playplay_dfa_service.py",
+      "local_sha256": "717c0ae90edfc7c4aad9db71da67d4a3fd135088766571514b21884293eba1d8",
+      "remote_sha256": null,
+      "match": false
+    },
+    {
+      "file": "playplay_dfa_rpc.js",
+      "local_sha256": "18ff7a8b5cfa7ca3c4e9551c11a0ae6bc80bf8b0910b2a513b9d1c5db755157f",
+      "remote_sha256": null,
+      "match": false
+    },
+    {
+      "file": "playplay_148_preflight.py",
+      "local_sha256": "d14854ed5dc5e087c1202c01334646416ef93df240f1d7d16e517a49526cbcae",
+      "remote_sha256": null,
+      "match": false
+    },
+    {
+      "file": "extractor.py",
+      "local_sha256": "dbc66405616ba8bb9863a3788f5a9874aade8458d3d29655cc4719de8829e689",
+      "remote_sha256": null,
+      "match": false
+    },
+    {
+      "file": "reverse_key_schedule.py",
+      "local_sha256": "d9baf1ae5370a1275e35f1786d919ed285b68e5f30449a9eb33a972fd7761a0a",
+      "remote_sha256": null,
+      "match": false
+    },
+    {
+      "file": "start_playplay_service.ps1",
+      "local_sha256": "756855f03d874d98415ec8aeea4216c7216a97b4bbb67c73159b730f12a26b23",
+      "remote_sha256": null,
+      "match": false
+    },
+    {
+      "file": "stop_playplay_service.ps1",
+      "local_sha256": "93cbc075218be42f269496fd1113affed884497c53ec1f48126e941091df90f1",
+      "remote_sha256": null,
+      "match": false
+    },
+    {
+      "file": "install_playplay_service.ps1",
+      "local_sha256": "59d951f8ff80fd98d291746b435735ff871437c9be66d1790960a417c0e6b600",
+      "remote_sha256": null,
+      "match": false
+    },
+    {
+      "file": "playplay_service_requirements.txt",
+      "local_sha256": "d2a1cdcfeb14e35b6fe0792a20559b0dea3cc2d3178c1799a315df4b2a890d7b",
+      "remote_sha256": null,
+      "match": false
+    },
+    {
+      "file": "test_playplay_dfa_service.py",
+      "local_sha256": "010d5ccbd30b5a038417b3df11a340b67e717e16a6143af063fbfd4cdbfd7062",
+      "remote_sha256": null,
+      "match": false
+    }
+  ],
+  "all_match": false,
+  "health": {
+    "busy": false,
+    "pid": 68160,
+    "ready": true,
+    "sha256": "7b44456a90142daeb758e2736d8628ffe211d6ea523db8f1050b3c8b1addb68a",
+    "stage": "verified",
+    "version": "1.2.92.148"
+  },
+  "windows": {
+    "hashes": [],
+    "task_state": "Running",
+    "processes": [
+      {
+        "ProcessId": 68164,
+        "ParentProcessId": 2720,
+        "CommandLine": "\"C:\\Users\\francisco.herrera\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -B \"C:\\Users\\francisco.herrera\\playplay-service-20260925\\playplay_dfa_service.py\" --allow-unauthenticated-loopback"
+      },
+      {
+        "ProcessId": 11276,
+        "ParentProcessId": 68164,
+        "CommandLine": "\"C:\\Users\\francisco.herrera\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" \"-B\" \"-c\" \"from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=68164, pipe_handle=2304)\" \"--multiprocessing-fork\""
+      }
+    ],
+    "listeners": [
+      {
+        "LocalAddress": "127.0.0.1",
+        "LocalPort": 8765,
+        "OwningProcess": 68164
+      }
+    ],
+    "action": [
+      {
+        "CimClass": {
+          "CimSuperClassName": "MSFT_TaskAction",
+          "CimSuperClass": {
+            "CimSuperClassName": null,
+            "CimSuperClass": null,
+            "CimClassProperties": [
+              "Id"
+            ],
+            "CimClassQualifiers": [],
+            "CimClassMethods": [],
+            "CimSystemProperties": {
+              "Namespace": "ROOT/Microsoft/Windows/TaskScheduler",
+              "ServerName": "CZC148B0HC",
+              "ClassName": "MSFT_TaskAction",
+              "Path": null
+            }
+          },
+          "CimClassProperties": [
+            {
+              "Name": "Id",
+              "Value": null,
+              "CimType": 14,
+              "Flags": "Property, NullValue",
+              "Qualifiers": "",
+              "ReferenceClassName": null
+            },
+            {
+              "Name": "Arguments",
+              "Value": null,
+              "CimType": 14,
+              "Flags": "Property, NullValue",
+              "Qualifiers": "",
+              "ReferenceClassName": null
+            },
+            {
+              "Name": "Execute",
+              "Value": null,
+              "CimType": 14,
+              "Flags": "Property, NullValue",
+              "Qualifiers": "",
+              "ReferenceClassName": null
+            },
+            {
+              "Name": "WorkingDirectory",
+              "Value": null,
+              "CimType": 14,
+              "Flags": "Property, NullValue",
+              "Qualifiers": "",
+              "ReferenceClassName": null
+            }
+          ],
+          "CimClassQualifiers": [],
+          "CimClassMethods": [],
+          "CimSystemProperties": {
+            "Namespace": "Root/Microsoft/Windows/TaskScheduler",
+            "ServerName": "CZC148B0HC",
+            "ClassName": "MSFT_TaskExecAction",
+            "Path": null
+          }
+        },
+        "CimInstanceProperties": [
+          {
+            "Name": "Id",
+            "Value": null,
+            "CimType": 14,
+            "Flags": "Property, NotModified, NullValue",
+            "IsValueModified": false
+          },
+          {
+            "Name": "Arguments",
+            "Value": "-B \"C:\\Users\\francisco.herrera\\playplay-service-20260925\\playplay_dfa_service.py\" --allow-unauthenticated-loopback",
+            "CimType": 14,
+            "Flags": "Property, NotModified",
+            "IsValueModified": false
+          },
+          {
+            "Name": "Execute",
+            "Value": "C:\\Users\\francisco.herrera\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+            "CimType": 14,
+            "Flags": "Property, NotModified",
+            "IsValueModified": false
+          },
+          {
+            "Name": "WorkingDirectory",
+            "Value": "C:\\Users\\francisco.herrera\\playplay-service-20260925",
+            "CimType": 14,
+            "Flags": "Property, NotModified",
+            "IsValueModified": false
+          }
+        ],
+        "CimSystemProperties": {
+          "Namespace": "Root/Microsoft/Windows/TaskScheduler",
+          "ServerName": "CZC148B0HC",
+          "ClassName": "MSFT_TaskExecAction",
+          "Path": null
+        }
+      }
+    ]
+  }
+}

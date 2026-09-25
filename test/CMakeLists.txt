@@ -21,7 +21,7 @@ target_link_libraries(cspot-test cspot doctest::doctest trompeloeil::trompeloeil
 doctest_discover_tests(cspot-test)
 
 # Protocol regressions also run independently of the legacy mock-based suite.
-add_executable(cspot-protocol-test ProtocolRegressionTest.cpp)
+add_executable(cspot-protocol-test ProtocolRegressionTest.cpp PlayPlayServiceTest.cpp)
 target_compile_definitions(cspot-protocol-test PRIVATE DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN)
 target_compile_options(cspot-protocol-test PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter)
 target_link_libraries(cspot-protocol-test PRIVATE cspot doctest::doctest)

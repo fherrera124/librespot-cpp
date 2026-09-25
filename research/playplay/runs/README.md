@@ -3,6 +3,9 @@
 Cada manifiesto registra rutas **relativas a la raíz del repositorio**, tamaño
 y SHA256. Se verifica con `python3 research/playplay/tools/check_workspace.py`.
 
+- [Servicio HTTP AES16](20260925-http-dfa-service/manifest.json): extracción
+  Windows por HTTP, contenido, despliegue por hashes y ciclo de parada/arranque.
+
 - [token148 positivo](20260924T164814Z-token148/manifest.json): evidencia de la prueba puntual.
 - [Controles previos](20260924-legacy-controls/manifest.json): fixtures e informes anteriores.
 - [Fuentes de captura recuperadas](20260924-clean-capture-recovery/manifest.json):

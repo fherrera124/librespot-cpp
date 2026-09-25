@@ -4,6 +4,12 @@ Para elegir herramienta rápidamente: [CATALOG](../CATALOG.md) y
 [STATUS](../STATUS.md). Este documento conserva comandos y anchors históricos.
 La prueba token148 es el control positivo; los ensayos E siguientes son antecedentes.
 
+**Servicio actual (2026-09-25):** [API HTTP de AES16](../docs/HTTP_DFA_SERVICE.md).
+`playplay_dfa_service.py` + `playplay_dfa_rpc.js` usan Frida/DFA y exigen
+`obfuscated_key`/`b4_seq`. `verify_playplay_service.py` verifica las respuestas
+contra licencias y contenido desde Linux. El servidor antiguo en resources
+y `validate_lan_service.py` (vectores E sin b4_seq) no implementan este contrato.
+
 - [Comprobar el workspace](check_workspace.py): catálogo, enlaces y hashes, offline.
 - [Captura externa agrupada](token_capture_148/README.md): material histórico reubicado.
 

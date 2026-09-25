@@ -1,7 +1,19 @@
 # Plan de Investigación: PlayPlay
 
-**Pausado por indicación del usuario — 2026-09-24.** Las tareas pendientes
-quedan como referencia para retomar; no hay nuevos experimentos en ejecución.
+**Estado:** Activo. Servicio HTTP validado — 2026-09-25.
+
+## Integración HTTP actual
+
+- [x] API Windows `POST /deob` que exige licencia completa y devuelve AES16 verificada.
+- [x] Worker aislado, límite de tiempo, exclusión de solicitudes y arranque exclusivo.
+- [x] Cliente C++ conserva `b4_seq`, valida JSON/AES y configura URL/token.
+- [x] Pruebas con dos recursos por HTTP y CRC de contenido; parada/arranque ordenados.
+- [x] CLI compilada y copia Windows comparada por hash con el repositorio.
+- [ ] Reproducción completa en cspot y licencia nueva fuera de los controles.
+- [ ] Validación ESP32 y de otras versiones si se requieren.
+
+[Operación](docs/HTTP_DFA_SERVICE.md), [corrida](runs/20260925-http-dfa-service/EXPERIMENT.md).
+Las fases siguientes conservan el historial anterior a esta integración.
 
 ## Meta Principal (Lograda)
 Obtener la AES de 16 bytes a partir del ejecutable de Spotify sin proporcionarla como entrada, quebrando efectivamente el DRM White-Box de PlayPlay.

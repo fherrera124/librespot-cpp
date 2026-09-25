@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "run_id": "20260925-http-dfa-service",
+  "status": "http-content-verified",
+  "summary": "AES16 via HTTP for two saved licenses, fresh Spotify process, orderly service restart and deployment parity; full cspot playback pending.",
+  "artifacts": [
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/EXPERIMENT.md",
+      "sha256": "a821d98d0a0f0a005a7a6794677a0555058a1a3b6ac29d4b5ff18ab1308cc6c5",
+      "bytes": 5215,
+      "role": "evaluation"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/raw/deployment-final.json",
+      "sha256": "3dad34c9bf2564a414c4a8443b78009f12a4f1f6483daa97473ddcde59481fd7",
+      "bytes": 8973,
+      "role": "raw-evidence"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/raw/deployment.json",
+      "sha256": "d81669e8cd86907247d0e1f1869c5483b80a1ef9ffd6744dc59588a57ee92815",
+      "bytes": 6348,
+      "role": "raw-evidence"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/raw/http-after-graceful-restart.json",
+      "sha256": "b03be115b3dbf61c8c452f52a44fc8fc013d95652f6b095b813ed5cb4f7c521c",
+      "bytes": 796,
+      "role": "raw-evidence"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/raw/http-first.json",
+      "sha256": "513bb4fc82b028bcb6e7e024ac406cc6992bf02f9fc04d46963ad252f0d390b5",
+      "bytes": 1499,
+      "role": "raw-evidence"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/raw/http-fresh-process-retry.json",
+      "sha256": "3ee7c09a7f17fcccaf3cf8947b9d862c222e93ce78e153aa5baf268e98dc9c62",
+      "bytes": 1500,
+      "role": "raw-evidence"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/raw/http-fresh-process.json",
+      "sha256": "cc47ac0e5a28e33bb6a68696b41318cb52158d3b9fb054dfecee68e14ecd8c77",
+      "bytes": 370,
+      "role": "raw-evidence"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/raw/http-scheduled-final.json",
+      "sha256": "e072b83f1d5d735e6d3d8dd53ff8aeb82e76e6c892af95fd3502549a6ac0ed09",
+      "bytes": 1500,
+      "role": "raw-evidence"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/raw/local-tests.txt",
+      "sha256": "b367b1005eec5cb522c0cc6763c2de75df1835782a55703824af978b08c345bc",
+      "bytes": 1144,
+      "role": "raw-evidence"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/FileProvider.cpp",
+      "sha256": "abd319a444ba594361a79f333d0ffaf4059e0f8dfd3fd2f0b7181b0feda9a4fb",
+      "bytes": 17122,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/PlayPlayService.h",
+      "sha256": "baa2a98990bc5008eaedaec6e331b76abd232b94150dee6449133a585da134d9",
+      "bytes": 2109,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/PlayPlayServiceTest.cpp",
+      "sha256": "e4d5eb38450800fb2cb4dec03ef7e4596c067dbb88c4cbe7486f7b6039c7bcce",
+      "bytes": 1736,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/SpClient.cpp",
+      "sha256": "1ace1ccfaab6b32762b2815b6c83c4dd7db5926480d26323bc151ddaad5fef6b",
+      "bytes": 23446,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/SpClient.h",
+      "sha256": "e08dd6678849d05d72015b5204e7f9d0a24d0d2de84b03d982f7ef525b04ce3d",
+      "bytes": 3779,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/extractor.py",
+      "sha256": "dbc66405616ba8bb9863a3788f5a9874aade8458d3d29655cc4719de8829e689",
+      "bytes": 11133,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/install_playplay_service.ps1",
+      "sha256": "59d951f8ff80fd98d291746b435735ff871437c9be66d1790960a417c0e6b600",
+      "bytes": 1207,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/playplay_148_preflight.py",
+      "sha256": "d14854ed5dc5e087c1202c01334646416ef93df240f1d7d16e517a49526cbcae",
+      "bytes": 4694,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/playplay_dfa_rpc.js",
+      "sha256": "18ff7a8b5cfa7ca3c4e9551c11a0ae6bc80bf8b0910b2a513b9d1c5db755157f",
+      "bytes": 3804,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/playplay_dfa_service.py",
+      "sha256": "717c0ae90edfc7c4aad9db71da67d4a3fd135088766571514b21884293eba1d8",
+      "bytes": 15806,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/playplay_service_requirements.txt",
+      "sha256": "d2a1cdcfeb14e35b6fe0792a20559b0dea3cc2d3178c1799a315df4b2a890d7b",
+      "bytes": 58,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/reverse_key_schedule.py",
+      "sha256": "d9baf1ae5370a1275e35f1786d919ed285b68e5f30449a9eb33a972fd7761a0a",
+      "bytes": 2691,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/start_playplay_service.ps1",
+      "sha256": "756855f03d874d98415ec8aeea4216c7216a97b4bbb67c73159b730f12a26b23",
+      "bytes": 634,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/stop_playplay_service.ps1",
+      "sha256": "93cbc075218be42f269496fd1113affed884497c53ec1f48126e941091df90f1",
+      "bytes": 767,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/test_playplay_dfa_service.py",
+      "sha256": "010d5ccbd30b5a038417b3df11a340b67e717e16a6143af063fbfd4cdbfd7062",
+      "bytes": 5397,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/final/verify_playplay_service.py",
+      "sha256": "5bb59fc1f0df8032633ac792ae5fae702dc3e455cfb11536d3f44c76af5928f6",
+      "bytes": 4735,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/initial_playplay_dfa_service.py",
+      "sha256": "a602ce842e19aa7eaaab65d91d968144e76747308320d4762eedff9efb4190af",
+      "bytes": 13648,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/runs/20260925-http-dfa-service/source/record_deployment.py",
+      "sha256": "876f93b7033e8146e78667a61e08bd94fa3da7345e479f114ec9d35972e17d84",
+      "bytes": 3375,
+      "role": "source-snapshot"
+    },
+    {
+      "path": "research/playplay/docs/token148-license-20260924T164814Z-retry.json",
+      "sha256": "d0c47d841e937851face64ea61a751bc6d778a05732819928520a38d7bdd5299",
+      "bytes": 925,
+      "role": "reference-linux-only"
+    },
+    {
+      "path": "research/playplay/data/token148-reference-20260924T164814Z.enc",
+      "sha256": "1cbbde6214e3fb957c70a218f13c672fd414691532987bec91a841b8ec1a9932",
+      "bytes": 4096,
+      "role": "encrypted-content-reference"
+    },
+    {
+      "path": "research/playplay/docs/token148-license-second-20260924T164814Z.json",
+      "sha256": "dd5d1e5d76663f987b6c8308412161a9619dec488102ea5263cd716d86c12bf7",
+      "bytes": 932,
+      "role": "reference-linux-only"
+    },
+    {
+      "path": "research/playplay/data/token148-reference-second-20260924T164814Z.enc",
+      "sha256": "eb6e4ed9f6adbdf971a8d9ad5ec4a18cfac2f83221a9870fe90f161c4b94f7be",
+      "bytes": 4096,
+      "role": "encrypted-content-reference"
+    }
+  ]
+}

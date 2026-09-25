@@ -1,4 +1,4 @@
-**Investigación pausada por el usuario — 2026-09-24.** Pendientes conservados para retomar.
+**Estado:** Activo. Servicio HTTP validado — 2026-09-25.
 
 - [x] Controlar procedencia/contaminación
 - [x] Buscar huellas de claves de ronda
@@ -6,5 +6,8 @@
 - [x] Documentar el ataque DFA y los resultados.
 - [x] Preservar capturadores recuperados con hash histórico y añadir controles de build/limpieza con pruebas offline.
 - [x] Documentar procedencia de RVA de contextos y procedimiento condicionado para otras versiones.
-- [ ] Validar en Windows el runner protegido con versión/hash/firmas y conservar una nueva captura.
+- [x] Validar servicio Windows con versión/hash/firmas y conservar una corrida HTTP; el runner de captura anterior mantiene su alcance propio.
 - [x] Evaluar Unicorn offline: generador y DFA positivos en dos contextos guardados; cadena desde licencia nueva pendiente.
+- [x] Servicio HTTP AES16 y cliente cspot con `b4_seq` obligatorio; CLI compilada.
+- [x] Validar extracción/contenido de dos recursos, reinicio ordenado y copia Windows por hashes.
+- [ ] Probar reproducción completa de cspot y una licencia nueva fuera de los controles.

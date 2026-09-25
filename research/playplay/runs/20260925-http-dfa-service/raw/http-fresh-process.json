@@ -1,0 +1,14 @@
+{
+  "started_at": "2026-09-25T09:56:06.480313+00:00",
+  "cases": [
+    {
+      "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+      "repeat": 1,
+      "license_sha256": "d0c47d841e937851face64ea61a751bc6d778a05732819928520a38d7bdd5299",
+      "error": "transport_or_validation_error",
+      "pass": false,
+      "seconds": 0.003
+    }
+  ],
+  "all_pass": false
+}

@@ -27,8 +27,9 @@ Ante discrepancia, señalarla y contrastar evidencia, no elegir por fecha o auto
   No ejecutar scripts desde tools/archive como si todos fueran vigentes.
 - Un único operador Windows/Frida. Identificar procesos propios y cerrar solo
   los del ensayo; no matar todas las instancias del usuario para limpiar.
-- Alcance actual: prueba puntual SSH, sin servicio LAN. Credenciales locales;
-  a Windows solo entradas de investigación, nunca bearer/Client-Token de cspot.
+- Alcance actual autorizado: API local Windows de AES16 consumida por cspot
+  mediante túnel SSH; ver [operación](docs/HTTP_DFA_SERVICE.md). Credenciales
+  de cuenta locales; a Windows solo la licencia, nunca bearer/Client-Token de cspot.
 - Captura de extracción y verificación van separadas: el runner histórico inyecta
   AES conocidas; no usar sus coincidencias de memoria como clave extraída.
 - Para integración C++, presentar el hallazgo y plan antes de editar y respetar

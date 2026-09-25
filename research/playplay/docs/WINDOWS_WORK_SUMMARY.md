@@ -220,3 +220,26 @@ la extracción autónoma desde una licencia nueva en Unicorn sigue pendiente.
 STATUS, PLAN y task señalan la pausa. No se iniciaron nuevos experimentos para
 este cierre. Los prototipos externos ya staged se conservan como investigación;
 su inclusión en el commit no acredita madurez de producción ni resultados nuevos.
+
+## Servicio HTTP AES16 y cliente cspot — 2026-09-25
+
+Por pedido del usuario se retomó la implementación: API Frida/Flask que recibe
+`obfuscated_key` y `b4_seq` obligatorios, recupera AES16 por DFA y la verifica
+contra el stream nativo. Worker separado con timeout, rechazo de concurrencia,
+puerto exclusivo, health y parada ordenada. El cliente C++ conserva ambos campos,
+usa JSON estricto, URL/token configurables y timeout de 25 s; se retiró el
+volcado de credenciales. La CLI compiló; suite doctest bloqueada por submódulos
+de test ausentes. Ocho pruebas Python locales y siete Windows pasaron.
+
+Dos licencias guardadas pasaron repetidas extracciones HTTP y descifrado de
+prefijos con CRC. También se probó con Spotify recién abierto y tras parada y
+arranque ordenados, conservando el PID de Spotify. Se corrigió el arranque
+inicial por wrapper tras detectar procesos residuales y un fallo registrado
+en frida-agent.dll. El historial negativo se conserva, sin atribuir causa no
+aislada. Diez archivos finales coinciden por SHA256 entre repo y Windows.
+
+Queda activa la tarea a demanda CspotPlayPlayDfa y el túnel local SSH8765.
+El coordinador fue el único operador Windows; gpt-6-sol/medium completó cliente,
+parser y compilación. No se tocaron procesos ajenos ni el índice Git.
+Pendiente: reproducción completa y licencia nueva fuera de los dos controles.
+[Guía](HTTP_DFA_SERVICE.md), [corrida](../runs/20260925-http-dfa-service/EXPERIMENT.md).

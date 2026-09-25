@@ -4,6 +4,7 @@ Estado vigente: [STATUS](../STATUS.md). Este índice organiza lecturas por neces
 
 | Necesidad | Documento |
 |---|---|
+| Usar la API Windows que devuelve AES16 | [HTTP_DFA_SERVICE](HTTP_DFA_SERVICE.md) |
 | Entender el mecanismo | [MECANISMO_Y_EXTRACCION_AES](MECANISMO_Y_EXTRACCION_AES.md) |
 | Reproducir el control positivo | [TOKEN148_ONESHOT](TOKEN148_ONESHOT_2026-09-24.md) |
 | Build/hash, RVAs, constantes | [FACTS](FACTS.md) |

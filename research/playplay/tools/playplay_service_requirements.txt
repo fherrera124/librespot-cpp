@@ -1,0 +1,4 @@
+Flask>=3.1,<4
+frida>=17,<18
+cryptography>=45
+psutil>=7,<8

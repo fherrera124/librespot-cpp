@@ -1,0 +1,13 @@
+test_bounded_errors_and_body (test_playplay_dfa_service.HttpContractTest.test_bounded_errors_and_body) ... ok
+test_passes_actual_b4_and_returns_only_key (test_playplay_dfa_service.HttpContractTest.test_passes_actual_b4_and_returns_only_key) ... ok
+test_requires_authentication_before_backend (test_playplay_dfa_service.HttpContractTest.test_requires_authentication_before_backend) ... ok
+test_requires_exact_license_fields (test_playplay_dfa_service.HttpContractTest.test_requires_exact_license_fields) ... ok
+test_saved_faults_recover_both_keys (test_playplay_dfa_service.RealRecoveryTest.test_saved_faults_recover_both_keys) ... ok
+test_second_server_cannot_bind_the_same_port (test_playplay_dfa_service.WorkerTest.test_second_server_cannot_bind_the_same_port) ... ok
+test_serial_request_and_shutdown (test_playplay_dfa_service.WorkerTest.test_serial_request_and_shutdown) ... ok
+test_timeout_disables_worker_and_next_request_is_immediate (test_playplay_dfa_service.WorkerTest.test_timeout_disables_worker_and_next_request_is_immediate) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 4.033s
+
+OK

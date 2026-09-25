@@ -2,6 +2,25 @@
   "schema_version": 1,
   "resources": [
     {
+      "id": "http-dfa-service",
+      "status": "http-content-verified",
+      "summary": "API Windows Frida/Flask que devuelve AES16; cliente cspot conserva b4_seq.",
+      "paths": [
+        "research/playplay/docs/HTTP_DFA_SERVICE.md",
+        "research/playplay/tools/playplay_dfa_service.py",
+        "research/playplay/tools/playplay_dfa_rpc.js",
+        "research/playplay/tools/playplay_service_requirements.txt",
+        "research/playplay/tools/start_playplay_service.ps1",
+        "research/playplay/tools/stop_playplay_service.ps1",
+        "research/playplay/tools/install_playplay_service.ps1",
+        "research/playplay/tools/test_playplay_dfa_service.py",
+        "research/playplay/tools/verify_playplay_service.py",
+        "research/playplay/runs/20260925-http-dfa-service/EXPERIMENT.md"
+      ],
+      "environment": "Windows Python 3.11+/Frida/Flask/cryptography/psutil; Linux CLI via SSH",
+      "notes": "Dos licencias guardadas, AES y CRC comprobados; no reproducción completa ni ESP32. Build148 exacto."
+    },
+    {
       "id": "current-state",
       "status": "current",
       "summary": "Estado, siguiente experimento e instrucciones comunes.",
@@ -275,7 +294,8 @@
     "research/playplay/runs/20260924T164814Z-token148/manifest.json",
     "research/playplay/runs/20260924-legacy-controls/manifest.json",
     "research/playplay/runs/20260924-clean-capture-recovery/manifest.json",
-    "research/playplay/runs/20260924-unicorn-feasibility/manifest.json"
+    "research/playplay/runs/20260924-unicorn-feasibility/manifest.json",
+    "research/playplay/runs/20260925-http-dfa-service/manifest.json"
   ],
   "documentation": [
     "AGENTS.md",
@@ -291,6 +311,7 @@
     "research/playplay/README.md",
     "research/playplay/STATUS.md",
     "research/playplay/docs/BACKGROUND.md",
+    "research/playplay/docs/HTTP_DFA_SERVICE.md",
     "research/playplay/docs/DECISIONS_148.md",
     "research/playplay/docs/FACTS.md",
     "research/playplay/docs/MECANISMO_Y_EXTRACCION_AES.md",

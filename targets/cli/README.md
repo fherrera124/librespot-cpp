@@ -26,6 +26,11 @@ cmake --build . --target cspot_cli
 
 The binary is produced at `build/targets/cli/cspot_cli`.
 
+This research tree currently forces PlayPlay audio keys. Its Windows HTTP service
+returns the AES key; `PLAYPLAY_SERVICE_URL` defaults to
+`http://127.0.0.1:8765/deob` through an SSH tunnel. See the
+[service setup and validation](../../research/playplay/docs/HTTP_DFA_SERVICE.md).
+
 ## Running
 
 ```shell

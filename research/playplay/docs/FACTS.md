@@ -3,6 +3,10 @@
 Síntesis actual: [STATUS](../STATUS.md). Las tablas de tokens A–F y preflights
 anteriores conservan su fecha; no sustituyen el control token148.
 
+**2026-09-25:** [API HTTP AES16](HTTP_DFA_SERVICE.md) verificada con dos licencias
+guardadas y prefijos CRC válidos. El cliente C++ envía ambos campos de licencia,
+valida JSON/AES y admite URL/token. CLI compilada; reproducción completa pendiente.
+
 Corte **2026-09-24**. Distinguir resultados históricos del backend de lo medido
 localmente en esta sesión. [Arquitectura](PLAYPLAY_ARCHITECTURE_NOTES.md) desarrolla
 los contratos inferidos; [validación](VALIDATION_148_2026-09-24.md) enlaza la evidencia.
@@ -129,8 +133,8 @@ Revisión del C++ existente (rutas desde la raíz del repositorio):
 
 | Archivo / símbolo | Estado observado |
 |---|---|
-| `main/src/api/SpClient.cpp`, `playPlayLicense` | token148/v5, obtiene campo ofuscado, conserva volcado a `/tmp/creds.json` |
-| `main/src/FileProvider.cpp` | RPC ya cableado, `FORCE PLAYPLAY`, parser manual `find`/`substr`, `PLAYPLAY_SERVICE_URL` |
+| `main/src/api/SpClient.cpp`, `playPlayLicense` | token148/v5, conserva obfuscated_key16 y b4_seq4; retirado volcado de credenciales |
+| `main/src/FileProvider.cpp` | PlayPlay forzado, API JSON validada, URL local8765 por defecto; `PLAYPLAY_SERVICE_URL`/`PLAYPLAY_SERVICE_TOKEN` |
 | `main/src/session/Session.cpp`, `connectDealer` | Hilo detached de prueba con track fijo |
 | `main/include/proto/PlayPlayPb.h` / `protobuf/playplay.proto` | Schema y código nanopb presentes |
 | `main/include/session/Authenticator.h`, `main/src/api/ApConnection.cpp` | Arreglos HMAC preexistentes; no modificados por esta sesión |

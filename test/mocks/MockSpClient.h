@@ -38,7 +38,7 @@ class MockSpClient : public cspot::SpClient {
              override);
 
   MAKE_MOCK2(playPlayLicense,
-             bell::Result<std::vector<std::byte>>(
+             bell::Result<cspot::PlayPlayLicense>(
                  const std::vector<std::byte>&, bool),
              override);
 };

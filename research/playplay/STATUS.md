@@ -1,7 +1,14 @@
 # Estado de Investigación: PlayPlay
 
-**Estado:** PAUSADO por indicación del usuario (2026-09-24). Conservar los
-resultados y pendientes; no iniciar nuevos experimentos hasta que se retome.
+**Estado:** ACTIVO. API HTTP de extracción validada (2026-09-25).
+
+El servicio Windows devuelve AES16 mediante Frida/DFA desde `obfuscated_key`
+y `b4_seq` obligatorios. Dos recursos, llamadas repetidas y prefijos de 4096 B
+con Ogg/Vorbis y CRC válidos; también se comprobó con Spotify recién abierto y
+tras parar/arrancar ordenadamente el servicio. Cliente cspot actualizado y CLI
+compilada; reproducción completa y ESP32 pendientes. Servicio en loopback con
+túnel SSH, tarea Windows a demanda. [Uso y límites](docs/HTTP_DFA_SERVICE.md),
+[evidencia](runs/20260925-http-dfa-service/EXPERIMENT.md).
 
 Se reprodujo la recuperación AES-128 mediante DFA para los casos documentados
 del build 1.2.92.148, sin proporcionar la AES al cálculo de extracción. Esto no
@@ -19,7 +26,7 @@ de un proceso previo: los ensayos Unicorn parten de contextos capturados.
 * Completado: Extracción de AES16 puramente mediante métodos de criptoanálisis de caja blanca (DFA) sobre el bloque generador.
 
 ## Pendientes para cuando se retome
-1. Consolidar el pipeline del ataque DFA en un único script de extracción de producción.
+1. Probar reproducción completa de cspot y una licencia nueva fuera de los dos controles.
 2. Comprobar otros binarios si fuese necesario.
 
 ## Mantenimiento de capturas y portabilidad

@@ -1,0 +1,50 @@
+{
+  "started_at": "2026-09-25T03:45:30.447033+00:00",
+  "cases": [
+    {
+      "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+      "repeat": 1,
+      "license_sha256": "d0c47d841e937851face64ea61a751bc6d778a05732819928520a38d7bdd5299",
+      "http_status": 200,
+      "matches_reference": true,
+      "ogg_vorbis_crc_valid": true,
+      "content_bytes": 4096,
+      "pass": true,
+      "seconds": 1.353
+    },
+    {
+      "file_id": "2f43127d80edc9cd9f12f441e1cb7904b680f9da",
+      "repeat": 2,
+      "license_sha256": "d0c47d841e937851face64ea61a751bc6d778a05732819928520a38d7bdd5299",
+      "http_status": 200,
+      "matches_reference": true,
+      "ogg_vorbis_crc_valid": true,
+      "content_bytes": 4096,
+      "pass": true,
+      "seconds": 1.374
+    },
+    {
+      "file_id": "1a8e5b04837957617162724232b0c96922222447",
+      "repeat": 1,
+      "license_sha256": "dd5d1e5d76663f987b6c8308412161a9619dec488102ea5263cd716d86c12bf7",
+      "http_status": 200,
+      "matches_reference": true,
+      "ogg_vorbis_crc_valid": true,
+      "content_bytes": 4096,
+      "pass": true,
+      "seconds": 1.476
+    },
+    {
+      "file_id": "1a8e5b04837957617162724232b0c96922222447",
+      "repeat": 2,
+      "license_sha256": "dd5d1e5d76663f987b6c8308412161a9619dec488102ea5263cd716d86c12bf7",
+      "http_status": 200,
+      "matches_reference": true,
+      "ogg_vorbis_crc_valid": true,
+      "content_bytes": 4096,
+      "pass": true,
+      "seconds": 1.437
+    }
+  ],
+  "all_pass": true
+}
