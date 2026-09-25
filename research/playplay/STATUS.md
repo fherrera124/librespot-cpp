@@ -26,6 +26,10 @@ de un proceso previo: los ensayos Unicorn parten de contextos capturados.
 * Completado: Extracción de AES16 puramente mediante métodos de criptoanálisis de caja blanca (DFA) sobre el bloque generador.
 
 ## Pendientes para cuando se retome
+Investigación propuesta por el usuario: [captura directa AES en 148](docs/DIRECT_AES_SEARCH_148.md).
+Incluye evaluación de another-unplayplay, respuestas y plan; aún sin nuevas
+pruebas de memoria ni punto de extracción directa validado.
+
 1. Probar reproducción completa de cspot y una licencia nueva fuera de los dos controles.
 2. Comprobar otros binarios si fuese necesario.
 

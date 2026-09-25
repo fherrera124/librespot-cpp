@@ -4,6 +4,7 @@ Estado vigente: [STATUS](../STATUS.md). Este índice organiza lecturas por neces
 
 | Necesidad | Documento |
 |---|---|
+| Entender unplayplay y buscar AES directamente | [Evaluación, preguntas y plan 148](DIRECT_AES_SEARCH_148.md) |
 | Usar la API Windows que devuelve AES16 | [HTTP_DFA_SERVICE](HTTP_DFA_SERVICE.md) |
 | Entender el mecanismo | [MECANISMO_Y_EXTRACCION_AES](MECANISMO_Y_EXTRACCION_AES.md) |
 | Reproducir el control positivo | [TOKEN148_ONESHOT](TOKEN148_ONESHOT_2026-09-24.md) |

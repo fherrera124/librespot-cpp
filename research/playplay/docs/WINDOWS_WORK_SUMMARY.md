@@ -243,3 +243,12 @@ El coordinador fue el único operador Windows; gpt-6-sol/medium completó client
 parser y compilación. No se tocaron procesos ajenos ni el índice Git.
 Pendiente: reproducción completa y licencia nueva fuera de los dos controles.
 [Guía](HTTP_DFA_SERVICE.md), [corrida](../runs/20260925-http-dfa-service/EXPERIMENT.md).
+
+## Evaluación de extracción directa — 2026-09-25
+
+Revisión estática de another-unplayplay en commit 24d3223 y contraste con evidencia
+local. Se documentaron captura directa del 485, metadatos de excepciones, DFA148,
+búsqueda de claves completas/de ronda/fragmentos y controles de contaminación.
+No se realizaron nuevos ensayos Windows. El [informe y plan](DIRECT_AES_SEARCH_148.md)
+incluye preguntas del usuario y una instrucción de continuidad. La extracción
+directa en 148 sigue sin demostrarse; el servicio DFA conserva su estado anterior.

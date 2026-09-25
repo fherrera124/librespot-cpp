@@ -5,6 +5,7 @@
 
 | Necesito… | ID del recurso | Entrada |
 |---|---|---|
+| Investigar captura directa AES en 148 | direct-aes-search-148 | [Evaluación, preguntas y plan](docs/DIRECT_AES_SEARCH_148.md) |
 | Usar la API HTTP de AES16 | http-dfa-service | [Servicio Windows y cspot](docs/HTTP_DFA_SERVICE.md) |
 | Retomar el trabajo | current-state | [STATUS](STATUS.md), [PLAN](PLAN.md) |
 | Entender qué falta | current-state | [Mecanismo](docs/MECANISMO_Y_EXTRACCION_AES.md) |

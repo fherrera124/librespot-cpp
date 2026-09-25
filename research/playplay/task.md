@@ -1,5 +1,8 @@
 **Estado:** Activo. Servicio HTTP validado — 2026-09-25.
 
+- [x] Documentar evaluación de another-unplayplay y preguntas en [plan de captura directa](docs/DIRECT_AES_SEARCH_148.md).
+- [ ] Ejecutar búsqueda directa con referencias externas y validar procedencia; aún no ejecutada.
+
 - [x] Controlar procedencia/contaminación
 - [x] Buscar huellas de claves de ronda
 - [x] Obtener AES16 sin suministrarla al extractor mediante Side-Channel Attacks (DFA implementado con éxito)

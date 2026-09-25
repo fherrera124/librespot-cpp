@@ -2,6 +2,14 @@
   "schema_version": 1,
   "resources": [
     {
+      "id": "direct-aes-search-148",
+      "status": "proposed-not-executed",
+      "summary": "Evaluación de another-unplayplay, preguntas y plan de extracción directa para 148.",
+      "paths": ["research/playplay/docs/DIRECT_AES_SEARCH_148.md"],
+      "environment": "documentation",
+      "notes": "Revisión estática upstream 24d3223; sin nueva captura ni extracción directa demostrada."
+    },
+    {
       "id": "http-dfa-service",
       "status": "http-content-verified",
       "summary": "API Windows Frida/Flask que devuelve AES16; cliente cspot conserva b4_seq.",
