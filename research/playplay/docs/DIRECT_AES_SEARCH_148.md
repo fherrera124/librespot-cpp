@@ -33,6 +33,13 @@ de copia repetidas.
 
 ## Interpretación
 
+- El desensamblado del dump 148 añade cuatro referencias de código
+  ([mapa de RVAs](FACTS.md)):
+  `0x49f627` llama a `0x49f854`; `0x49f8ea` copia 3072 bytes desde RDI;
+  `0x49f925` copia otros 16 bytes desde R12, cuyo contenido no se atribuyó.
+  RDI y R12 provienen de `args[0]` y `args[3]`, respectivamente. Además,
+  `0x49f894` llama a `0x49f994`, que lee `gs:[0x58]`. `0x49f904` y
+  `0x49f961` ya estaban documentados. Ninguno es un punto validado de K0.
 - Los 3072 bytes leídos desde `args[0]` al entrar en `0x49f854`, así como los
   512 bytes siguientes, son idénticos para las dos licencias. La función copia
   3072 bytes desde ese puntero. La igualdad descarta que **esos bytes capturados**

@@ -42,8 +42,12 @@ Nombres descriptivos de investigación, no símbolos exportados del DLL.
 |---|---|---|
 | `0x49cb88` | Inicializador VM | Llamada estática en `0x4a0407`; ejecutada por la ruta de runtime fresco |
 | `0x49eaa4` | `VmObjectTransform` | Hook natural y llamadas repetidas |
+| `0x49f627` | Llamada a `0x49f854` | Confirmada por desensamblado del dump 148; no es un hook de AES |
 | `0x49f854` | Función que recibe el candidato de 16 bytes en RDX | Control natural positivo; candidato no validado como AES |
+| `0x49f894` → `0x49f994` | Llamada a función que lee `gs:[0x58]` | Relación estática; no se demostró que exponga K0 |
+| `0x49f8ea` | Copia de 3072 bytes desde RDI=`args[0]` mediante `0x17780e0` | Desensamblado del dump 148; no demuestra que sean tablas AES |
 | `0x49f904` | Copia de ese candidato; retorno `0x49f909` | Trazado de copia, tamaño 16 |
+| `0x49f925` | Otra copia de 16 bytes desde R12=`args[3]` | Desensamblado del dump 148; contenido/función del argumento no atribuidos |
 | `0x49f961` | Copia final de 28 bytes | Instrucción `mov r8d, 0x1c` previa y trazado dinámico |
 | `0x17780e0` | Rutina de copia | Firma única en dump y observación en vivo |
 | `0x4a0494` | Manejador de respuesta PlayPlay | Recurso, protobuf y callbacks capturados |
