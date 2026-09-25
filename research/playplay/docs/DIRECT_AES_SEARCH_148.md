@@ -59,7 +59,20 @@ de copia repetidas.
 
 [`another-unplayplay`](https://github.com/cycyrild/another-unplayplay/blob/24d3223eee0f2c4b6a55f41fcdfb7249406c6fb0/src/unplayplay/key_emu.py)
 muestra un hook de 16 bytes para su build 1.2.88.485.
-No se validó un hook equivalente en 1.2.92.148. Si se reabre esta línea,
-la prueba discriminante es observar instrucciones productoras/consumidoras y
-registros transitorios con preflight completo, claves externas y una licencia
-nueva. No se modifica la integración de cspot por este resultado.
+No se validó un hook equivalente en 1.2.92.148 ni una dirección de memoria
+que contenga K0. Las direcciones de buffers pueden variar entre procesos.
+
+## Propuestas si se reabre
+
+1. Seguir la transformación aún no observada dentro de `0x4af25c` (llamada
+   desde `0x49f94e`) y la inicialización `0xd9e2e4`. Capturar registros
+   generales/SIMD y buffers de tamaño comprobado antes y después de las
+   instrucciones que escriben el descriptor y el contexto; las copias ya
+   examinadas en `0x49f904` y `0x49f925` no aportaron una coincidencia.
+2. Seguir la lectura TLS de `0x49f994` y los accesos posteriores de `0x49f854`
+   para identificar buffers y offsets efectivos, sin presumir que allí esté K0.
+3. Comparar las capturas **fuera de Spotify** con K0..K10 obtenidas por DFA.
+   Una coincidencia debe atribuirse a la instrucción productora o consumidora,
+   RVA y offset del buffer, y repetirse con otra licencia y otro proceso/base.
+   Verificar build/hash antes de instrumentar. Si no hay coincidencia, registrar
+   regiones e instantes examinados; K0 podría no existir linealmente en memoria.
