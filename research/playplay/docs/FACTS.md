@@ -79,6 +79,15 @@ La sesión actual confirma su ejecución, no una derivación de cero por firma.
 | IV estándar usado por cspot/fixtures | `72e067fbddcbcf77ebe8bc643f630d93` |
 | Ogg de los fixtures | `OggS` en offset 167; no confirmado para cualquier archivo de caché |
 
+Se conoce como **static Initialization Vector (IV)**: un vector de
+inicialización fijo presente en clientes abiertos. [pylibrespot de
+Fornoth](https://github.com/Fornoth/spotify-connect/blob/master/common/pylibrespot/player.py)
+la declara como `AESIV` y la usa como contador inicial de AES-CTR; cspot la
+conserva en [AesCtrCipher.cpp](../../../main/src/audio/AesCtrCipher.cpp).
+Su origen histórico exacto no consta aquí. En el build148 se verificó por
+separado que ambas AES conocidas producen los bloques nativos y contenido Ogg
+válido con ese IV; no se dedujo el IV de las licencias PlayPlay.
+
 Los 11 ensayos E anteriores se conservan en la [validación histórica](VALIDATION_148_2026-09-24.md)
 como pruebas de repetibilidad y ABI del build 148. Sus pares AES procedían de
 otra referencia y carecían de `b4_seq` y respuesta completa; no son ground truth
