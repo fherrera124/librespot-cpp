@@ -1,14 +1,15 @@
 # Referencia detallada de herramientas PlayPlay
 
 Para elegir herramienta rápidamente: [CATALOG](../CATALOG.md) y
-[STATUS](../STATUS.md). Este documento conserva comandos y anchors históricos.
-La prueba token148 es el control positivo; los ensayos E siguientes son antecedentes.
+[STATUS](../STATUS.md). Este documento conserva métodos y herramientas del build 1.2.92.148.
+Las cantidades de casos de los ensayos guardados describen aquellas corridas;
+el ground truth activo reúne los dos controles token148/v5 validados.
 
 **Servicio actual (2026-09-25):** [API HTTP de AES16](../docs/HTTP_DFA_SERVICE.md).
 `playplay_dfa_service.py` + `playplay_dfa_rpc.js` usan Frida/DFA y exigen
 `obfuscated_key`/`b4_seq`. `verify_playplay_service.py` verifica las respuestas
-contra licencias y contenido desde Linux. El servidor antiguo en resources
-y `validate_lan_service.py` (vectores E sin b4_seq) no implementan este contrato.
+contra licencias y contenido desde Linux. Los prototipos de contrato parcial están archivados como fuentes del
+experimento de descubrimiento148, no como servicio operativo.
 
 - [Comprobar el workspace](check_workspace.py): catálogo, enlaces y hashes, offline.
 - [Comprobar el cierre de búsqueda directa](check_direct_aes_148.py): anexo crudo y AES, offline.
@@ -29,8 +30,8 @@ firmas antes de ejecutar `capture_clean_148.js` o `capture_context_148.js`.
 Los originales con hash histórico están archivados en runs. Los cambios actuales
 se comprueban offline con `test_clean_capture.py`; integración Windows pendiente.
 
-**Actualización posterior:** tres herramientas nuevas validan el stream nativo
-token148/v5 y contenido, **sin servicio LAN**. No extraen AES16 todavía.
+**Control de contenido token148/v5:** estas herramientas validan el stream
+nativo y contenido. La extracción AES16 se realiza por la vía DFA separada.
 Comandos, fixtures e informes en [TOKEN148_ONESHOT](../docs/TOKEN148_ONESHOT_2026-09-24.md).
 
 - `probe_token148_once.py`: Linux, requests/cryptography, login desde session.json,
@@ -40,16 +41,16 @@ Comandos, fixtures e informes en [TOKEN148_ONESHOT](../docs/TOKEN148_ONESHOT_202
 - `verify_token148_content.py`: offline, cryptography; compara todos los bytes
   contra AES-128-CTR, descifra el prefijo y comprueba Vorbis/CRC Ogg. Exit0=éxito.
 
-El runner histórico sigue devolviendo 2 para estos eventos alternativos aunque
-terminen correctamente. Usar el verificador offline como resultado del ensayo.
+El runner archivado devolvía2 para eventos alternativos completos. Sus
+informes deben leerse con el verificador independiente; no extrapolar ese
+código de salida al runner actual.
 
 | Entorno | Dependencias / uso |
 |---|---|
 | Linux, Python 3 | Biblioteca estándar para HTTP, sus tests y buscador de firma |
 | Linux, `research/playplay/ppvenv/bin/python` | `pefile`, `capstone` para análisis estático; receta en el playbook |
-| Windows, Python 3.12 | `frida`, `psutil` para runner; `cryptography` para caché; `flask` solo servidor histórico |
+| Windows, Python 3.12 | `frida`, `psutil` para runner; `cryptography` para caché; `flask` para el servicio actual (no necesario para revisión offline) |
 | Scripts JS | Se cargan **con Frida**, no con Node ni directamente con Python |
-| Paquete `unplayplay` local | Hash gate modificado; no usar como referencia canónica sin contrastar su código/config |
 
 Python Windows observado:
 `C:\Users\francisco.herrera\AppData\Local\Programs\Python\Python312\python.exe`.
@@ -71,93 +72,48 @@ Elegir el proceso sin `--type=` ni crashpad, con sesión gráfica del usuario.
 Verificar 1.2.92.148 y hash de disco documentado. No matar todos los Spotify para
 «limpiar»: identificar y terminar solo el ensayo propio si quedó pendiente.
 
-Copiar el runner, JS elegido y fixtures a una misma carpeta Windows. Ejemplo
-desde la raíz del repositorio (la clave SSH es obligatoria):
+## Ground truth y runner de controles actuales
+
+El [fixture schema2](../data/ground-truth-vectors.json) contiene exclusivamente
+las dos licencias token148/v5 validadas. [Campos y separación de diagnósticos](../data/README.md).
+El checker compara procedencia, hashes, K10→K0, bloque nativo y CRC:
 
 ```sh
-scp -i ~/.ssh/win_claude research/playplay/tools/validate_windows_vm.py \
-  research/playplay/tools/check_key_pipeline_148.js \
-  research/playplay/data/ground-truth-vectors.json \
-  research/playplay/data/key-pipeline-controls-148-2026-09-24.json \
-  francisco.herrera@10.16.150.154:
-ssh -i ~/.ssh/win_claude francisco.herrera@10.16.150.154
+python3 research/playplay/tools/check_ground_truth_148.py
+python3 research/playplay/tools/test_ground_truth_148.py
 ```
 
-En **PowerShell**, situado en `C:\Users\francisco.herrera`:
+`validate_windows_vm.py` es el runner para pruebas del build148. Las fuentes
+exactas del control anterior permanecen en
+[runs/20260924T164814Z-token148/source](../runs/20260924T164814Z-token148/source/)
+y sus informes se evalúan con `verify_token148_content.py`; no se reemplazan
+sus hashes por los de la revisión actual.
+
+Los comandos siguientes de diagnósticos usan PowerShell, con `$ppPython` igual
+al Python que tiene Frida/psutil y `$ppPid` igual al proceso principal recién
+verificado. Definir `$ppRun = @("--pid", "$ppPid", "--vectors", "ground-truth-vectors.json", "--timeout", "180")`.
+Copiar script, runner y `playplay_148_preflight.py`; para datos
+específicos, copiar también `--script-data`. Los escritores requieren un nombre
+de informe nuevo. Las AES de referencia no deben entrar en capturas destinadas
+a buscar claves; los diagnósticos que inyectan referencias deben etiquetarse
+como controles contaminados para ese propósito.
+
+Para capturar los dos controles actuales, copiar además `check_fresh_license_148.js`:
 
 ```powershell
-$ppPython = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
-$ppPid = 64216 # Sustituir por el PID principal recién verificado.
-$ppRun = @("--pid", "$ppPid", "--vectors", "ground-truth-vectors.json",
-           "--timeout", "180", "--exceptions", "propagate")
+& $ppPython .\validate_windows_vm.py @ppRun --capture-only --report control-nuevo.json
 ```
 
-Mantener SSH vivo durante la ejecución en primer plano. Recuperar el informe
-con `scp` al terminar y usar siempre un nombre nuevo; los escritores abren en
-modo exclusivo. Al cerrar, verificar que el ensayo se desadjuntó. Al corte de
-esta sesión **no quedó un ensayo esperando ni servidor validado activo**.
+Evaluar el informe en Linux, con el repositorio y `cryptography` disponibles:
 
-## Prueba preferida sin cambiar de cancion
-
-**Control histórico E.** Para token148 usar la entrada token148-control del
-[catálogo](../CATALOG.md). Para extracción preparar el capturador limpio del PLAN.
-La expresión «preferida» de este anchor conserva compatibilidad con enlaces viejos.
-
-```powershell
-& $ppPython .\validate_windows_vm.py @ppRun --script check_key_pipeline_148.js --script-data key-pipeline-controls-148-2026-09-24.json --report pipeline-nuevo.json
+```sh
+python3 research/playplay/tools/validate_windows_vm.py --evaluate-report /tmp/control-nuevo.json
 ```
 
-En el proceso 148 ya inicializado no necesita otra reproducción: crea el runtime
-mediante `0x4a0268`, deshabilita callback de un objeto local y ejecuta dos veces
-13 entradas. Debe haber 13 eventos `pipeline_control`, cuatro bloques iguales
-por par, `done` y ningún error. El informe histórico cumple eso; sus comparaciones
-con AES/IV estándar son negativas. No se probó arranque frío.
-
-**Limitación del runner:** para este diagnóstico puede devolver **2** y
-`inconclusive_execution_error` aunque se hayan completado los controles. Ver
-la siguiente sección antes de interpretar el resumen.
-
-## Runner: validate_windows_vm.py
-
-Requiere `--pid`, `--vectors`, `--report`; timeout por defecto 120 s.
-Verifica que PID sea Spotify principal, inyecta `vectors`, adjunta/carga JS,
-recoge eventos y finalmente descarga y desadjunta. Opciones:
-
-| Opción | Uso y límite |
-|---|---|
-| `--script archivo.js` | Diagnóstico alternativo. Sigue necesitando `--vectors`, aunque ese JS no los use |
-| `--script-data archivo.json` | Inyecta el JSON como `diagnosticData`; requiere `--script` |
-| `--exceptions propagate` | Cambia **solo el JS integrado**; scripts alternativos declaran sus propias opciones NativeFunction |
-| `--advance-track` | Añade `advance_spotify_track.js` desde la carpeta del runner; copiar también ese archivo |
-| `--timeout segundos` | Tiempo máximo de espera del runner; no prueba que el hook haya ocurrido |
-| `--report nuevo.json` | Registra fuente compuesta SHA256, hash de vectores, PID, eventos y evaluación |
-
-Sin `--script` usa el **ensayo inicial superado**: reentrada en `onEnter`,
-lectura de 24 bytes finales y selección de 16 candidatos. Su default
-`exceptions=steal` falló con system error; con propagate falló el control del
-buffer final. Conservar como diagnóstico histórico, no como extractor preferido.
-El texto de consola «Play a different song...» se imprime incluso para scripts
-automáticos; no implica que el pipeline necesite una canción.
-
-La evaluación genérica solo entiende 11 eventos `result` y
-`natural_output`/`control_replay`:
-
-- 0: 11 candidatos iguales a AES esperadas y control natural válido.
-- 1: lote completo, control válido y diferencias candidatas.
-- 2: error, lote incompleto o control fallido.
-
-`extract_vm_key_148.js` usa ese contrato. Los **otros JS diagnósticos** escriben
-en `events` sin poblar `results`; su resumen da completed=0/control_pass=false
-y código 2 incluso si tuvieron éxito. Para ellos comprobar ausencia de `error`
-y `fatal`, evento `done`, cantidad esperada y campos propios de cada ensayo.
-El código 2 también puede ser un error real: no ignorarlo indiscriminadamente.
-Receta de evaluación offline en [el informe](../docs/VALIDATION_148_2026-09-24.md#comprobar-los-resultados-sin-windows).
-
-Los informes iniciales conservan `mode: onEnter` incluso para JS alternativos;
-`mode` se corrigió después. `script_sha256` corresponde al código **compuesto**,
-incluidos fixtures/helper, no al archivo JS aislado. Scripts que evolucionaron
-de 24 a 28 bytes o de uno a cuatro bloques no reproducen byte por byte el
-formato de informes anteriores.
+La captura y un diagnóstico completado no equivalen a validación criptográfica.
+El modo predeterminado no inyecta AES en Spotify; los modos custom suministran
+referencias por compatibilidad con los trazadores y deben usarse como diagnósticos.
+`--advance-track` necesita también `advance_spotify_track.js` junto al runner.
 
 ## Scripts JS de la sesión: función y ejecución individual
 
@@ -254,7 +210,7 @@ de descriptores guardados después de reiniciar el cliente no fue validada.
 
 ### check_key_pipeline_148.js
 
-Es la prueba preferida descrita arriba. El fixture es un array de 13 objetos:
+Es el ensayo de constructor/runtime nuevo usado para descubrir y contrastar el ABI148. El fixture es un array de 13 objetos:
 `label`, `file_id`, `obfuscated`, `expected_candidate`, `aes`,
 `aes_known`, `expected_stream`. Dos controles naturales + once E; en los dos
 naturales `aes` es el **candidato hipotético**, y `aes_known=false`.
@@ -310,34 +266,6 @@ python3 research/playplay/tools/find_copy_anchor.py
 
 No sobrescribir `copy-anchor-148-2026-09-24.json` al redirigir otra corrida.
 
-### validate_lan_service.py
-
-Cliente HTTP stdlib Linux. `--url` obligatorio, `--vectors` por defecto
-fixture del repo, `--timeout` 10 s, `--repeat` 1; `--report` guarda JSON.
-No inicia servidor ni adjunta Frida, no necesita credenciales. Ignora proxies
-del entorno, rechaza redirecciones y limita respuesta a 64 KiB. Se detiene al
-primer error de transporte/protocolo, no ante un simple mismatch.
-
-```sh
-python3 research/playplay/tools/validate_lan_service.py \
-  --url http://10.16.150.154:8080/deob --repeat 2 \
-  --report research/playplay/docs/lan-validacion-nueva.json
-```
-
-Salida 0: todos coinciden; 1: diferencias; 2: error. Conserva fecha, hash de
-vectores y resultados por recurso/version. Dos pasadas completas son 22; el
-ensayo real terminó en la primera petición HTTP500. **El endpoint está detenido
-y sin validar**; este comando es para cuando se repare el servidor.
-
-### test_validate_lan_service.py
-
-Cuatro tests unittest con servidor HTTP simulado: caso correcto repetido,
-diferencias y errores de servicio/formato. No prueban Spotify ni el VM.
-
-```sh
-python3 -m unittest discover -s research/playplay/tools -p test_validate_lan_service.py -v
-```
-
 ### probe_cached_audio.py
 
 Windows/Python con `cryptography`. Solo lee prefijos512 de `*/*.file`;
@@ -358,57 +286,29 @@ fixture del comando (uno nuevo). 102/116 prefijos, cero matches, un bloqueo por
 corrida. Hubo comprobación sintética inline (clave correcta, incorrecta, prefijo
 corto); no hay un archivo de tests persistente para esas tres comprobaciones.
 
-## Servidor ensayado, conservado como prototipo
+## Análisis estático y procedencia
 
-[flask_frida_server_final.py](../resources/flask_frida_server_final.py) requiere
-Python Windows con Flask/Frida/psutil. Se ejecutó **sin argumentos**, con Python
-en primer plano por SSH; copia remota `playplay_validation_148_20260924.py`.
-Busca proceso principal, espera una transformada natural y publica
-`POST /deob` en `0.0.0.0:8080`: JSON `obfuscated_key`, respuesta `aes_key`.
-No tiene `file_id`, caché ni contrato de producción validado.
+`find_copy_anchor.py` busca la firma de copia con wildcards en el dump148.
+`analyze_calls_148.py` y `analyze_calls_148_full.py` buscan calls relativos;
+`disasm.py` delimita ventanas de desensamblado. Son comprobaciones offline del
+binario exacto; no prueban por sí solas que un candidato sea una clave AES.
+Las recetas, resultados y pasos `.pdata`/xref están en el
+[playbook](../docs/RVA_DISCOVERY_PLAYBOOK.md).
 
-Conserva args[3] como puntero, usa excepciones por defecto y devuelve primeros
-16 del buffer final. Dio HTTP500/system error. Para reproducir exclusivamente
-ese fallo histórico se invocaba:
+Los scripts de captura externa token148 se conservan en
+[token_capture_148](token_capture_148/README.md). Requieren revisión del PID y
+los permisos antes de usar: sus notas registran procedencia, no validación de
+un despliegue automático.
 
-```powershell
-& $ppPython .\playplay_validation_148_20260924.py
-```
+El prototipo HTTP148 que falló se conserva como
+[fuente de ensayo](../runs/20260924-discovery-148/source/flask_frida_server_final.py).
+Su contrato parcial, excepciones y selección de los primeros16 bytes se
+explican en [VALIDATION_148](../docs/VALIDATION_148_2026-09-24.md).
+Para servicio actual usar exclusivamente [HTTP_DFA_SERVICE](../docs/HTTP_DFA_SERVICE.md).
 
-No es el procedimiento recomendado para retomar. La prioridad es AES y contrato
-nativo; luego reparar servidor. No relanzar tampoco `flask_frida_667.py`, servicio
-previo remoto con offsets diferentes. [Informe](../docs/VALIDATION_148_2026-09-24.md)
-conserva hashes/logs y limpieza.
-
-## Herramientas anteriores: inspeccionar antes de reutilizar
-
-Estas no son nuevos resultados de ejecución de esta sesión. Pueden tener paths
-obsoletos, efectos laterales o offsets de otra sub-build. Los DLL actuales están
-en **`research/dlls/`**, no en `research/playplay/*.dll`.
-
-| Script(s) | Propósito histórico / cómo considerar su uso |
-|---|---|
-| `extract_dll.py <instalador.exe> <salida.dll>` | Extrae DLL x64 del overlay LZMA1 de instaladores full compatibles; no garantiza todos los instaladores |
-| `vm_check.py <dll>` | Oráculo Unicorn/config del paquete; revisar hash gate local alterado y offsets antes de confiar en resultado |
-| `run_vm_485.py [dll]` | Ensayo Unicorn saltando gate; dar ruta explícita `research/dlls/...`; falló con sub-build local |
-| `run_vm_483.py [dll]` | Similar; necesita `UPP483_SRC` al código del paquete correspondiente |
-| `groundtruth.py` | Recaptura entradas token E; requiere `SP_BEARER`/`SP_CLIENT_TOKEN`, contacta backend y escribe fixture histórico. No ejecutado para este handoff |
-| `sweep_versions.py`, `probe_tokenF.py` | Barridos autenticados token/version; revisar endpoints/output/rate limits antes de repetir |
-| `find_rip.py`, `find_rip_667.py` | Firmas de puntos de extracción de otras referencias; patrones contrastados contra148 sin coincidencia; no portar offsets a ciegas |
-| `find_hooks*.py`, `extract_patterns.py`, `find_refs.py`, `find_667.py`, `find_cxx.py`, `find_context.py` | Buscadores de firmas/xrefs; revisar rutas/layout/hashes, no prueban AES |
-| `analyze_calls_148*.py`, `disasm*.py`, `exports.py` | Análisis estático; el desensamblado lineal puede perder ramas por ofuscación |
-| `pad_dll.py`, `patch_sec.py`, `patch_485_test.py` | Preparan/modifican binarios de prueba; no aplicarlos al original sin leer destinos |
-| `dump_ctx.py`, `dump_trigger.py`, `trace_ctx.py`, `trace_dump.py`, `trace_485.py`, `trace_667*.py` | Captura/trazas Frida históricas; PID/ABI/RVAs no se presumen vigentes |
-| `test_derived.py`, `test_dummy_ctx.py`, `test_real_ctx.py` | Experimentos de contexto/resultado, no suite de aceptación |
-| `test_483.ps1`, `test_apiset.ps1`, `test_arch.ps1`, `test_dll.cpp` | Harness de carga nativa histórica, no solución standalone demostrada |
-| `resources/linux_local_scripts/validate_all_in_js.py` | Inspeccionado: adjunta a varios Spotify y no agrega evaluación fiable; no usar como validador actual |
-| `resources/linux_local_scripts/validate_sync_fixed.py`, `validate_vectors.py` | Validadores históricos inspeccionados; preceden controles/límites actuales; usar runner explícito |
-| `resources/linux_local_scripts/send_*.ps1` | Helpers históricos de interfaz; inspeccionar selección de ventana/proceso |
-| `resources/linux_local_scripts/update_summary.py`, `fix_loop.patch`, `patch.cpp` | Ediciones históricas; no ejecutar/aplicar para reconstruir estado actual |
-| `archive/*` | Ensayos descartados de carga/mapeo y servidor; conservar como historia, no despliegue |
-| `resources/dump_playplay.py` | Addon MitM que sobrescribe body de request en archivo fijo; no usado en controles actuales. [Notas y límites](../resources/mitm_setup_notes.md) |
-
-Los comandos inline de análisis estático y comparación AES usados en la
-investigación quedan reproducibles en el [playbook](../docs/RVA_DISCOVERY_PLAYBOOK.md)
-y [validación](../docs/VALIDATION_148_2026-09-24.md). No consultar credenciales ni
-contactar el backend para repetir esas comprobaciones offline.
+`extract_dll.py` conserva la utilidad genérica de extracción desde instalador.
+No contiene RVAs ni valida automáticamente que el PE obtenido sea el148 esperado;
+no se ha repetido esa adquisición en esta revisión. `trace_dump.py` se descarta
+como herramienta activa: importaba tamaños/runtime de un paquete externo sin
+validación para148. La emulación con evidencia reproducible está en
+[la corrida Unicorn](../runs/20260924-unicorn-feasibility/manifest.json).

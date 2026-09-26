@@ -1,41 +1,25 @@
-# Corridas y manifiestos de evidencia
+# Corridas del build 1.2.92.148
 
-Cada manifiesto registra rutas **relativas a la raíz del repositorio**, tamaño
-y SHA256. Se verifica con `python3 research/playplay/tools/check_workspace.py`.
+Cada manifiesto registra rutas relativas a la raíz del repositorio, bytes y
+SHA256. Se verifica con `python3 research/playplay/tools/check_workspace.py`.
 
-- [Servicio HTTP AES16](20260925-http-dfa-service/manifest.json): extracción
-  Windows por HTTP, contenido, despliegue por hashes y ciclo de parada/arranque.
+- [Descubrimiento y diagnósticos148](20260924-discovery-148/manifest.json):
+  evidencia de ABI, candidatos, contextos y primeros fallos DFA; no todos sus
+  inputs constituyen controles criptográficos válidos.
+- [Servicio HTTP AES16](20260925-http-dfa-service/manifest.json): dos licencias,
+  recuperación DFA, contenido y despliegue.
+- [Licencias token148](20260924T164814Z-token148/manifest.json): respuestas y
+  prefijos cifrados usados como controles.
+- [Capturas limpias](20260924-clean-capture-recovery/manifest.json): fuentes y
+  contextos del mismo build.
+- [Unicorn](20260924-unicorn-feasibility/manifest.json): DFA offline a partir de
+  contextos de los dos recursos actuales.
 
-- [token148 positivo](20260924T164814Z-token148/manifest.json): evidencia de la prueba puntual.
-- [Controles previos](20260924-legacy-controls/manifest.json): fixtures e informes anteriores.
-- [Fuentes de captura recuperadas](20260924-clean-capture-recovery/manifest.json):
-  copias que coinciden con hashes históricos; recuperación offline, no corrida nueva.
-- [Viabilidad Unicorn](20260924-unicorn-feasibility/manifest.json): pruebas offline
-  de stream/DFA desde snapshots, con bloqueos registrados para la construcción.
+Para corridas nuevas usar [la plantilla](../templates/EXPERIMENT.md), un ID único
+y rutas `source/`, `raw/`, `evaluation/`, `manifest.json`. No sobrescribir
+artefactos anteriores ni colocar credenciales en la evidencia.
 
-Los artefactos anteriores a esta organización mantienen sus rutas docs/data y
-sus bytes. Los manifiestos los indexan sin duplicarlos ni reescribir campos
-internos. Un path de un informe antiguo puede referirse al entorno original.
-
-## Para corridas nuevas
-
-```text
-runs/<YYYYMMDDTHHMMSSZ>-<tema>/
-  EXPERIMENT.md   hipótesis, propietario, preflight y comandos sin secretos
-  source/        copia exacta de los scripts ejecutados
-  inputs/        licencia/fixtures sin credenciales de cuenta
-  raw/           resultados y logs originales
-  evaluation/    evaluación independiente y sus límites
-  manifest.json  rutas, bytes y SHA256 de los artefactos al cerrar
-```
-
-Usar [plantilla](../templates/EXPERIMENT.md). IDs únicos, sin sobrescribir ensayos.
-Mantener las AES de referencia fuera de Windows en capturas de extracción.
-Guardar modelos efectivos como metadatos, no atribuir una conclusión al modelo.
-
-El formato `schema_version:1` del manifiesto contiene `run_id`, `status`,
-`summary` y `artifacts`; cada artefacto tiene `path`, `sha256`, `bytes`, `role`.
-Agregar el manifiesto a `catalog.json.evidence_manifests`. No recalcular hashes
-para ocultar un cambio accidental: diagnosticarlo contra la evidencia original.
-
-Rutas de scripts reubicados en [registro de movimientos](tree-migration-20260924.json).
+La fuente original de un ensayo se conserva aunque tenga defectos documentados.
+No adaptar sus bytes al nuevo fixture: actualizar el consumidor activo y mantener
+la procedencia del ensayo. El manifiesto discovery148 sustituye la antigua
+agrupación legacy-controls, conservando los hashes de los artefactos retenidos.

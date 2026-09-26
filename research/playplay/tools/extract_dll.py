@@ -8,9 +8,10 @@ Descomprime a ~400 MB: un archivo con entradas <name><size-varint><bytes>.
 La entrada real de Spotify.dll es la que tras el nombre trae un varint y luego 'MZ'
 (las otras apariciones del nombre son \\0RunWinMain... y el .sig).
 
-Repetible para cualquier instalador full. OJO (delta-build): el DLL que sale de un
-instalador full suele ser una SUB-BUILD (sufijo -g<commit>) con VAs distintas a las
-que fijan los paquetes/Wavee; sirve para reversear, no necesariamente para el atajo.
+Utilidad de adquisición, sin constantes de otros builds. El resultado debe
+verificarse contra versión y hash de 1.2.92.148 antes de usar RVAs.
+No reconstruye el dump inicializado conservado ni demuestra su equivalencia.
+No se ha vuelto a probar con un instalador148 durante esta revisión.
 
 uso: python extract_dll.py <instalador.exe> <salida.dll>
 requiere: pefile, lzma (stdlib)

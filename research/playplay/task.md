@@ -13,3 +13,6 @@
 - [x] Servicio HTTP AES16 y cliente cspot con `b4_seq` obligatorio; CLI compilada.
 - [x] Validar extracción/contenido de dos recursos, reinicio ordenado y copia Windows por hashes.
 - [ ] Probar reproducción completa de cspot y una licencia nueva fuera de los controles.
+
+- [x] Conservar los hitos/experimentos del build148 y la procedencia de RVAs durante la depuración por versión.
+- [x] Reconstruir ground truth token148/v5 con fuentes y verificación offline; actualizar consumidores activos.

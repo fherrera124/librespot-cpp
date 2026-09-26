@@ -1,8 +1,10 @@
 # VM y ruta de audio observadas en Spotify 1.2.92.148
 
-Documento técnico consolidado de la sesión **2026-09-24**. Los nombres asignados
-son descriptivos, no símbolos oficiales. RVAs relativos al módulo; hashes en
-[FACTS.md](FACTS.md). No extrapolar este layout a 483/485/667 por número de versión.
+Documento técnico de las capturas **2026-09-24**, actualizado con los controles
+token148/v5. Los nombres son descriptivos, no símbolos oficiales. RVAs relativos
+al módulo; hashes en [FACTS.md](FACTS.md). Las capturas e informes históricos
+están en [VALIDATION](VALIDATION_148_2026-09-24.md) y su
+[manifiesto](../runs/20260924-discovery-148/manifest.json).
 
 ## Qué se transforma
 
@@ -10,8 +12,10 @@ son descriptivos, no símbolos oficiales. RVAs relativos al módulo; hashes en
 conecta ahora el generador con AES-128-CTR: 4096 bytes idénticos por recurso,
 dos recursos, dos variantes b4_seq, dos ejecuciones. El contenido CDN descifra
 con CRC Ogg/Vorbis válido. Las frases inferiores que mantienen abierto ese
-enlace corresponden a los ensayos anteriores con token E. Sigue abierta la
-representación interna y la extracción AES16; el candidato no coincide.
+enlace corresponden a los ensayos anteriores con entradas E. La extracción
+AES16 por [DFA](../dfa_attack_results.md) quedó validada en dos licencias y se
+usa en la [API HTTP](HTTP_DFA_SERVICE.md). Sigue abierta la representación interna
+y la construcción offline del contexto desde una licencia nueva.
 
 Separar cuatro objetos:
 
@@ -40,7 +44,8 @@ flowchart TD
 
 Las ramas/calls están respaldadas por captura y desensamblado según la tabla de
 FACTS. No se trazó dinámicamente cada instrucción de la cadena. El control posterior token148 vincula el bloque nativo con AES-128-CTR durante
-4096 bytes por recurso. Sigue pendiente extraer la clave de esa representación.
+4096 bytes por recurso. La clave se recupera por DFA, sin atribuir una
+representación AES16 al candidato o descriptor.
 
 ## Ejecutar el VM con snapshot
 
@@ -103,7 +108,9 @@ iniciales guardaban solo 24 y el servidor devolvía los primeros 16 como `aes_ke
 Esa selección no supera el control de repetibilidad.
 
 El candidato previo sí coincide entre ejecución natural y replay. Los 11 casos
-E repetidos dan el mismo candidato, **pero ninguno coincide con su AES publicada**.
+E históricos repetidos dan el mismo candidato, **pero ninguno coincide con su AES
+publicada**. Esas AES no son ground truth del build 148; el negativo mide el
+contrato de aquellos ensayos y no invalida token148/v5.
 La función posterior `0x49f854` todavía realiza trabajo: no se ha demostrado que
 el candidato sea el último valor en claro antes de una protección de AES.
 
@@ -157,10 +164,12 @@ snapshot de un bloque real de reproducción, el primer replay dio exactamente
 asoció a un `file_id` concreto; **no mezclarlo** con una de las licencias previas
 como si esa correspondencia estuviera comprobada.
 
-## Hipótesis de la etapa token E y límites de sus negativos
+## Hipótesis históricas de la etapa E y límites de sus negativos
 
-El siguiente experimento vigente está en [PLAN](../PLAN.md). La tabla siguiente
-conserva hipótesis de los ensayos E: token148 ya tiene control de contenido positivo.
+La tabla siguiente conserva hipótesis de los ensayos E sobre el build 148; no
+describe el plan vigente. token148/v5 tiene control positivo de contenido y AES16
+recuperada por DFA. [Búsqueda directa](DIRECT_AES_SEARCH_148.md) y
+[Unicorn](UNICORN_FEASIBILITY_148.md) documentan sus propios límites.
 
 | Hipótesis | Motivo / límite | Prueba útil siguiente |
 |---|---|---|
@@ -176,5 +185,6 @@ Esa comprobación acota una representación concreta; no prueba que el generador
 sea CTR ni que los bytes de salida ya estén en la representación esperada.
 La [evidencia](VALIDATION_148_2026-09-24.md) incluye receta para repetirlo offline.
 
-No hay una réplica matemática C++ ni un algoritmo white-box revertido. Usar
-«VM ejecutable» y «generador repetible» con esos alcances, no «AES resuelta».
+No hay una réplica matemática C++ ni un algoritmo white-box revertido. La API
+Windows recupera AES16 por DFA desde contextos nativos en dos controles; queda
+pendiente una licencia nueva y reproducción completa en cspot.

@@ -1,25 +1,23 @@
-# Índice documental
+# Documentación PlayPlay 1.2.92.148
 
-Estado vigente: [STATUS](../STATUS.md). Este índice organiza lecturas por necesidad.
-
-| Necesidad | Documento |
+| Tema | Entrada |
 |---|---|
-| Revisar búsqueda directa AES en 148 | [Resultado y datos crudos](DIRECT_AES_SEARCH_148.md) |
-| Usar la API Windows que devuelve AES16 | [HTTP_DFA_SERVICE](HTTP_DFA_SERVICE.md) |
-| Entender el mecanismo | [MECANISMO_Y_EXTRACCION_AES](MECANISMO_Y_EXTRACCION_AES.md) |
-| Reproducir el control positivo | [TOKEN148_ONESHOT](TOKEN148_ONESHOT_2026-09-24.md) |
-| Build/hash, RVAs, constantes | [FACTS](FACTS.md) |
-| Contratos nativos y buffers | [PLAYPLAY_ARCHITECTURE_NOTES](PLAYPLAY_ARCHITECTURE_NOTES.md) |
-| Descartes y motivos | [DECISIONS_148](DECISIONS_148.md) |
-| Portar/verificar direcciones | [RVA_DISCOVERY_PLAYBOOK](RVA_DISCOVERY_PLAYBOOK.md) |
-| Capturas recuperadas y control de build | [CLEAN_CAPTURE_148](CLEAN_CAPTURE_148.md) |
-| Viabilidad de emulación sin Spotify vivo | [UNICORN_FEASIBILITY_148](UNICORN_FEASIBILITY_148.md) |
-| Procedencia de captura externa | [Nota original token148](external/extraction_kPlayPlayToken_148.md) |
-| Ensayos anteriores token E | [VALIDATION_148](VALIDATION_148_2026-09-24.md) |
-| Bitácora acumulada | [WINDOWS_WORK_SUMMARY](WINDOWS_WORK_SUMMARY.md), lectura por sección |
-| Contexto anterior | [BACKGROUND](BACKGROUND.md), [sesión inicial](SESSION_2026-09-24_LAN_VALIDATION.md) |
-| Hipótesis rechazada | [Historia AES256](history/2026-09-24-aes256-hypothesis.md) |
+| Servicio AES16 actual | [HTTP_DFA_SERVICE](HTTP_DFA_SERVICE.md) |
+| Licencias y prefijos token148 | [TOKEN148_ONESHOT](TOKEN148_ONESHOT_2026-09-24.md) |
+| Mecanismo y DFA | [MECANISMO_Y_EXTRACCION_AES](MECANISMO_Y_EXTRACCION_AES.md) |
+| Resultado DFA del build | [Hito y evidencia](../dfa_attack_results.md) |
+| Binario, hash y RVAs | [FACTS](FACTS.md), [arquitectura](PLAYPLAY_ARCHITECTURE_NOTES.md) |
+| Búsqueda directa acotada | [DIRECT_AES_SEARCH](DIRECT_AES_SEARCH_148.md) |
+| Captura y emulación | [CLEAN_CAPTURE](CLEAN_CAPTURE_148.md), [UNICORN](UNICORN_FEASIBILITY_148.md) |
+| Ground truth vigente | [Esquema, campos y verificación](../data/README.md) |
+| Pruebas de ABI y resultados negativos148 | [VALIDATION](VALIDATION_148_2026-09-24.md), [DECISIONS](DECISIONS_148.md) |
+| Secuencia de hitos del build | [Resumen de trabajo](WINDOWS_WORK_SUMMARY.md), [PLAN](../PLAN.md) |
+| Verificar/descubrir RVAs | [Playbook](RVA_DISCOVERY_PLAYBOOK.md) |
 
-Los JSON/logs de esta carpeta son evidencia conservada en su ruta histórica.
-Para descubrirlos sin cargarlos completos: [CATALOG](../CATALOG.md) y
-[manifiestos](../runs/README.md). Las corridas nuevas van bajo runs/<id>/.
+La evidencia se indexa en [runs](../runs/README.md). El estado de la
+investigación está en [STATUS](../STATUS.md).
+
+Los informes fechados conservan lo observado en cada etapa. Sus límites o tareas
+pendientes se interpretan junto con STATUS; no invalidan hitos posteriores. La
+[hipótesis AES256](history/2026-09-24-aes256-hypothesis.md) documenta una vía
+posteriormente descartada por el control positivo AES128/token148.

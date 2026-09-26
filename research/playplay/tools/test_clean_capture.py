@@ -34,7 +34,7 @@ class BuildGateTests(unittest.TestCase):
                 dll.write_bytes(b"different sub-build")
                 with self.assertRaisesRegex(ValueError, "Unsupported"):
                     gate.verify_identity(identity, 42)
-            with patch.object(gate, "file_version", return_value="1.2.93.667"), patch.object(gate, "DLL_SHA256", hashlib.sha256(dll.read_bytes()).hexdigest()):
+            with patch.object(gate, "file_version", return_value="1.2.92.149"), patch.object(gate, "DLL_SHA256", hashlib.sha256(dll.read_bytes()).hexdigest()):
                 with self.assertRaisesRegex(ValueError, "Unsupported"):
                     gate.verify_identity(identity, 42)
             for changes in ({"pid": 43}, {"arch": "ia32"}, {"platform": "linux"}):

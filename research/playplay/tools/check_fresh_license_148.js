@@ -1,6 +1,7 @@
 // Fresh-license diagnostic derived from check_key_pipeline_148.js.
 // No account credentials; pass the captured response b4_seq explicitly.
-// Compare the native initial stream block with AES(candidate, standard audio IV).
+// Emit native stream blocks; the explicit Python control compares them with
+// AES-128-CTR and checks the decrypted Ogg/Vorbis CRC outside Spotify.
 // Only freshly allocated context/output buffers and captured 28-byte blobs are used.
 const mod=Process.getModuleByName('Spotify.dll');
 function hex(buffer){return Array.from(new Uint8Array(buffer),b=>b.toString(16).padStart(2,'0')).join('');}
@@ -45,7 +46,6 @@ function generate(item){
     generated=null;candidate=null;thread=Process.getCurrentThreadId();
     try{pipeline(request,input,auxiliary,ptr(0));}finally{thread=null;}
     if(generated===null || candidate===null)throw new Error('Missing pipeline output');
-    if(item.expected_candidate!==undefined && candidate!==item.expected_candidate)throw new Error('Fresh runtime differs from natural snapshot for '+item.label);
     return {wrapped:generated,candidate:candidate};
 }
 send({type:'attached',mode:'fresh_license_pipeline_control',pipeline_rva:'0x4a0268'});
@@ -60,12 +60,10 @@ setImmediate(function(){
             const second=run({wrapped:wrappedRepeat,block_count:item.block_count});
             send({type:'pipeline_control',label:item.label,file_id:item.file_id,
                 candidate:firstGenerated.candidate,repeat_candidate:secondGenerated.candidate,
-                candidate_match:item.aes_known?firstGenerated.candidate===item.aes:null,
                 b4_seq:item.b4_seq,wrapped:wrapped,wrapped_repeat:wrappedRepeat,
-                expected:item.expected_stream,actual:first.block,repeat:second.block,
+                actual:first.block,repeat:second.block,
                 blocks:first.blocks,repeat_blocks:second.blocks,
                 auxiliary:first.auxiliary,repeat_auxiliary:second.auxiliary,
-                aes_known:item.aes_known,match:first.block===item.expected_stream,
                 deterministic:JSON.stringify(first.blocks)===JSON.stringify(second.blocks) && firstGenerated.candidate===secondGenerated.candidate});
         }
     }catch(e){send({type:'fatal',error:e.toString()});}

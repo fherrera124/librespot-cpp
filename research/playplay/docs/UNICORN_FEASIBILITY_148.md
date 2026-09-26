@@ -6,7 +6,9 @@ La emulación local es una vía viable para continuar: **generador y DFA funcion
 offline con los contextos guardados de dos recursos**. Todavía no está demostrado
 el recorrido desde una nueva clave ofuscada hasta AES sin contexto capturado.
 El `unicorn_harness.py` externo es un prototipo incompleto, no un extractor listo.
-Se conservó intacto; los ensayos de evaluación están separados en
+Se conserva [su fuente original](../runs/20260924-unicorn-feasibility/source/original_unicorn_harness.py)
+como evidencia de los defectos descritos abajo, no como herramienta validada.
+Los ensayos de evaluación están separados en
 [runs/20260924-unicorn-feasibility](../runs/20260924-unicorn-feasibility/manifest.json).
 
 Todas las pruebas fueron locales. No se accedió a Windows ni a Spotify, Frida,
@@ -55,7 +57,6 @@ Evidencia primaria:
    omitir callback. R8 no es el buffer de salida28. Esa salida está en el stack
    del caller y debe copiarse al retorno de `0x49eaa4` (callsite `0x4a041d`,
    retorno `0x4a0422`) antes de perder su vida útil. Ver
-   [harness validado](../tools/check_key_pipeline_148.js) y
    [contratos](PLAYPLAY_ARCHITECTURE_NOTES.md).
 2. **Base incorrecta para un dump ya relocalizado.** El PE del archivo cuyo hash
    termina en `d89f2cc` contiene ImageBase `0x7ff9b7da0000`, no `0x180000000`.
@@ -98,9 +99,8 @@ dependencias explícitamente, no para simular una respuesta exitosa a cualquier 
    asignador, copia y estado requerido por el camino efectivamente ejecutado.
    Para wrappers de descriptor investigar qué datos del entorno consumen; una
    falla con TEB ficticio no prueba que el descriptor sea portable entre hilos.
-4. Reutilizar **conceptos** del runtime y del manejo SEH del paquete local
-   unplayplay485, no sus direcciones, tamaños ni constantes. Su hash gate local
-   está desactivado; ese paquete no constituye validación para nuestro 148.
+4. Modelar el runtime y el manejo SEH observados en el build 148, verificando
+   cada dirección, tamaño y constante contra su dump y proceso vivo.
 5. Cerrar con dos entradas ofuscadas, contextos generados íntegramente por el
    emulador, AES recuperadas por DFA y prefijos con CRC válido. Repetir desde una
    máquina emulada vacía por caso, sin leer snapshots por recurso. Después probar

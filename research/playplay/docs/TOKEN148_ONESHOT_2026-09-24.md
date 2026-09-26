@@ -3,6 +3,12 @@
 Explicación para principiantes y próximos experimentos:
 [mecanismo y extracción AES](MECANISMO_Y_EXTRACCION_AES.md).
 
+Este informe conserva el procedimiento y resultado de la corrida original.
+Después se recuperaron ambas AES por DFA y se validó la API; ver
+[hito DFA](../dfa_attack_results.md) y [STATUS](../STATUS.md). El ground truth
+vigente es [schema2](../data/ground-truth-vectors.json). Las fuentes exactas de
+esta corrida permanecen en [source](../runs/20260924T164814Z-token148/source/).
+
 ## Resultado
 
 **Control de contenido positivo** con token `02d29f82a8396930aab0a5885c81da7a`,
@@ -84,27 +90,33 @@ Solicita el primer recurso de la tabla por defecto. Para otro, proporcionar
 juntos `--file-id` y `--aes`. `--interactivity 3` permite contrastar la captura
 Windows; los éxitos documentados usan 1, igual que cspot. No sobrescribe salidas.
 
-`check_fresh_license_148.js` deriva del control anterior: admite entradas nuevas
-sin `expected_candidate`, conserva `b4_seq`, ambos candidatos y `block_count`
-de 1 a 256. Un fixture anterior con `expected_candidate` controla el runtime.
-`candidate_match` es null para `aes_known=false`; el primer informe de cuatro
-bloques aún mostraba true contra su candidato hipotético, no una AES.
+El runner actual utiliza exclusivamente los dos casos del ground truth schema2.
+Copiar a Windows `tools/validate_windows_vm.py`, `tools/playplay_148_preflight.py`,
+`tools/check_fresh_license_148.js` y `data/ground-truth-vectors.json`, conservando
+la estructura tools/data. Frida y psutil se usan solo para captura; las fuentes
+de evidencia y `cryptography` se requieren para evaluar en Linux.
 
-Carpeta remota aislada: `%USERPROFILE%\pp_token148_20260924T164814Z`.
-Reverificar PID/hash antes de repetir; copiar runner, JS y fixtures, sin credenciales:
+Desde `tools` en Windows, con PID del proceso principal recién verificado:
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" .\validate_windows_vm.py `
-  --pid <PID_VERIFICADO> --vectors ground-truth-vectors.json `
-  --script check_fresh_license_148.js `
-  --script-data token148-content-controls-20260924T164814Z.json `
-  --exceptions propagate --timeout 40 --report contenido-nuevo.json
+py -3 .\validate_windows_vm.py --pid <PID_VERIFICADO> `
+  --vectors ..\data\ground-truth-vectors.json --capture-only --report contenido-nuevo.json
 ```
 
-El runner histórico devuelve **2** para estos eventos alternativos. Las corridas
-completadas no tienen error, contienen `done` y todos los eventos esperados.
-El validador offline independiente produce el resultado positivo. No usar el
-resumen genérico del runner como afirmación de fallo ni de extracción AES.
+El preflight comprueba build, hash y firmas antes de instalar hooks. La captura
+predeterminada inyecta obfuscated_key/b4_seq y genera 4096 B dos veces por caso;
+las AES de referencia se usan al evaluar offline. Copiar el informe a Linux:
+
+```sh
+python3 research/playplay/tools/validate_windows_vm.py --evaluate-report /tmp/contenido-nuevo.json
+```
+
+Los modos `--script`, `--script-data`, `--exceptions` y `--advance-track` siguen
+disponibles para los [diagnósticos148](../tools/README.md); no certifican por sí
+solos coincidencia criptográfica. El runner original devolvía código2 para los
+eventos alternativos de esta corrida. Sus informes se verifican con el comando
+`verify_token148_content.py` de la sección anterior, no con `--evaluate-report`,
+que exige el formato y hash del fixture actuales.
 
 ## Incidencias y límites
 
@@ -117,8 +129,9 @@ resumen genérico del runner como afirmación de fallo ni de extracción AES.
   y campo5=1: según el schema local, interactividad y contenido respectivamente.
   El schema local no define interactividad3.
 - No se volvió a consultar E al backend; no se afirma que dejara de aceptarlo.
-- Quedan pendientes AES16 extraíble, funcionamiento autónomo, pista completa,
-  arranque frío y E2E ESP32. Seguir relacionando la representación interna con
+- Al cierre de esta corrida quedaban pendientes la extracción AES16 y el
+  funcionamiento autónomo; posteriormente se logró DFA/API con dos controles.
+  Siguen pendientes licencia fresca, pista completa, arranque frío offline y E2E ESP32. Seguir relacionando la representación interna con
   las **dos AES confirmadas por contenido**, manteniendo este control positivo.
 
 ## Cierre y controles del código
@@ -128,7 +141,7 @@ responde, no quedan runners Python del ensayo y no hay listener8080. Solo aparec
 el Python preexistente de VS Code. Los fixtures/scripts remotos permanecen en la
 carpeta aislada para reproducibilidad; no hay servicio ejecutándose.
 
-Sintaxis Python comprobada. El SHA256 del JS actual compuesto con los fixtures
+Sintaxis Python comprobada. El SHA256 del JS original conservado en source, compuesto con los fixtures
 coincide exactamente con `script_sha256` del informe de 256 bloques. Comprobados
 parser protobuf con campos repetidos y rechazo de truncamientos; el validador Ogg
 acepta el contenido de referencia y rechaza un byte alterado y el ciphertext.

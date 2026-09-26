@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "purpose": "scripts and related source files not evaluated individually during cleanup; copies from HEAD, inactive",
+  "files": [
+    {
+      "original_path": "research/playplay-lan-deobfuscator/windows-work/validate_sync.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay-lan-deobfuscator/windows-work/validate_sync.py",
+      "sha256": "777e7edea0f68a43e28bc60910e7cc90a3a037db7c189a70c610886d761decc9",
+      "bytes": 3686,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/archive/dumper5.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/archive/dumper5.py",
+      "sha256": "2044bf2a4fd384e3f45e34c0f03e0380a4d93a98f66e49e498d241a663998dfd",
+      "bytes": 2526,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/archive/frida_test.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/archive/frida_test.py",
+      "sha256": "e68efa284fe1c0533b8b1c44962b7d2d57a9ec1f4b94742ca53a49f14dc776ab",
+      "bytes": 2695,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/archive/lan_server_frida.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/archive/lan_server_frida.py",
+      "sha256": "84aaf9e97338c4096350215a744c1ec518dec35525492da36c444313d7b5f1b9",
+      "bytes": 3562,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/archive/pe_mapper10.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/archive/pe_mapper10.py",
+      "sha256": "fa4c458ec3d0139adb2937edec56b1963fe75331925f83f8009d26de522fbc70",
+      "bytes": 6764,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/archive/test_dump2.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/archive/test_dump2.py",
+      "sha256": "1c80b15e4f7a67ea2e316ef8f568605db55586eba9ac53e8c20a101ed547faf6",
+      "bytes": 2523,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/dump_playplay.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/dump_playplay.py",
+      "sha256": "53f806e9eafc7493277e24cc7a6b615463e8fe1d6f5faef9edbd7a1f923a6156",
+      "bytes": 299,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/linux_local_scripts/fix_loop.patch",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/linux_local_scripts/fix_loop.patch",
+      "sha256": "7a71abaeff7ed5976691606acb380c77234ffcd7a454c689baad1db573f836a0",
+      "bytes": 568,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/linux_local_scripts/patch.cpp",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/linux_local_scripts/patch.cpp",
+      "sha256": "12e501cdb096a15f2482261b13120a2645f891b43b3db1f67e750c570cefe1b7",
+      "bytes": 233,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/linux_local_scripts/send_next.ps1",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/linux_local_scripts/send_next.ps1",
+      "sha256": "96417eb19a4ff749abf1d6507baa95796f71949832e2a51571fc9e80cef2f70d",
+      "bytes": 1001,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/linux_local_scripts/send_play.ps1",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/linux_local_scripts/send_play.ps1",
+      "sha256": "bb371e512de71e105d4a1bb008a9c4750a23b463d115dcdbd9759e04ea73011c",
+      "bytes": 799,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/linux_local_scripts/send_play2.ps1",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/linux_local_scripts/send_play2.ps1",
+      "sha256": "55971b725ed0c13cbf43cad52c564e113c38775bf1623e6dbb3d8220bea3baa5",
+      "bytes": 929,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/linux_local_scripts/send_play_fg.ps1",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/linux_local_scripts/send_play_fg.ps1",
+      "sha256": "d8e8f2b1c257066751dcc6bfd53b4eba633513612f1bc84f1629e8f2324e43ec",
+      "bytes": 1126,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/linux_local_scripts/update_summary.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/linux_local_scripts/update_summary.py",
+      "sha256": "a1ad2646a333f46f966dada49afadbb245cb0ca3799a8d3a72f42a33a399db7a",
+      "bytes": 1289,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/linux_local_scripts/validate_all_in_js.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/linux_local_scripts/validate_all_in_js.py",
+      "sha256": "71aeae0e6f2001e9ae4e2bee1b92cfda82dba098b57a9073a9b162dbf221d7cc",
+      "bytes": 3242,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/linux_local_scripts/validate_sync_fixed.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/linux_local_scripts/validate_sync_fixed.py",
+      "sha256": "d08dfe0ee0dc4bac2ce7a38463a56d0ad54e78304f9167d82eae77c4042e55f8",
+      "bytes": 3834,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/resources/linux_local_scripts/validate_vectors.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/resources/linux_local_scripts/validate_vectors.py",
+      "sha256": "1e42070e47ae1e3a4793274fc7c35db57d0c4c692e6231dc4db80971dd3e5d06",
+      "bytes": 2687,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/tools/groundtruth.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/tools/groundtruth.py",
+      "sha256": "a881492049477a07da98080c8964d4cb167d053d9a57aae1323b3e6dcaf831e4",
+      "bytes": 1980,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/tools/pad_dll.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/tools/pad_dll.py",
+      "sha256": "dfcd3fe1ab50874de92c96273e3c1d959ca67c1c091e4babaa32baa04479cd2c",
+      "bytes": 399,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/tools/patch_sec.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/tools/patch_sec.py",
+      "sha256": "e26e2d2f39e4844678af2fad7cbe9281fd9157853600be7aa3f68a990b585f1b",
+      "bytes": 392,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/tools/test_apiset.ps1",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/tools/test_apiset.ps1",
+      "sha256": "2f8320607cc4546cc7d9fcf96f6cb5aeefa6eaff239fc67d8eb1934b99dd5bee",
+      "bytes": 518,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/tools/test_arch.ps1",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/tools/test_arch.ps1",
+      "sha256": "ea65c74bf8c0028114686593ab57813deeba3bfb8ae96ac7122d884924dec832",
+      "bytes": 30,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/tools/test_dll.cpp",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/tools/test_dll.cpp",
+      "sha256": "4762208a11c94d78a3e5229a4552cdf0974cdbd6f975aff896eb410bfcf3eb25",
+      "bytes": 2958,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/tools/test_validate_lan_service.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/tools/test_validate_lan_service.py",
+      "sha256": "cfc4c3a1748819b71d8a0f9d4c777fd123246fdae776de79333764d724dcec55",
+      "bytes": 4609,
+      "status": "pending-review"
+    },
+    {
+      "original_path": "research/playplay/tools/vm_check.py",
+      "deferred_path": "research/playplay/deferred-review/original-paths/research/playplay/tools/vm_check.py",
+      "sha256": "07071a69413adf0f9ed7d2685f99e0ea6e361e90da9a1b31e9ebd22e68ef2dab",
+      "bytes": 2189,
+      "status": "pending-review"
+    }
+  ]
+}

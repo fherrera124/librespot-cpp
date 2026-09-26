@@ -1,15 +1,16 @@
 # Hechos, parámetros y procedencia
 
-Síntesis actual: [STATUS](../STATUS.md). Las tablas de tokens A–F y preflights
-anteriores conservan su fecha; no sustituyen el control token148.
+Síntesis actual: [STATUS](../STATUS.md). Los ensayos históricos con entradas E
+sobre el build 148 son evidencia de ABI y de resultados negativos acotados;
+esas entradas no son licencias token148 validadas por contenido.
 
 **2026-09-25:** [API HTTP AES16](HTTP_DFA_SERVICE.md) verificada con dos licencias
 guardadas y prefijos CRC válidos. El cliente C++ envía ambos campos de licencia,
 valida JSON/AES y admite URL/token. CLI compilada; reproducción completa pendiente.
 
-Corte **2026-09-24**. Distinguir resultados históricos del backend de lo medido
-localmente en esta sesión. [Arquitectura](PLAYPLAY_ARCHITECTURE_NOTES.md) desarrolla
-los contratos inferidos; [validación](VALIDATION_148_2026-09-24.md) enlaza la evidencia.
+Corte de capturas **2026-09-24**. [Arquitectura](PLAYPLAY_ARCHITECTURE_NOTES.md)
+desarrolla los contratos; [validación histórica](VALIDATION_148_2026-09-24.md)
+y [manifiesto](../runs/20260924-discovery-148/manifest.json) enlazan la evidencia.
 
 ## Build realmente ejecutado
 
@@ -21,8 +22,7 @@ ya contiene ese token por el cambio externo; las menciones a E debajo son
 históricas. No se extrajo AES16 del candidato ni del descriptor.
 
 - Windows EXE/DLL: **1.2.92.148**. Preflight anterior: PID64216; ensayo token148:
-  PID72132. Ambos son datos históricos, sesión gráfica2; volver a verificar.
-- DLL en disco: `C:\Users\francisco.herrera\AppData\Roaming\Spotify\Spotify.dll`.
+  PID72132. Ambos son datos históricos; volver a verificar.
 - SHA256 en disco: `7b44456a90142daeb758e2736d8628ffe211d6ea523db8f1050b3c8b1addb68a`.
 - Base viva observada: `0x7ff975d20000` (ASLR; no reutilizar como constante).
 - Dump local crudo: `research/dlls/Spotify_1.2.92.148_dump.dll`, SHA256
@@ -79,40 +79,13 @@ La sesión actual confirma su ejecución, no una derivación de cero por firma.
 | IV estándar usado por cspot/fixtures | `72e067fbddcbcf77ebe8bc643f630d93` |
 | Ogg de los fixtures | `OggS` en offset 167; no confirmado para cualquier archivo de caché |
 
-`data/ground-truth-vectors.json`: SHA256
-`9c11d188e4443f4f42de8296230da5327eb329db68da151fc48a1b8dd91f9791`.
-11 pares sobre 3 recursos: 3 v2, 3 v3, 3 v4 y **2 v5**. Además hay AES sin
-entrada E y vectores publicados C/F. Los ensayos de esta sesión usan los 11 de E.
-La procedencia de AES es la referencia publicada; las entradas E fueron obtenidas
-en la investigación previa. El fixture no conserva `b4_seq` ni respuestas completas.
-
-## Tokens PlayPlay (constante de 16 bytes en el request)
-
-Las letras A–F son etiquetas de esta investigación; no una especificación de
-Spotify. El significado del primer byte no está demostrado. Barrido histórico contra
-`gew4-spclient.spotify.com` con la cuenta del usuario, `file_id` de control
-`f5eb2b3e7a3798b4a55369bd3cc840fceddebb94`:
-
-| Gen | Token (hex) | Origen | Request |
-|---|---|---|---|
-| A | `011bf34c8d0393bcda8b1d3eeaf8f3b2` | `re-unplayplay` (DMCA 2025-03-20) | 403 `0803` |
-| B | `0132b6f3165865ff69a47d4321ff7520` | `@spdl/unplayplay` (npm) | 403 `0803` |
-| C | `02811027c51620c0fd36cd1de59e227a` | `unplayplay` 0.0.9 (PyPI) / build 485 | 403 `0803` |
-| D | `01e132cae527bd21620e822f58514932` | `uhwot/unplayplay` | 403 `0803` |
-| **E** | **`01f62e56cd5435b90dde1a4fdf42af2d`** | **`emptygi/WaveeMusic`** | **200 (v2..v5)** ✅ |
-| F | `027b23a2442c86ca4b004ddfef291954` | `another-unplayplay` / build 483 | 403 `0803` |
-
-**Barrido token × version (E = control positivo):**
-
-| token | v1 | v2 | v3 | v4 | v5 | v6 | v7 | v8 |
-|---|---|---|---|---|---|---|---|---|
-| **E** | 403 | **200** | **200** | **200** | **200** | 403 | 400 | 400 |
-| A,B,C,D,F | 403 | 403 | 403 | 403 | 403 | 403 | 403 | 403 |
-
-El barrido anterior usaba **E/v5**. SpClient.cpp ahora contiene **token148/v5**:
-`02d29f82a8396930aab0a5885c81da7a`; HTTP200 y contenido comprobados en dos recursos
-mediante la prueba puntual Linux/Windows, no E2E de cspot.
-
+Los 11 ensayos E anteriores se conservan en la [validación histórica](VALIDATION_148_2026-09-24.md)
+como pruebas de repetibilidad y ABI del build 148. Sus pares AES procedían de
+otra referencia y carecían de `b4_seq` y respuesta completa; no son ground truth
+criptográfico del token148/v5. Los dos controles token148 actuales están en
+[ground truth schema2](../data/ground-truth-vectors.json), con
+[verificador offline](../tools/check_ground_truth_148.py), [hito DFA](../dfa_attack_results.md)
+y [API HTTP](HTTP_DFA_SERVICE.md).
 
 ## Request/response e integración
 
@@ -131,7 +104,7 @@ mediante la prueba puntual Linux/Windows, no E2E de cspot.
 - El request se documentó con credenciales web, login5 y device-flow. Esto no
   significa que toda credencial/scope futuro sea aceptado.
 - cspot obtiene `file_id` mediante extended metadata TRACK_V4, resuelve CDN y usa
-  AES-128-CTR. La prueba E2E PlayPlay no se hizo con una AES validada aquí.
+  AES-128-CTR. La API HTTP verificó dos licencias y la CLI compiló; reproducción completa de cspot sigue pendiente.
 
 Revisión del C++ existente (rutas desde la raíz del repositorio):
 
@@ -147,42 +120,16 @@ No describir `FileProvider` como un scaffold sin RPC: eso era un estado anterior
 El timestamp usa `std::chrono::system_clock`; el efecto de un reloj no sincronizado
 es una hipótesis pendiente, no la causa demostrada del fallo criptográfico.
 
-## Otros binarios de referencia
-
-| Build | sha256 canónico (lo que espera el paquete) | token del par | ¿lo tenemos? |
-|---|---|---|---|
-| 1.2.88.483 | `9cafe1cad176024485f8840b72f6747d5b87885b0423b1df005adf088ef80ce8` | F | ❌ (solo sub-build) |
-| 1.2.88.485 | `ed3b378d428c8b1034203d62676a0e77cdae157ef70acbbd30be1ba08b8fd045` | C | ❌ (solo sub-build) |
-| 1.2.93.667 | (en repo privado de Wavee; no hay VAs públicas) | ? (¿E?) | ⚠️ sub-build extraída (ver abajo) |
-
-**Binarios conservados** en `research/dlls/`. Las configuraciones canónicas
-483/485 fallaron con estos hashes distintos; no son intercambiables por número
-de versión. No se localizaron RVAs validados para nuestro 667 en esta sesión.
-
-| archivo | versión | sha256 | ImageBase |
-|---|---|---|---|
-| `Spotify_1.2.88.483_g8aa8628e.dll` | 483 | `f88968879e3ce8be8ec87c45cc37843d8f175cfdd8b11fbe4e0e00f5b88b45f3` | `0x180000000` |
-| `Spotify_1.2.88.485_g1012a6e0.dll` | 485 | `c2a0c44d087ba6de9cb6b0c6628eab3a22d45b1ed3d7c204ec5d9dbc52fbec71` | `0x180000000` |
-| `Spotify_1.2.93.667_g7b5cc0ce.dll` | **667** | `3e2e6fa93a6fc2b2f23a5716d3b20274fcdf381dcb21c64147e0e092c9ee8bac` | `0x180000000` |
-| `Spotify_1.2.92.148_dump.dll` | 148 | `275a9fd95b629f55bd6a170bbf41deb17f87ca59ff61056116d527611d89f2cc` | `0x7ff9b7da0000` (header del dump) |
-
-
-El 667 proviene de un instalador full extraído con PE/overlay LZMA1. Los
-hashes canónicos 483/485 son los esperados por sus paquetes, no los disponibles
-localmente. No saltar el hash gate y dar por correctos los offsets.
-
-## Fuentes de la investigación (versiones históricas)
+## Referencias metodológicas
 
 - [Frida NativeFunction](https://frida.re/docs/javascript-api/#nativefunction): excepciones y traps.
 - [SpotiLoad, commit inspeccionado](https://github.com/cycyrild/SpotiLoad/tree/6dfddf683b5b3b207550f86aecd955fb3bc36b64): layout de request y captura de AES para otro build.
   Checkout usado en `/tmp/playplay-spotiload-reference-20260924`, no persistencia garantizada.
 - [another-unplayplay](https://github.com/cycyrild/another-unplayplay): referencias de emulación y vectores;
-  copia Python consultada en `ppvenv/lib/python3.13/site-packages/unplayplay/`.
-  Esa copia tiene el hash gate modificado (`if False`); no es una instalación limpia.
-- [Origen histórico del token E](https://github.com/emptygi/WaveeMusic/blob/be546d5b14181e184a5b008f3a7f5bd7c64b746b/ConsoleApp1/Program.cs): fork público; no aporta un DLL validado de E.
-- [WaveeMusic](https://github.com/christosk92/WaveeMusic): referencia histórica de enfoque nativo;
-  derivación privada no disponible en esta investigación. El pin 667 citado en notas
-  antiguas no se volvió a comprobar durante esta revisión documental.
+  es un modelo de método condicionado al hash y ABI del binario exacto. Sus RVAs no equivalen a los del build 148.
 
 Los campos similares de dos configs no prueban que los harness sean intercambiables:
 SEH, runtime, offsets de extracción y tamaños se verifican para cada binario.
+La [búsqueda directa](DIRECT_AES_SEARCH_148.md) terminó negativa en las ventanas
+examinadas; [Unicorn](UNICORN_FEASIBILITY_148.md) reproduce contextos guardados
+pero no construye uno desde una licencia nueva.

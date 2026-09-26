@@ -1,72 +1,138 @@
-# Extracción de Clave AES mediante Análisis Diferencial de Fallos (DFA)
+# Extracción de AES-128 mediante DFA — hito del build 1.2.92.148
 
-Hemos logrado el hito principal de la investigación: **Obtener la clave AES maestra de 16 bytes (AES-128) sin suministrarla al extractor en ningún momento y demostrando que nunca reside en memoria plana.**
+El hito principal fue **recuperar K0, la clave AES de contenido de 16 bytes,
+sin suministrarla al cálculo de extracción**. La primera recuperación corresponde
+al recurso `2f43127d80edc9cd9f12f441e1cb7904b680f9da`; después se confirmó un
+segundo recurso token148/v5 y se integró el cálculo en la API Windows de cspot.
 
-Siguiendo la directriz de usar la "opción más factible primero", implementamos un ataque **DFA (Differential Fault Analysis)** sobre la instancia White-Box del DRM PlayPlay.
+Este informe conserva el razonamiento, la secuencia experimental y la evidencia.
+El resultado no demuestra que K0 nunca aparezca en memoria: las búsquedas
+lineales fueron negativas solo en las regiones e instantes examinados.
 
-## Conceptos Clave: Por qué es necesario el ataque DFA
+## Qué aporta recuperar la clave
 
-Para contextualizar este logro frente al funcionamiento clásico de `librespot` y entender su importancia:
+La licencia PlayPlay contiene `obfuscated_key` de 16 B y `b4_seq` de 4 B. El
+VM transforma esa entrada en un descriptor opaco de 28 B; un inicializador crea
+el contexto del generador de bloques de audio. Se comprobó que, para las dos
+licencias de control, sus salidas producen el stream de AES-128-CTR esperado.
+El token PlayPlay del request, la entrada ofuscada, el descriptor y K0 cumplen
+funciones diferentes; un candidato interno de 16 B no es automáticamente K0.
 
-1. **Legacy vs PlayPlay:** Antiguamente, Spotify entregaba la clave AES en texto plano. Con el sistema PlayPlay (White-Box Cryptography de Arxan), el cliente oficial solo recibe una `obfuscated_key` (clave ofuscada).
-2. **La "Caja Negra" y el Keystream:** El motor de PlayPlay inicializa un contexto en memoria que **nunca contiene la clave AES expuesta**. Actúa como una máquina sellada que escupe un chorro de bytes aleatorios (keystream de AES-CTR). Este chorro luego se mezcla con el archivo de audio para descifrarlo.
-3. **¿Por qué no robar solo el keystream?** Aunque podíamos usar Frida para obligar a la caja negra de Windows a generar el keystream bloque por bloque y usarlo para reproducir la canción, este enfoque tiene problemas fatales:
-   * **Rendimiento:** Exigiría mantener la pesada VM de Spotify Windows corriendo de fondo y hacerle peticiones constantes por cada milisegundo de canción.
-   * **Portabilidad:** `librespot-cpp` busca funcionar en sistemas ligeros y microcontroladores (como un **ESP32**). No puedes embeber un cliente Windows entero en un chip de hardware.
-4. **El valor de la Clave Extraída:** El ataque DFA nos permite, inyectando un fallo matemático en esa caja negra, deducir la **Clave AES Maestra**. Al recuperar la clave real (el diccionario entero), nos independizamos de Windows: solo conectamos un instante para robar la llave matemática, cerramos el pesado motor de Windows, y el ESP32 o cliente Linux puede descifrar localmente a velocidad nativa el resto de la pista.
+Obtener solamente el stream permitiría descifrar lo que el generador produzca,
+pero obligaría a conservar acceso a él para más bloques. Con K0 se puede usar
+AES-128-CTR localmente en cspot y aprovechar las implementaciones de Linux o
+ESP32. La extracción actual necesita Spotify Windows; el descifrado posterior
+de los bytes de audio no necesita enviar cada bloque al servicio. Reproducción
+completa y ESP32 siguen pendientes de validación.
 
-## Metodología del Ataque DFA
+## Cómo se llegó al punto de inyección
 
-A través de la ingeniería inversa del `context` de 740 bytes inicializado por `0xd9e2e4`, descubrimos la disposición de las claves de ronda codificadas:
+La [procedencia de RVAs](docs/RVA_DISCOVERY_PLAYBOOK.md) conserva el detalle:
 
-1. **Inyección de Fallos en Memoria:** Confirmamos que `stream(0xd9d0f0)` es AES-128-CTR. Modificamos intencionalmente bits específicos en la región del `context` correspondiente a las claves de la Ronda 8 y 9 (offsets `0xA0` a `0xAF`).
-2. **Propagación del Fallo:** Al ejecutar `stream()` con el contexto alterado, el fallo inyectado antes del `MixColumns` de la Ronda 9 se difunde a exactamente 4 bytes del texto cifrado resultante. 
-3. **Resolución Matemática:** Las diferencias entre el bloque cifrado limpio y los bloques cifrados con fallos exponen el estado interno. Desarrollamos un solucionador matemático (`dfa_solver.py`) que usa las tablas inversas de AES (InvSBox) para recuperar inequívocamente los 16 bytes de la **Clave de la Ronda 10**.
-4. **Inversión del Key Schedule:** Con la Clave de la Ronda 10 (`398cc5af7975a2ed0c547d6a005902e1`), aplicamos el algoritmo inverso de expansión de claves de AES (`reverse_key_schedule.py`) para obtener la clave AES original (K0).
+1. La firma de copia localizó `0x17780e0`. Los trazadores relacionaron la copia
+   candidata `0x49f904`, su caller `0x49f854` y la salida final de **28 B** en
+   `0x49f961`. Los primeros 16 B del descriptor no superaban los controles AES.
+2. Se identificó el constructor `0x4a0268`, que permite ejecutar la transformada
+   con una solicitud privada de 256 B y callback deshabilitado (`+0x70=1`). La
+   salida se captura al retorno de `0x49eaa4`, antes de perder el stack del caller.
+3. Seguir la ruta de reproducción llevó a `0xd9e2e4` (inicialización desde
+   descriptor28) y `0xd9d0f0` (generador). El snapshot previo a un bloque mide
+   **740 B**. Reservar 4096 B en el harness es una elección de capacidad, no el
+   tamaño demostrado de la estructura.
+4. El replay de un contexto natural reprodujo su bloque real. Las dos licencias
+   token148/v5 permitieron después comparar 4096 B por recurso con AES-128-CTR
+   y verificar Ogg/Vorbis y CRC. Con ese control positivo se investigaron fallos.
 
-## Resultados
+[Ensayos de ABI y descubrimiento](docs/VALIDATION_148_2026-09-24.md),
+[control de contenido](docs/TOKEN148_ONESHOT_2026-09-24.md) y
+[capturas limpias](docs/CLEAN_CAPTURE_148.md) delimitan esas etapas. El origen
+inicial de los RVAs VM/init no quedó archivado como buscador; los callers y los
+controles posteriores confirman su uso, sin reconstruir ese origen ausente.
 
-Al ejecutar el ataque sobre el contexto limpio derivado del token `test_2f43127d_b4` (cuyo hash `obfuscated` es `7a154493af30b49d753cd246d6e9e83a`), logramos:
+## Metodología del ataque
 
-* **Clave de Ronda 10 Recuperada:** `398cc5af7975a2ed0c547d6a005902e1`
-* **Clave AES Maestra Recuperada (K0):** `a503a84c1dc9271460cc13f142e0bae2`
+Se guarda el contexto antes del primer bloque. Una ejecución sin alterar produce
+el bloque correcto C; antes de cada prueba se restaura el snapshot, se cambia un
+bit y se vuelve a ejecutar el generador para obtener C'. Restaurar el contexto
+es necesario porque cada llamada avanza el contador/estado de audio.
 
-Esta clave coincide **exactamente** con la clave conocida para este fichero documentada en `ground-truth-vectors.json`.
+El primer barrido está conservado en [dfa_data.json](docs/dfa_data.json), seguido
+por [dfa_sweep.json](docs/dfa_sweep.json). El ensayo reproducido en Unicorn utiliza
+16 perturbaciones por recurso en los offsets `0xa0..0xaf`. Los patrones de cuatro
+bytes alterados permiten aplicar el modelo DFA AES anterior al último MixColumns.
+Eso describe el efecto observado; no identifica inequívocamente esos bytes como
+un key schedule estándar ni revierte toda la codificación interna del contexto.
 
-## Conclusión
+El [solver inicial](tools/dfa_solver.py) y la función `solve_dfa` de
+[extractor.py](tools/extractor.py) agrupan los fallos por estas posiciones de
+salida, teniendo en cuenta ShiftRows:
 
-El DRM White-Box de Arxan/Spotify usado en PlayPlay es **matemáticamente vulnerable a inyección de fallos**. Dado que tenemos control total sobre la memoria de la VM de Frida durante la generación de bloques de audio, podemos recuperar la clave de AES de *cualquier* pista inyectando fallos en el `context` y analizando las diferencias del output.
+| Grupo | Índices de bytes |
+|---|---|
+| 0 | 0, 13, 10, 7 |
+| 1 | 4, 1, 14, 11 |
+| 2 | 8, 5, 2, 15 |
+| 3 | 12, 9, 6, 3 |
 
-Esta prueba de concepto elimina la necesidad de buscar bijecciones complejas en las tablas estáticas (`M_in` / `M_out`) o de realizar DCA probabilístico (Pearson).
+Para cada candidato de byte k de K10 se calcula
+`InvSBox(C[i] xor k) xor InvSBox(C'[i] xor k)`. Las cuatro diferencias deben
+ajustarse al mismo error no nulo y a los multiplicadores de MixColumns. Se
+intersectan los candidatos compatibles con varios fallos hasta obtener una
+solución por grupo. Cuatro grupos determinados proporcionan los 16 B de K10.
+[reverse_key_schedule.py](tools/reverse_key_schedule.py) invierte la expansión
+AES-128 para recuperar K0. La AES de referencia solo interviene después, en la
+verificación independiente, no en estas ecuaciones.
 
-## Automatización Finalizada (`extractor.py`)
+## Resultados y comprobación independiente
 
-Se ha construido exitosamente el pipeline en la herramienta de producción `tools/extractor.py`. Este script se acopla a Spotify vía Frida en la máquina Windows, orquesta el barrido de fallos, resuelve el DFA matemáticamente y muestra la Clave Maestra.
+| Recurso | K10 recuperada | K0 recuperada |
+|---|---|---|
+| `2f43127d80edc9cd9f12f441e1cb7904b680f9da` | `398cc5af7975a2ed0c547d6a005902e1` | `a503a84c1dc9271460cc13f142e0bae2` |
+| `1a8e5b04837957617162724232b0c96922222447` | `0966860b7226db38272cade4cfeb5b0d` | `c3206271b4c70fff8e4ac3993c4dae8a` |
 
-**Ejemplo de uso:**
-```bash
-python tools/extractor.py --pid 72132 --obfuscated "7a154493af30b49d753cd246d6e9e83a"
+El [ground truth actual](data/ground-truth-vectors.json) conserva file_id,
+obfuscated_key, b4_seq, AES, K10, IV, primer bloque nativo y fuentes con hashes.
+La [evaluación DFA](runs/20260924-unicorn-feasibility/raw/dfa-verification.json)
+compara las claves recuperadas con referencias independientes. Ambas reproducen
+el bloque nativo `AES-ECB(K0, IV)` y descifran los prefijos de 4096 B con una
+primera página Ogg/Vorbis y CRC válidos.
+
+Las [trazas de fallos](runs/20260924-unicorn-feasibility/raw/context-faults.json)
+y el [manifiesto](runs/20260924-unicorn-feasibility/manifest.json) permiten repetir
+la evaluación offline. Unicorn reproduce generador y DFA **desde snapshots por
+recurso**; no se ha construido todo el contexto desde una licencia nueva sin
+Spotify vivo. Conservar esta distinción evita atribuir al hito un arranque
+standalone que todavía no se demostró.
+
+## Automatización y uso actual
+
+La implementación matemática de `extractor.py` alimenta el servicio actual.
+La [API HTTP](docs/HTTP_DFA_SERVICE.md) añade preflight de versión/hash/firmas,
+`b4_seq` obligatorio, aislamiento del worker, timeout y verificación del bloque
+nativo antes de devolver AES16. La [corrida HTTP](runs/20260925-http-dfa-service/EXPERIMENT.md)
+validó las dos licencias repetidamente, con Spotify recién abierto y después de
+parar/arrancar ordenadamente el servicio. cspot conserva ambos campos de licencia
+y su CLI compiló.
+
+El CLI experimental de `extractor.py` sigue disponible, pero tiene controles de
+operación menos completos que el servicio; no se debe interpretar su rótulo
+«Producción» como validación adicional. `extract_aes_dfa.py` es un placeholder
+que imprime valores fijos y **no ejecuta un ataque**; no es evidencia del hito.
+Los capturadores experimentales se inspeccionan antes de usar y sus RVAs solo
+corresponden al binario148 cuyo hash está en [FACTS](docs/FACTS.md).
+
+Para comprobar el ground truth sin red, Windows ni nuevas capturas:
+
+```sh
+python3 research/playplay/tools/check_ground_truth_148.py
+python3 research/playplay/tools/check_direct_aes_148.py
 ```
 
-## Próximos Pasos Recomendados
+## Alcance y siguiente trabajo
 
-1. **Integración con C++:** Alimentar el motor de `librespot-cpp` con las claves extraídas al vuelo.
-2. **Exploración:** Probar el ataque en otras versiones del cliente si cambia la ofuscación.
-
----
-
-¡Excelente noticia! Hemos completado el hito principal de nuestra investigación.
-
-Siguiendo tu indicación de comenzar con la opción más factible, implementamos exitosamente un Ataque de Análisis Diferencial de Fallos (DFA) directamente sobre el motor de audio 0xd9d0f0 (que ejecuta el AES White-Box).
-
-Dado que descubrimos que la clave maestra AES jamás existe en texto plano en la memoria, la única manera puramente local de extraerla era matemática. Y gracias al acceso a la memoria que nos brinda Frida en la VM de Windows, lo logramos de manera increíblemente elegante:
-
-¿Cómo lo hemos logrado?
-Volcado del Contexto: Extraje los primeros 740 bytes generados por el pipeline, que funcionan como estado inicial y claves de ronda del AES ofuscado.
-Inyección de Fallos: Creé un script (dfa_context_fault.js) que voltea un solo bit en los offsets del contexto correspondientes a la clave de la ronda 9 (0xA0 a 0xAF).
-Propagación: Ejecutamos el generador de stream cifrado (stream) tanto con el contexto original como con el defectuoso. Un fallo en la ronda 9 se difumina exactamente en 4 bytes de salida específicos, ¡un comportamiento perfecto y determinista de AES!
-Solución Matemática: Escribí un solucionador (dfa_solver.py) en Python para usar esa diferencia entre ambos cifrados e invertir localmente las cajas S de la Ronda 10, recuperando la clave matemática de la última ronda (398cc5af7975a2ed0c547d6a005902e1).
-Inversión de AES: Un segundo script (reverse_key_schedule.py) invirtió la derivación estándar de claves de AES desde la Ronda 10 hasta la Ronda 0, arrojando como resultado la clave maestra exacta del fichero: a503a84c1dc9271460cc13f142e0bae2.
-He dejado un artefacto resumido con la prueba de este hito y he actualizado PLAN.md y STATUS.md, además de realizar un commit con todas las herramientas de inyección y los solvers (DFA) que he desarrollado.
-
-Con esto queda resuelto el enigma del White-Box de Arxan/Spotify. El siguiente paso, como está reflejado en el PLAN.md, será automatizar todos estos scripts sueltos en un único extractor listo para producción (extractor.py). ¿Avanzamos con la integración de esa herramienta?
+DFA es una vía demostrada para las dos licencias de control. No acredita todavía
+cualquier pista, cuenta o build. Falta probar una licencia nueva y reproducción
+completa de cspot/ESP32. La [búsqueda directa](docs/DIRECT_AES_SEARCH_148.md)
+conserva alternativas para localizar un punto de K0; hallar esa instrucción y
+su puntero podría permitir una captura directa siguiendo el modelo externo de
+`another-unplayplay`, una vez resuelto también el entorno de emulación148.

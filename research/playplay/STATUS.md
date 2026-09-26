@@ -15,11 +15,15 @@ del build 1.2.92.148, sin proporcionar la AES al cálculo de extracción. Esto n
 demuestra ausencia de la clave en toda la memoria ni independencia completa
 de un proceso previo: los ensayos Unicorn parten de contextos capturados.
 
+El [ground truth actual](data/ground-truth-vectors.json) reúne los dos controles
+validados y sus referencias. La [procedencia de RVAs](docs/RVA_DISCOVERY_PLAYBOOK.md)
+y el [hito DFA](dfa_attack_results.md) conservan método, evidencia y limitaciones.
+
 ## Hitos Completados
 - [x] Capturas Windows mediante scripts que no insertan AES de referencia; ausencia de contaminación previa del proceso no demostrada.
 - [x] Volcado y análisis estructural del `context` de 740 bytes de inicialización (`0xd9e2e4`).
 - [x] Búsqueda de huellas de claves de ronda con resultado negativo en las regiones examinadas; no prueba de ausencia global.
-- [x] **Inyección de fallos (DFA)** en las claves de ronda cacheadas en el `context`.
+- [x] **Inyección de fallos (DFA)** en regiones del `context` con comportamiento compatible con el modelo de fallos AES; su representación interna no está revertida.
 - [x] **Recuperación matemática completa** de la Clave AES Maestra invirtiendo el *Key Schedule* desde la Clave de la Ronda 10 extraída.
 
 ## Estado de la Tarea Actual

@@ -58,9 +58,12 @@ de copia repetidas.
   hash de esa fuente, sin atribuirle una verificación de disco que no hizo.
 
 [`another-unplayplay`](https://github.com/cycyrild/another-unplayplay/blob/24d3223eee0f2c4b6a55f41fcdfb7249406c6fb0/src/unplayplay/key_emu.py)
-muestra un hook de 16 bytes para su build 1.2.88.485.
-No se validó un hook equivalente en 1.2.92.148 ni una dirección de memoria
-que contenga K0. Las direcciones de buffers pueden variar entre procesos.
+emula un DLL compatible en Unicorn y captura 16 bytes desde el puntero en RDX
+al ejecutar un hook de código propio de ese build. Es una referencia útil para
+implementar una ruta análoga aquí **si** se identifica y valida en 1.2.92.148
+la instrucción que expone K0 y el registro/puntero que la contiene. No se ha
+validado un hook equivalente en 148; sus RVAs, ABI y dependencias de runtime
+requieren derivación propia. Las direcciones de buffers varían entre procesos.
 
 ## Propuestas si se reabre
 
@@ -76,3 +79,6 @@ que contenga K0. Las direcciones de buffers pueden variar entre procesos.
    RVA y offset del buffer, y repetirse con otra licencia y otro proceso/base.
    Verificar build/hash antes de instrumentar. Si no hay coincidencia, registrar
    regiones e instantes examinados; K0 podría no existir linealmente en memoria.
+4. Si aparece un punto confirmado de K0, probar su captura en el emulador
+   Unicorn del build 148, siguiendo el patrón de `another-unplayplay` y los
+   límites de [la evaluación local](UNICORN_FEASIBILITY_148.md).

@@ -62,14 +62,13 @@
       "status": "content-verified",
       "summary": "Repetir stream positivo token148; no es extractor AES16.",
       "paths": [
-        "research/playplay/tools/check_fresh_license_148.js",
         "research/playplay/tools/validate_windows_vm.py",
-        "research/playplay/data/token148-content-controls-20260924T164814Z.json",
+        "research/playplay/tools/check_fresh_license_148.js",
         "research/playplay/data/ground-truth-vectors.json",
         "research/playplay/docs/TOKEN148_ONESHOT_2026-09-24.md"
       ],
       "environment": "Windows148 + Frida + psutil",
-      "notes": "Runner inyecta AES conocidas. Preflight obligatorio; salida2 del resumen generico no evalua estos eventos."
+      "notes": "Runner actual usa schema2. Informes anteriores permanecen sin alterar; ver tools/README para sus diferentes contratos."
     },
     {
       "id": "token148-request",
@@ -91,31 +90,6 @@
       ],
       "environment": "Python + cryptography; sin red",
       "notes": "Ver comando en CATALOG.md; usar informe nuevo."
-    },
-    {
-      "id": "known-reference-inputs",
-      "status": "fixture",
-      "summary": "Claves conocidas y entradas historicas; solo verificacion, no inyectar en capturador limpio.",
-      "paths": [
-        "research/playplay/data/ground-truth-vectors.json",
-        "research/playplay/data/key-pipeline-controls-148-2026-09-24.json",
-        "research/playplay/data/token148-fresh-controls-20260924T164814Z.json"
-      ],
-      "environment": "offline",
-      "notes": ""
-    },
-    {
-      "id": "baseline-e",
-      "status": "historical-control",
-      "summary": "Repetir control de ejecucion anterior de token E; no demuestra AES16.",
-      "paths": [
-        "research/playplay/tools/check_key_pipeline_148.js",
-        "research/playplay/tools/check_wrapped_keystream_148.js",
-        "research/playplay/tools/extract_vm_key_148.js",
-        "research/playplay/docs/VALIDATION_148_2026-09-24.md"
-      ],
-      "environment": "Windows148 + Frida",
-      "notes": "Negativos E no invalidan token148; referencias inyectadas."
     },
     {
       "id": "native-tracing",
@@ -166,46 +140,6 @@
       "notes": "Python resuelve JS por __file__. No ejecutados en reorganizacion; adjuntan varios procesos."
     },
     {
-      "id": "lan-prototypes",
-      "status": "out-of-scope",
-      "summary": "Prototipos HTTP historicos y validador; servicio fuera del alcance actual.",
-      "paths": [
-        "research/playplay/resources/flask_frida_server_final.py",
-        "research/playplay/tools/validate_lan_service.py",
-        "research/playplay/tools/test_validate_lan_service.py",
-        "research/playplay/resources/mitm_setup_notes.md"
-      ],
-      "environment": "historical Windows/Linux",
-      "notes": "No desplegar: antiguo servidor dio HTTP500 y no extrae AES validada."
-    },
-    {
-      "id": "research-history",
-      "status": "historical",
-      "summary": "Decision log, antecedentes y argumentos corregidos.",
-      "paths": [
-        "research/playplay/docs/DECISIONS_148.md",
-        "research/playplay/docs/WINDOWS_WORK_SUMMARY.md",
-        "research/playplay/docs/BACKGROUND.md",
-        "research/playplay/docs/history/2026-09-24-aes256-hypothesis.md",
-        "research/playplay/docs/history/2026-09-24-checklist-before-tree.md",
-        "research/playplay/archive",
-        "research/playplay/resources/linux_local_scripts"
-      ],
-      "environment": "documentation",
-      "notes": "Historia no reemplaza STATUS ni autoriza experimentos."
-    },
-    {
-      "id": "legacy-duplicates",
-      "status": "historical",
-      "summary": "Copias anteriores fuera del directorio operativo. No borrar ni fusionar por nombre.",
-      "paths": [
-        "research/tools/README.md",
-        "research/tools"
-      ],
-      "environment": "historical",
-      "notes": ""
-    },
-    {
       "id": "agent-workflow",
       "status": "current",
       "summary": "Asignacion de modelos, contexto minimo, escritor y operador unicos.",
@@ -219,57 +153,6 @@
       ],
       "environment": "documentation/configuration",
       "notes": "Perfiles TOML preparados; carga efectiva depende del cliente. Modelo efectivo debe registrarse."
-    },
-    {
-      "id": "legacy-toolbox",
-      "status": "historical-review-required",
-      "summary": "Herramientas restantes de analisis, emulacion y cache; paths/ABI no se presumen vigentes.",
-      "paths": [
-        "research/playplay/tools/analyze_calls_148.py",
-        "research/playplay/tools/analyze_calls_148_full.py",
-        "research/playplay/tools/disasm.py",
-        "research/playplay/tools/disasm_485.py",
-        "research/playplay/tools/dump_ctx.py",
-        "research/playplay/tools/dump_trigger.py",
-        "research/playplay/tools/exports.py",
-        "research/playplay/tools/extract_dll.py",
-        "research/playplay/tools/extract_patterns.py",
-        "research/playplay/tools/find_667.py",
-        "research/playplay/tools/find_context.py",
-        "research/playplay/tools/find_cxx.py",
-        "research/playplay/tools/find_hooks.py",
-        "research/playplay/tools/find_hooks_148.py",
-        "research/playplay/tools/find_hooks_667.py",
-        "research/playplay/tools/find_refs.py",
-        "research/playplay/tools/find_rip.py",
-        "research/playplay/tools/find_rip_667.py",
-        "research/playplay/tools/groundtruth.py",
-        "research/playplay/tools/pad_dll.py",
-        "research/playplay/tools/patch_485_test.py",
-        "research/playplay/tools/patch_sec.py",
-        "research/playplay/tools/pe_info.txt",
-        "research/playplay/tools/probe_cached_audio.py",
-        "research/playplay/tools/probe_tokenF.py",
-        "research/playplay/tools/run_vm_483.py",
-        "research/playplay/tools/run_vm_485.py",
-        "research/playplay/tools/sweep_versions.py",
-        "research/playplay/tools/test_483.ps1",
-        "research/playplay/tools/test_apiset.ps1",
-        "research/playplay/tools/test_arch.ps1",
-        "research/playplay/tools/test_derived.py",
-        "research/playplay/tools/test_dll.cpp",
-        "research/playplay/tools/test_dummy_ctx.py",
-        "research/playplay/tools/test_real_ctx.py",
-        "research/playplay/tools/trace_485.py",
-        "research/playplay/tools/trace_667.py",
-        "research/playplay/tools/trace_667_fix.py",
-        "research/playplay/tools/trace_667_init.py",
-        "research/playplay/tools/trace_ctx.py",
-        "research/playplay/tools/trace_dump.py",
-        "research/playplay/tools/vm_check.py"
-      ],
-      "environment": "mixed: inspect each source",
-      "notes": "Guia individual tools/README.md; no ejecutar como suite de tests."
     },
     {
       "id": "clean-capture-148",
@@ -300,11 +183,82 @@
       ],
       "environment": "Linux/offline: ppvenv Unicorn2.1.4, pefile, capstone; evaluador Python+cryptography",
       "notes": "No Windows. Escritores exclusivos: copiar source a nueva corrida/raw para repetir. Snapshots por recurso no equivalen a arranque desde DLL original."
+    },
+    {
+      "id": "ground-truth-148",
+      "status": "verified-two-resources",
+      "summary": "Dos licencias token148/v5 con AES/K10, bloques, contenido y procedencia verificable.",
+      "paths": [
+        "research/playplay/data/README.md",
+        "research/playplay/data/ground-truth-vectors.json",
+        "research/playplay/tools/check_ground_truth_148.py",
+        "research/playplay/tools/test_ground_truth_148.py"
+      ],
+      "environment": "offline Python + cryptography",
+      "notes": "Schema2. Solo estos dos casos son ground truth vigente; fixtures diagnósticos no equivalen a AES válida."
+    },
+    {
+      "id": "dfa-milestone-148",
+      "status": "verified-two-resources",
+      "summary": "Metodología DFA, K10→K0, datos originales y controles del hito148.",
+      "paths": [
+        "research/playplay/dfa_attack_results.md",
+        "research/playplay/docs/dfa_sweep.json",
+        "research/playplay/tools/dfa_solver.py",
+        "research/playplay/tools/extractor.py",
+        "research/playplay/tools/reverse_key_schedule.py"
+      ],
+      "environment": "offline/Windows según herramienta",
+      "notes": "La vía operativa es HTTP_DFA_SERVICE; extract_aes_dfa.py solo imprime un ejemplo."
+    },
+    {
+      "id": "discovery-148",
+      "status": "build148-diagnostic-evidence",
+      "summary": "Procedencia de RVAs y resultados acotados de los ensayos148, incluidos negativos.",
+      "paths": [
+        "research/playplay/docs/VALIDATION_148_2026-09-24.md",
+        "research/playplay/docs/DECISIONS_148.md",
+        "research/playplay/docs/WINDOWS_WORK_SUMMARY.md",
+        "research/playplay/docs/history/2026-09-24-aes256-hypothesis.md",
+        "research/playplay/runs/20260924-discovery-148/manifest.json",
+        "research/playplay/tools/check_key_pipeline_148.js",
+        "research/playplay/tools/check_wrapped_keystream_148.js",
+        "research/playplay/tools/extract_vm_key_148.js",
+        "research/playplay/tools/probe_cached_audio.py"
+      ],
+      "environment": "evidencia offline; fuente Frida148",
+      "notes": "Ensayos anteriores del mismo binario con entradas diagnósticas no validadas como groundtruth token148."
+    },
+    {
+      "id": "static-analysis-148",
+      "status": "offline-verified",
+      "summary": "Firma de copia, calls relativos y desensamblado del dump148 exacto.",
+      "paths": [
+        "research/playplay/tools/find_copy_anchor.py",
+        "research/playplay/tools/analyze_calls_148.py",
+        "research/playplay/tools/analyze_calls_148_full.py",
+        "research/playplay/tools/disasm.py",
+        "research/playplay/tools/extract_dll.py"
+      ],
+      "environment": "Python; pefile/capstone para desensamblado",
+      "notes": "Distinguir candidato de call y call confirmado por desensamblado/ABI."
+    },
+    {
+      "id": "deferred-script-review",
+      "status": "pending-review",
+      "summary": "Fuentes eliminadas antes de una evaluación individual, conservadas por ruta y hash para estudio posterior.",
+      "paths": [
+        "research/playplay/deferred-review/README.md",
+        "research/playplay/deferred-review/manifest.json",
+        "research/playplay/deferred-review/deletion-decisions.json"
+      ],
+      "environment": "offline; no ejecutar sin revisión",
+      "notes": "No son herramientas operativas ni ground truth del build148."
     }
   ],
   "evidence_manifests": [
     "research/playplay/runs/20260924T164814Z-token148/manifest.json",
-    "research/playplay/runs/20260924-legacy-controls/manifest.json",
+    "research/playplay/runs/20260924-discovery-148/manifest.json",
     "research/playplay/runs/20260924-clean-capture-recovery/manifest.json",
     "research/playplay/runs/20260924-unicorn-feasibility/manifest.json",
     "research/playplay/runs/20260925-http-dfa-service/manifest.json"
@@ -315,14 +269,12 @@
     "GEMINI.md",
     "docs/AGENT_WORKFLOW.md",
     "research/README.md",
-    "research/playplay-lan-deobfuscator/GEMINI.md",
     "research/playplay/AGENTS.md",
     "research/playplay/CATALOG.md",
     "research/playplay/GEMINI.md",
     "research/playplay/PLAN.md",
     "research/playplay/README.md",
     "research/playplay/STATUS.md",
-    "research/playplay/docs/BACKGROUND.md",
     "research/playplay/docs/HTTP_DFA_SERVICE.md",
     "research/playplay/docs/DECISIONS_148.md",
     "research/playplay/docs/FACTS.md",
@@ -330,20 +282,21 @@
     "research/playplay/docs/PLAYPLAY_ARCHITECTURE_NOTES.md",
     "research/playplay/docs/README.md",
     "research/playplay/docs/RVA_DISCOVERY_PLAYBOOK.md",
-    "research/playplay/docs/SESSION_2026-09-24_LAN_VALIDATION.md",
     "research/playplay/docs/TOKEN148_ONESHOT_2026-09-24.md",
     "research/playplay/docs/VALIDATION_148_2026-09-24.md",
     "research/playplay/docs/WINDOWS_WORK_SUMMARY.md",
     "research/playplay/docs/external/extraction_kPlayPlayToken_148.md",
     "research/playplay/docs/history/2026-09-24-aes256-hypothesis.md",
-    "research/playplay/docs/history/2026-09-24-checklist-before-tree.md",
     "research/playplay/runs/README.md",
     "research/playplay/task.md",
     "research/playplay/templates/EXPERIMENT.md",
     "research/playplay/tools/README.md",
     "research/playplay/tools/token_capture_148/README.md",
-    "research/tools/README.md",
     "research/playplay/docs/CLEAN_CAPTURE_148.md",
-    "research/playplay/docs/UNICORN_FEASIBILITY_148.md"
+    "research/playplay/docs/UNICORN_FEASIBILITY_148.md",
+    "research/playplay/data/README.md",
+    "research/playplay/dfa_attack_results.md",
+    "research/playplay/docs/DIRECT_AES_SEARCH_148.md",
+    "research/playplay/deferred-review/README.md"
   ]
 }

@@ -1,5 +1,9 @@
 # Bitácora de Windows — sesiones 2026-09-24
 
+Bitácora del build **1.2.92.148**: las secciones fechadas conservan el estado
+de cada etapa. El resultado vigente está en [STATUS](../STATUS.md); los controles
+validados están en [ground truth](../data/ground-truth-vectors.json).
+
 Para retomar leer [STATUS](../STATUS.md) y [PLAN](../PLAN.md). Esta bitácora
 conserva etapas sucesivas; los PID y próximos pasos antiguos no son vigentes.
 
@@ -28,7 +32,7 @@ está en [PLAN.md](../PLAN.md), no en las antiguas instrucciones de desplegar Fl
 |---|---|
 | Relectura tras cambios de otro agente | Se retiró la afirmación sin evidencia de «11 vectores pasan»; se conservaron cambios ajenos |
 | Conectividad | Primer timeout sin VPN; luego acceso recuperado a Windows por SSH |
-| Preflight | EXE/DLL 148; el servidor encontrado era `flask_frida_667.py` con otros offsets; se detuvo |
+| Preflight | EXE/DLL 148; se verificaron identidad del módulo y proceso antes de instrumentar |
 | Servidor 148 original | Se copió sin cambios y dio HTTP 500 / `Error: system error`; se detuvo |
 | Excepciones | `exceptions: propagate` permite la ejecución nativa; el buffer final variable falla como control AES |
 | Hooks internos | `setImmediate` + `traps: all` hacen visibles las llamadas repetidas; candidato estable en `0x49f854` |
@@ -78,8 +82,8 @@ de referencias inyectadas antes de reutilizar ese runner.
 ## Trabajo previo que no debe confundirse con esta sesión
 
 Los arreglos HMAC (`DigestCrypto` con HMAC habilitado) en `Authenticator.h` y
-`ApConnection.cpp` ya existían. El C++ conserva `FORCE PLAYPLAY`, volcado de
-credenciales, parser manual y un hilo de prueba. Hay que limpiarlos con el plan
+`ApConnection.cpp` ya existían. En esa etapa el C++ conservaba `FORCE PLAYPLAY`, un parser manual y un hilo
+de prueba; el flujo HTTP posterior corrigió su contrato y retiró el volcado de credenciales. Hay que limpiarlos con el plan
 aprobado, pero no son una explicación demostrada de las diferencias criptográficas.
 Los intentos `LoadLibrary`/Unicorn y el prototipo Flask forman parte de la historia;
 no equivalen a un deobfuscador listo. Se conservaron sus archivos para diagnóstico.
@@ -124,38 +128,6 @@ stream ya realizada: la llamada nativa no recibe las AES de referencia.
 Se contrastaron conceptos con FIPS197, SP800-38A y el trabajo original de DCA
 de Bos y colaboradores; enlaces en el documento. Esta continuación modifica
 solo documentación. No se ejecutaron nuevos experimentos ni se accedió a Windows.
-
-## Organización del workspace para agentes — 2026-09-24
-
-Se unificaron instrucciones en AGENTS raíz/PlayPlay y entradas Gemini/Claude.
-STATUS es la síntesis vigente; README, PLAN y task quedan acotados. La hipótesis
-AES256 rechazada y el checklist anterior se archivaron con etiquetas explícitas.
-Los seis scripts externos de captura se agruparon en tools/token_capture_148;
-los Python resuelven JS por __file__. Nota externa movida a docs/external sin
-alterar bytes; registro de movimientos en runs/tree-migration-20260924.json.
-
-Catálogo:15 grupos de recursos,32 documentos mantenidos,2 manifiestos con62
-artefactos (60 existentes intactos y2 snapshots de fuente del control nativo).
-El checker offline verifica rutas, enlaces, tamaños y SHA256. Sus cuatro pruebas
-pasaron y la receta offline de contenido volvió a pasar4/4 casos. Sintaxis de
-runners reubicados y TOML de perfiles comprobadas; git diff --check limpio.
-SpClient.cpp y el índice Git coinciden con el inicio de esta reorganización.
-No se ejecutaron capturas nuevas ni se accedió a Windows.
-
-Modelos efectivos: gpt-6-luna/medium hizo inventario de solo lectura;
-gpt-6-sol/medium auditó el handoff e implementó el checker con pruebas. El
-coordinador integró y validó. La segunda revisión delegada a Sol no terminó
-por límite de uso; el coordinador realizó la revisión final. No se atribuye
-esa revisión al agente ni se afirma ahorro medido de tokens/costo.
-
-Perfiles persistentes preparados en .codex/agents: inventario Luna, implementación
-Sol y revisión difícil Astra. TOML válido; carga efectiva depende del cliente.
-Reglas y contratos en docs/AGENT_WORKFLOW.md. El siguiente trabajo experimental
-sigue siendo el capturador limpio de PLAN; esta organización no extrae AES16.
-
-En el último chequeo apareció un cambio concurrente en tools/test_dll.cpp
-con whitespace en línea28, ajeno a esta reorganización. Se conservó; el diff
-del resto del workspace pasó la comprobación.
 
 ## Capturadores recuperados y procedencia de RVA — 2026-09-24
 
@@ -202,8 +174,8 @@ entrada un snapshot por recurso. No demuestra construcción desde licencia nueva
 Las pruebas de init/constructor registraron dependencias de GS/TEB, ruta AVX de
 copia, direcciones externas y límites de ejecución; no hubo cadena completa.
 Se confirmó error de ABI en el prototipo y discrepancia de base: el header del
-dump exacto contiene0x7ff9b7da0000. Se corrigió la tabla FACTS. No se reutilizaron
-constantes de485 ni se ejecutó el `LoadLibrary` C++ externo.
+dump exacto contiene0x7ff9b7da0000. Se corrigió la tabla FACTS. Las constantes se contrastaron contra el dump148; no se ejecutó un harness
+`LoadLibrary` como prueba de emulación autónoma.
 
 Evidencia, fuentes e inputs con hashes en
 [manifiesto](../runs/20260924-unicorn-feasibility/manifest.json);
@@ -250,3 +222,12 @@ Dos licencias: los bloques nativos coincidieron 2/2 con AES(K0, IV); ninguna
 K0..K10 completa o en mitades de 8 bytes apareció en las ventanas capturadas.
 Los bytes crudos necesarios y sus límites están en
 [el cierre del análisis](DIRECT_AES_SEARCH_148.md). DFA permanece operativo.
+
+## Corrección de depuración por versión
+
+Se recuperan los hitos, fuentes y datos crudos del build148 que fueron recortados
+por error. Los ensayos de descubrimiento se indexan con sus hashes originales;
+el ground truth schema2 contiene solamente las dos licencias token148/v5
+validadas. El criterio de conservación es relevancia al build, no antigüedad de
+la corrida. Otra versión puede seguir citada como referencia metodológica sin
+conservar sus binarios, tokens ni configuraciones como recursos operativos.

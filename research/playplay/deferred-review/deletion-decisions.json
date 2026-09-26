@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "scope": "deleted scripts and source files excluded from deferred review",
+  "files": [
+    {
+      "original_path": "research/playplay/archive/lan_deobfuscator.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/archive/sig_dumper.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/resources/flask_frida_server_final.py",
+      "decision": "delete-from-active-tree",
+      "reason": "source-copy-preserved",
+      "note": "Copia original idéntica conservada como fuente de experimento.",
+      "retained_copy": "research/playplay/runs/20260924-discovery-148/source/flask_frida_server_final.py"
+    },
+    {
+      "original_path": "research/playplay/tools/disasm_485.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/dump_ctx.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/dump_trigger.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/exports.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/extract_patterns.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/find_667.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/find_context.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/find_cxx.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/find_hooks.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/find_hooks_148.py",
+      "decision": "delete-from-active-tree",
+      "reason": "cross-build-unvalidated",
+      "note": "Busca firmas del 485 en el dump148 sin validar hooks/ABI; el playbook usa análisis y firmas confirmadas."
+    },
+    {
+      "original_path": "research/playplay/tools/find_hooks_667.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/find_refs.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/find_rip.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/find_rip_667.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/patch_485_test.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/probe_tokenF.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/run_vm_483.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/run_vm_485.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/sweep_versions.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/test_483.ps1",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/test_derived.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/test_dummy_ctx.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/test_real_ctx.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/trace_485.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/trace_667.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/trace_667_fix.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/trace_667_init.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/trace_ctx.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "El código inspeccionado usa binarios/RVAs o patrones de otra versión, sin validación para148."
+    },
+    {
+      "original_path": "research/playplay/tools/trace_dump.py",
+      "decision": "delete-from-active-tree",
+      "reason": "external-runtime-unvalidated",
+      "note": "Carga tamaños y runtime de unplayplay sin demostrar compatibilidad con148; sustituido por la evaluación Unicorn documentada."
+    },
+    {
+      "original_path": "research/playplay/tools/validate_lan_service.py",
+      "decision": "delete-from-active-tree",
+      "reason": "source-copy-preserved",
+      "note": "Copia original idéntica conservada como fuente de experimento.",
+      "retained_copy": "research/playplay/runs/20260924-discovery-148/source/validate_lan_service.py"
+    },
+    {
+      "original_path": "research/tools/groundtruth.py",
+      "decision": "delete-from-active-tree",
+      "reason": "duplicate-deferred",
+      "note": "Copia exacta de la fuente movida a revisión pendiente."
+    },
+    {
+      "original_path": "research/tools/probe_tokenF.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "Utilidad explícita de 483/485 o token F; fuera del build actual."
+    },
+    {
+      "original_path": "research/tools/run_vm_483.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "Utilidad explícita de 483/485 o token F; fuera del build actual."
+    },
+    {
+      "original_path": "research/tools/run_vm_485.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "Utilidad explícita de 483/485 o token F; fuera del build actual."
+    },
+    {
+      "original_path": "research/tools/sweep_versions.py",
+      "decision": "delete-from-active-tree",
+      "reason": "other-build",
+      "note": "Utilidad explícita de 483/485 o token F; fuera del build actual."
+    },
+    {
+      "original_path": "research/tools/vm_check.py",
+      "decision": "delete-from-active-tree",
+      "reason": "duplicate-deferred",
+      "note": "Copia exacta de la fuente movida a revisión pendiente."
+    }
+  ]
+}
